@@ -130,6 +130,7 @@ trctl <command> ...
 
 - **Work phase by phase** per `titanirun-sprint-plan.md`. Each phase has CI and manual acceptance criteria; do not start a later phase before the current one's criteria pass.
 - **The human personally QAs each milestone.** Produce the artifacts and the means to verify them (CLI commands, test output, clear "how to check" notes) at each phase boundary.
+- **Surface tool dependencies up front, before the user runs the validation.** When a manual gate's commands require an external tool that isn't built into Windows (e.g. `psexec`, `accesschk`, `wix`, `signtool`), check whether it's installed *first* and tell the user how to get it (winget command preferred) *before* they try to run the steps. This applies to verification docs (`docs/phase-*-verification.md`) and to any inline instructions in chat — anything the user is about to copy/paste. If a fallback that uses only built-in tools exists, mention it alongside the primary path. Reason: a missing dependency mid-validation forces the user to context-switch into install/troubleshoot, and the validation ends up taking 5x as long as it should.
 - When something is ambiguous or a request conflicts with an invariant above, **stop and ask** rather than guessing.
 - Keep `TitaniRun.Ipc.Contracts` the single source of truth for the IPC surface; service, UI, and `trctl` all depend on it.
 - Update the PRD/Sprint Plan if a decision changes — don't let code and docs drift.

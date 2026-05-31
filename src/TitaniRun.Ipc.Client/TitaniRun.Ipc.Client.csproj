@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StreamJsonRpc" />
+    <PackageReference Include="Nerdbank.Streams" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TitaniRun.Ipc.Contracts\TitaniRun.Ipc.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>trctl</AssemblyName>
+    <RootNamespace>TitaniRun.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TitaniRun.Ipc.Client\TitaniRun.Ipc.Client.csproj" />
+    <ProjectReference Include="..\TitaniRun.Ipc.Contracts\TitaniRun.Ipc.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

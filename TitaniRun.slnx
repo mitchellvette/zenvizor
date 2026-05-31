@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TitaniRun.Attribution/TitaniRun.Attribution.csproj" />
+    <Project Path="src/TitaniRun.Capture/TitaniRun.Capture.csproj" />
+    <Project Path="src/TitaniRun.Cli/TitaniRun.Cli.csproj" />
+    <Project Path="src/TitaniRun.Core/TitaniRun.Core.csproj" />
+    <Project Path="src/TitaniRun.Ipc.Client/TitaniRun.Ipc.Client.csproj" />
+    <Project Path="src/TitaniRun.Ipc.Contracts/TitaniRun.Ipc.Contracts.csproj" />
+    <Project Path="src/TitaniRun.Ipc.Server/TitaniRun.Ipc.Server.csproj" />
+    <Project Path="src/TitaniRun.Service/TitaniRun.Service.csproj" />
+    <Project Path="src/TitaniRun.Storage/TitaniRun.Storage.csproj" />
+    <Project Path="src/TitaniRun.Ui/TitaniRun.Ui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TitaniRun.Attribution.Tests/TitaniRun.Attribution.Tests.csproj" />
+    <Project Path="tests/TitaniRun.Core.Tests/TitaniRun.Core.Tests.csproj" />
+    <Project Path="tests/TitaniRun.Integration.Tests/TitaniRun.Integration.Tests.csproj" />
+    <Project Path="tests/TitaniRun.Ipc.Tests/TitaniRun.Ipc.Tests.csproj" />
+    <Project Path="tests/TitaniRun.Storage.Tests/TitaniRun.Storage.Tests.csproj" />
+  </Folder>
+</Solution>
