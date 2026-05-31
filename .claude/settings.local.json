@@ -3,7 +3,8 @@
     "allow": [
       "Bash(dotnet new classlib *)",
       "Bash(dotnet new worker *)",
-      "Bash(dotnet new wpf *)"
+      "Bash(dotnet new wpf *)",
+      "Bash(git push *)"
     ]
   }
 }
