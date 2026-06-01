@@ -12,12 +12,14 @@ internal sealed class TitaniRunIpcHandler : ITitaniRunIpc
 {
     private readonly long _startedAtUnixMs;
     private readonly string _dbPath;
+    private readonly Func<bool> _isCaptureActive;
     private readonly string _serviceVersion;
 
-    public TitaniRunIpcHandler(long startedAtUnixMs, string dbPath)
+    public TitaniRunIpcHandler(long startedAtUnixMs, string dbPath, Func<bool>? isCaptureActive = null)
     {
         _startedAtUnixMs = startedAtUnixMs;
         _dbPath = dbPath;
+        _isCaptureActive = isCaptureActive ?? (() => false);
         _serviceVersion = typeof(TitaniRunIpcHandler).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
@@ -58,6 +60,6 @@ internal sealed class TitaniRunIpcHandler : ITitaniRunIpc
             StartedAtUnixMs: _startedAtUnixMs,
             UptimeMs: now - _startedAtUnixMs,
             DbPath: _dbPath,
-            CaptureActive: false));
+            CaptureActive: _isCaptureActive()));
     }
 }

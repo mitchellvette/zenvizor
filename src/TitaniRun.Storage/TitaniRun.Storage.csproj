@@ -10,6 +10,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\TitaniRun.Core\TitaniRun.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TitaniRun.Storage.Tests" />
+    <InternalsVisibleTo Include="TitaniRun.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 

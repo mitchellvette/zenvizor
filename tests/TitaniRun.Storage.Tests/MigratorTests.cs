@@ -38,13 +38,13 @@ public sealed class MigratorTests : IDisposable
     }
 
     [Fact]
-    public void Migrate_FreshDatabase_AppliesInitialMigration()
+    public void Migrate_FreshDatabase_AppliesAllMigrations()
     {
         var migrator = new Migrator();
 
         var applied = migrator.Migrate(_dbPath);
 
-        applied.Should().ContainSingle().Which.Should().Be(1);
+        applied.Should().BeEquivalentTo(new[] { 1, 2 });
     }
 
     [Fact]
@@ -81,9 +81,11 @@ public sealed class MigratorTests : IDisposable
             "SELECT version, name FROM schema_migrations ORDER BY version;",
             r => (Version: r.GetInt32(0), Name: r.GetString(1)));
 
-        rows.Should().ContainSingle();
+        rows.Should().HaveCount(2);
         rows[0].Version.Should().Be(1);
         rows[0].Name.Should().Be("initial");
+        rows[1].Version.Should().Be(2);
+        rows[1].Name.Should().Be("phase1_settings");
     }
 
     [Fact]
@@ -117,6 +119,8 @@ public sealed class MigratorTests : IDisposable
         settings.Should().Contain(new KeyValuePair<string, string>("flush.bucket_seconds", "60"));
         settings.Should().Contain(new KeyValuePair<string, string>("toast.on_alert", "1"));
         settings.Should().Contain(new KeyValuePair<string, string>("autostart.mirror", "1"));
+        settings.Should().Contain(new KeyValuePair<string, string>("pid_table.poll_ms", "1000"));
+        settings.Should().Contain(new KeyValuePair<string, string>("session.end_grace_ms", "30000"));
     }
 
     [Fact]

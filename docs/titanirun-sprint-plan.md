@@ -24,6 +24,7 @@
 ## How to read this plan
 
 Phases are **sequential**; each later phase assumes the prior phase's acceptance criteria passed. Every phase separates:
+
 - **CI (headless)** criteria — automated, run in GitHub Actions.
 - **Manual (your QA)** criteria — you personally verify on a real Windows box before advancing.
 
@@ -36,6 +37,7 @@ Do not advance past a phase until both checklists pass.
 **Goal:** A buildable solution with all projects, CI green, an installable do-nothing service, a launchable UI, a working pipe handshake, and a migration runner that creates the DB.
 
 **Scope**
+
 - Solution + project layout per PRD §5.5; `.editorconfig`, analyzers, nullable enabled.
 - GitHub Actions: restore/build/test on push; artifacts uploaded.
 - Windows Service skeleton (installs, starts, stops, logs) — no capture yet.
@@ -45,14 +47,16 @@ Do not advance past a phase until both checklists pass.
 - `trctl` skeleton that connects and calls a `Ping`/`GetServiceStatus` stub.
 
 **Acceptance criteria — CI (headless)**
-- [ ] `dotnet build` and `dotnet test` pass in Actions on a clean checkout.
-- [ ] Migration runner creates a DB with all tables; a test asserts schema matches expected.
-- [ ] IPC contract test: client and server negotiate version in-process.
+
+- [x] `dotnet build` and `dotnet test` pass in Actions on a clean checkout.
+- [x] Migration runner creates a DB with all tables; a test asserts schema matches expected.
+- [x] IPC contract test: client and server negotiate version in-process.
 
 **Acceptance criteria — manual (your QA)**
-- [ ] Service installs, starts, stops, uninstalls via CLI; writes a startup log line.
-- [ ] UI launches, shows shell + tray icon, close-to-tray works, Exit quits.
-- [ ] `trctl ping` round-trips over the real named pipe; unauthorized/unACL'd access is rejected.
+
+- [x] Service installs, starts, stops, uninstalls via CLI; writes a startup log line.
+- [x] UI launches, shows shell + tray icon, close-to-tray works, Exit quits.
+- [x] `trctl ping` round-trips over the real named pipe; unauthorized/unACL'd access is rejected.
 
 ---
 
@@ -61,6 +65,7 @@ Do not advance past a phase until both checklists pass.
 **Goal:** Correct per-process byte attribution from events to SQLite, fully testable on CI via synthetic events, then validated live.
 
 **Scope**
+
 - `IMonitor` contract (**seam #1**); capture is the first implementation.
 - `ICaptureSource` abstraction with **two** implementations: real ETW (`TraceEvent`, `Microsoft-Windows-Kernel-Network`) and **synthetic/recorded**.
 - IP Helper PID-correction layer (`GetExtendedTcpTable`/`GetExtendedUdpTable`).
@@ -69,15 +74,17 @@ Do not advance past a phase until both checklists pass.
 - Remote `Local`/`Wan` classification incl. IPv6 ranges.
 
 **Acceptance criteria — CI (headless)**
-- [ ] Synthetic event streams produce **exact expected** `traffic_samples` and `connections` rows (deterministic).
-- [ ] PID-correction test: an event with wrong/missing PID is corrected to the table's owning PID.
-- [ ] IPv6 + WAN/local classification covered by tests (v4 RFC1918, v6 fe80::/10, fc00::/7, loopback).
-- [ ] Session reuse test: same PID reused for a new process yields a new session row.
+
+- [x] Synthetic event streams produce **exact expected** `traffic_samples` and `connections` rows (deterministic).
+- [x] PID-correction test: an event with wrong/missing PID is corrected to the table's owning PID.
+- [x] IPv6 + WAN/local classification covered by tests (v4 RFC1918, v6 fe80::/10, fc00::/7, loopback).
+- [x] Session reuse test: same PID reused for a new process yields a new session row.
 
 **Acceptance criteria — manual (your QA)**
-- [ ] On a real box, generate known traffic from a known process; the DB attributes bytes to the correct PID within tolerance, and totals are sane vs. Resource Monitor.
-- [ ] Idle CPU **< 1%**, service working set **< ~80 MB** under light load.
-- [ ] No per-event DB writes observed (writes occur on the flush tick).
+
+- [x] On a real box, generate known traffic from a known process; the DB attributes bytes to the correct PID within tolerance, and totals are sane vs. Resource Monitor.
+- [x] Idle CPU **< 1%**, service working set **< ~80 MB** under light load.
+- [x] No per-event DB writes observed (writes occur on the flush tick).
 
 ---
 
@@ -86,17 +93,20 @@ Do not advance past a phase until both checklists pass.
 **Goal:** Turn "svchost.exe / unknown" into actionable identity — the core of the product's value.
 
 **Scope**
+
 - svchost → **service-name** resolution (`QueryServiceStatusProcess` / WMI `Win32_Service`) into `hosted_services`; multi-service PIDs listed, **bytes not split**.
 - Signer/publisher + `signature_status` via offline `WinVerifyTrust` (`WTD_REVOKE_NONE`); cached per `app_id`.
 - `is_user_writable_path` heuristic (temp/AppData/user-writable).
 - `apps` dedup on `(image_path, publisher)`.
 
 **Acceptance criteria — CI (headless)**
+
 - [ ] Given fixture PIDs/paths, service resolution and dedup produce expected `apps`/`process_sessions` rows (service lookups mocked behind an interface).
 - [ ] Signature classifier maps known signed/unsigned/invalid fixtures to correct `signature_status`.
 - [ ] Path heuristic flags user-writable locations correctly.
 
 **Acceptance criteria — manual (your QA)**
+
 - [ ] Real svchost traffic resolves to named services (e.g., `Dnscache`, `Dhcp`), not bare `svchost.exe`; multi-service PIDs show the honest list.
 - [ ] A known signed app shows its publisher; an unsigned binary run from `%TEMP%` shows `Unsigned` + user-writable flag.
 - [ ] Enrichment does **not** raise idle CPU above budget (caching verified — no repeated `WinVerifyTrust` per event).
@@ -108,16 +118,19 @@ Do not advance past a phase until both checklists pass.
 **Goal:** The UI shows a near-live dashboard fed entirely over IPC from the in-memory aggregate; the versioned envelope seam is in place.
 
 **Scope**
+
 - **Seam #3:** versioned IPC envelope finalized.
 - `GetCurrentActivitySnapshot()` served from in-memory aggregate; optional `ActivityTick` push.
 - Dashboard / Current Activity view with LiveCharts2 (per-app up/down rates, top talkers).
 - `trctl` gains `snapshot` command.
 
 **Acceptance criteria — CI (headless)**
+
 - [ ] Contract tests: snapshot request/response and envelope versioning round-trip in-process.
 - [ ] Snapshot is served from the in-memory aggregate (test asserts no SQLite read on the snapshot path).
 
 **Acceptance criteria — manual (your QA)**
+
 - [ ] Generate live traffic; the dashboard reflects it with only minor delay/aggregation; rates match reality within tolerance.
 - [ ] **Self-monitoring check:** with the tool running and the UI open, the tool reports **zero outbound** from its own service/UI processes (named-pipe IPC produces no network rows). *This is the founding-invariant gate.*
 - [ ] `trctl snapshot` returns the same data the UI shows.
@@ -129,16 +142,19 @@ Do not advance past a phase until both checklists pass.
 **Goal:** Rollups, retention, the full query/reporting IPC surface, and the per-app → connections → history navigation.
 
 **Scope**
+
 - Hourly/daily rollup jobs from `traffic_samples`; retention/purge jobs per PRD §7.9.
 - Query IPC: `GetAppList`, `GetAppDetail`, `GetConnections`, `GetTrafficHistory` (grain selection).
 - UI: Per-App breakdown, App detail (connections + history), History/timeline with **user-defined window**.
 
 **Acceptance criteria — CI (headless)**
+
 - [ ] Rollup correctness: sample fixtures roll up to exact hourly/daily totals.
 - [ ] Retention: rows older than configured windows are purged; newer retained; rollups preserved per policy.
 - [ ] User-defined-window query over fixtures returns exact expected totals at each grain.
 
 **Acceptance criteria — manual (your QA)**
+
 - [ ] Per-app list totals reconcile with the daily numbers and with the live view over the same window.
 - [ ] Drill app → connections shows correct endpoints with local/WAN + protocol; drill → history series matches.
 - [ ] Changing the query window updates results correctly; large windows stay responsive (served from rollups).
@@ -150,15 +166,18 @@ Do not advance past a phase until both checklists pass.
 **Goal:** The headline deliverable — a daily overview report, viewable in-app and exportable.
 
 **Scope**
+
 - `GetDailyReport(date)` structured payload (top apps, up/down totals, WAN vs local split, notable items e.g. new unsigned-from-temp talkers).
 - In-app Daily Report view.
 - CSV + HTML export (filesystem write from the UI side, user-chosen location).
 
 **Acceptance criteria — CI (headless)**
+
 - [ ] Report aggregation over fixtures yields expected totals/sections.
 - [ ] CSV/HTML serializers produce well-formed output matching the report payload (snapshot-tested).
 
 **Acceptance criteria — manual (your QA)**
+
 - [ ] Daily report numbers reconcile with the history view for the same date.
 - [ ] CSV opens cleanly in a spreadsheet; HTML opens in a browser; both match the in-app view.
 
@@ -169,6 +188,7 @@ Do not advance past a phase until both checklists pass.
 **Goal:** Wire the alert seam with one real alert, finish Settings (incl. configurable autostart) and tray, and ship a clean .msi. This is the MVP-complete gate.
 
 **Scope**
+
 - **Seam #2:** alert pipeline + `Alert` entity + `GetAlerts`/`AcknowledgeAlert` + `AlertRaised` push + Alerts feed UI + optional toast.
 - **First real alert:** *unsigned binary from a user-writable path making network connections* (purely local, no new monitor, no network).
 - Settings: **autostart toggle** (service start mode incl. "off" for fast-boot users), retention windows, purge history, flush/bucket intervals, toast toggle, theme.
@@ -176,11 +196,13 @@ Do not advance past a phase until both checklists pass.
 - **WiX .msi:** installs/registers the service with the chosen start mode, installs the UI, sets DB ACLs and `%ProgramData%\TitaniRun\` layout; clean uninstall; `wix build` CLI-drivable in CI.
 
 **Acceptance criteria — CI (headless)**
+
 - [ ] Alert rule test: fixture (unsigned, user-writable, has connections) raises exactly one correctly-typed alert; acknowledge flow tested.
 - [ ] Settings persistence round-trips; purge invokes retention correctly.
 - [ ] Installer builds in Actions and produces an `.msi` artifact.
 
 **Acceptance criteria — manual (your QA)**
+
 - [ ] Fresh `.msi` install on a clean machine: service registered with chosen start mode, DB created + ACL'd, UI present; **uninstall removes everything cleanly**.
 - [ ] Toggling autostart **off** yields no service at boot (fast-boot path); **on** restores it.
 - [ ] Triggering the unsigned-from-temp condition raises an alert in the feed (+ toast if enabled); acknowledge clears it.

@@ -11,8 +11,9 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <!-- CA1707: WPF tooling generates a *_wpftmp assembly name we cannot rename.
          CA1848/CA1727: LoggerMessage delegate / PascalCase placeholder hints — pedantic for our usage.
-         VSTHRD103: VS-Threading sync-Dispose warnings — over-eager outside UI sync-context code. -->
-    <NoWarn>$(NoWarn);CA1707;CA1848;CA1727;VSTHRD103</NoWarn>
+         VSTHRD103: VS-Threading sync-Dispose warnings — over-eager outside UI sync-context code.
+         VSTHRD003: Awaiting tasks started in Task.Run loops — false positive for our shutdown patterns. -->
+    <NoWarn>$(NoWarn);CA1707;CA1848;CA1727;VSTHRD103;VSTHRD003</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>

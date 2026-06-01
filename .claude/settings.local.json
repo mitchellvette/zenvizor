@@ -4,7 +4,8 @@
       "Bash(dotnet new classlib *)",
       "Bash(dotnet new worker *)",
       "Bash(dotnet new wpf *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(dotnet build *)"
     ]
   }
 }

@@ -5,7 +5,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TitaniRun.Core\TitaniRun.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TitaniRun.Core.Tests" />
+    <InternalsVisibleTo Include="TitaniRun.Attribution.Tests" />
+    <InternalsVisibleTo Include="TitaniRun.Integration.Tests" />
+    <InternalsVisibleTo Include="TitaniRun.Capture.Tests" />
   </ItemGroup>
 
 </Project>

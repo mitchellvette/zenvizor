@@ -20,6 +20,8 @@
     <ProjectReference Include="..\TitaniRun.Core\TitaniRun.Core.csproj" />
     <ProjectReference Include="..\TitaniRun.Storage\TitaniRun.Storage.csproj" />
     <ProjectReference Include="..\TitaniRun.Ipc.Server\TitaniRun.Ipc.Server.csproj" />
+    <ProjectReference Include="..\TitaniRun.Capture\TitaniRun.Capture.csproj" />
+    <ProjectReference Include="..\TitaniRun.Attribution\TitaniRun.Attribution.csproj" />
   </ItemGroup>
 
 </Project>
