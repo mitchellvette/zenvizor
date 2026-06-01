@@ -23,14 +23,27 @@ public sealed class SessionTracker
     public const long DefaultStaleThresholdMs = 30_000;
 
     private readonly IProcessImageResolver _imageResolver;
+    private readonly IAppEnricher _appEnricher;
+    private readonly IServiceHostResolver _serviceHostResolver;
 
     private readonly Dictionary<int, SessionState> _byPid = new();
 
     public SessionTracker(
         IProcessImageResolver imageResolver,
         long staleThresholdMs = DefaultStaleThresholdMs)
+        : this(imageResolver, NoOpAppEnricher.Instance, NoOpServiceHostResolver.Instance, staleThresholdMs)
+    {
+    }
+
+    public SessionTracker(
+        IProcessImageResolver imageResolver,
+        IAppEnricher appEnricher,
+        IServiceHostResolver serviceHostResolver,
+        long staleThresholdMs = DefaultStaleThresholdMs)
     {
         _imageResolver = imageResolver ?? throw new ArgumentNullException(nameof(imageResolver));
+        _appEnricher = appEnricher ?? throw new ArgumentNullException(nameof(appEnricher));
+        _serviceHostResolver = serviceHostResolver ?? throw new ArgumentNullException(nameof(serviceHostResolver));
         StaleThresholdMs = staleThresholdMs;
     }
 
@@ -67,10 +80,7 @@ public sealed class SessionTracker
                     // this window was already attributed to the pending session.
                     _explicitCloses.Add(existing.SessionId);
                 }
-                _byPid[pid] = new SessionState(
-                    appIdentity: ToAppIdentity(image),
-                    startTimeUnixMs: image.StartTimeUnixMs,
-                    lastObservedUnixMs: nowUnixMs);
+                _byPid[pid] = OpenSession(pid, image, nowUnixMs);
                 return true;
             }
 
@@ -84,11 +94,24 @@ public sealed class SessionTracker
             return false;
         }
 
-        _byPid[pid] = new SessionState(
-            appIdentity: ToAppIdentity(freshImage),
-            startTimeUnixMs: freshImage.StartTimeUnixMs,
-            lastObservedUnixMs: nowUnixMs);
+        _byPid[pid] = OpenSession(pid, freshImage, nowUnixMs);
         return true;
+    }
+
+    /// <summary>
+    /// Builds a new <see cref="SessionState"/> for a session-open. This is where
+    /// Phase 2 enrichment (publisher / signature status / user-writable-path) and
+    /// the svchost service-host snapshot happen — each is exactly once per session.
+    /// </summary>
+    private SessionState OpenSession(int pid, ProcessImageInfo image, long nowUnixMs)
+    {
+        var enrichment = _appEnricher.Enrich(image);
+        var hostedServices = FormatHostedServices(_serviceHostResolver.ResolveHostedServices(pid));
+        return new SessionState(
+            appIdentity: BuildAppIdentity(image, enrichment),
+            hostedServices: hostedServices,
+            startTimeUnixMs: image.StartTimeUnixMs,
+            lastObservedUnixMs: nowUnixMs);
     }
 
     /// <summary>
@@ -125,7 +148,7 @@ public sealed class SessionTracker
                 Pid: pid,
                 App: state.AppIdentity,
                 StartTimeUnixMs: state.StartTimeUnixMs,
-                HostedServices: null));
+                HostedServices: state.HostedServices));
         }
         return pending;
     }
@@ -226,19 +249,33 @@ public sealed class SessionTracker
 
     private readonly List<int> _explicitCloses = new();
 
-    private static AppIdentity ToAppIdentity(ProcessImageInfo image) =>
+    private static AppIdentity BuildAppIdentity(ProcessImageInfo image, EnrichmentResult enrichment) =>
         new(
             ImagePath: image.ImagePath,
             ImageName: image.ImageName,
-            Publisher: null,
-            SignatureStatus: "Unchecked",
-            IsUserWritablePath: false);
+            Publisher: enrichment.Publisher,
+            SignatureStatus: enrichment.SignatureStatus,
+            IsUserWritablePath: enrichment.IsUserWritablePath);
+
+    private static string? FormatHostedServices(IReadOnlyList<string>? services)
+    {
+        if (services is null || services.Count == 0)
+        {
+            return null;
+        }
+        return string.Join(',', services);
+    }
 
     private sealed class SessionState
     {
-        public SessionState(AppIdentity appIdentity, long startTimeUnixMs, long lastObservedUnixMs)
+        public SessionState(
+            AppIdentity appIdentity,
+            string? hostedServices,
+            long startTimeUnixMs,
+            long lastObservedUnixMs)
         {
             AppIdentity = appIdentity;
+            HostedServices = hostedServices;
             StartTimeUnixMs = startTimeUnixMs;
             LastObservedUnixMs = lastObservedUnixMs;
             IsPersisted = false;
@@ -246,6 +283,7 @@ public sealed class SessionTracker
         }
 
         public AppIdentity AppIdentity { get; }
+        public string? HostedServices { get; }
         public long StartTimeUnixMs { get; }
         public long LastObservedUnixMs { get; set; }
         public bool IsPersisted { get; private set; }

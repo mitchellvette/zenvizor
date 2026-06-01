@@ -145,4 +145,117 @@ public sealed class SessionTrackerTests
         tracker.TryTrack(4, 1000).Should().BeTrue();
         tracker.CollectPendingOpens().Should().ContainSingle().Which.Pid.Should().Be(4);
     }
+
+    // ----- Phase 2 enrichment + service-host wiring -----
+
+    [Fact]
+    public void TryTrack_NewSession_AppliesEnrichmentToAppIdentity()
+    {
+        var resolver = new InMemoryProcessImageResolver();
+        resolver.Set(Image(pid: 200, startMs: 500, path: @"C:\Programs\app.exe"));
+        var enricher = new RecordingEnricher(new EnrichmentResult(
+            Publisher: "Acme Co",
+            SignatureStatus: "Signed",
+            IsUserWritablePath: false));
+        var tracker = new SessionTracker(resolver, enricher, NoOpServiceHostResolver.Instance);
+
+        tracker.TryTrack(200, 1000);
+
+        var pending = tracker.CollectPendingOpens();
+        pending.Should().ContainSingle();
+        pending[0].App.Publisher.Should().Be("Acme Co");
+        pending[0].App.SignatureStatus.Should().Be("Signed");
+        pending[0].App.IsUserWritablePath.Should().BeFalse();
+        enricher.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void TryTrack_SamePidObservedTwice_EnricherCalledOnce()
+    {
+        var resolver = new InMemoryProcessImageResolver();
+        resolver.Set(Image(pid: 200, startMs: 500));
+        var enricher = new RecordingEnricher(new EnrichmentResult(null, "Unsigned", true));
+        var tracker = new SessionTracker(resolver, enricher, NoOpServiceHostResolver.Instance);
+
+        tracker.TryTrack(200, 1000);
+        tracker.TryTrack(200, 1500);
+        tracker.TryTrack(200, 2000);
+
+        enricher.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void TryTrack_PidReuse_TriggersFreshEnrichment()
+    {
+        var resolver = new InMemoryProcessImageResolver();
+        resolver.Set(Image(pid: 200, startMs: 500, path: @"C:\a\old.exe"));
+        var enricher = new RecordingEnricher(new EnrichmentResult(null, "Unsigned", true));
+        var tracker = new SessionTracker(resolver, enricher, NoOpServiceHostResolver.Instance);
+
+        tracker.TryTrack(200, 1000);
+        tracker.OnFlushCommitted(new Dictionary<int, int> { [200] = 7 }, Array.Empty<int>());
+
+        // PID reused with a different start time → fresh enrichment.
+        resolver.Set(Image(pid: 200, startMs: 5000, path: @"C:\a\new.exe"));
+        tracker.TryTrack(200, 6000);
+
+        enricher.CallCount.Should().Be(2);
+        enricher.LastImagePath.Should().Be(@"C:\a\new.exe");
+    }
+
+    [Fact]
+    public void TryTrack_SvchostPid_PopulatesHostedServices()
+    {
+        var resolver = new InMemoryProcessImageResolver();
+        resolver.Set(Image(pid: 1500, startMs: 500, path: @"C:\Windows\System32\svchost.exe"));
+        var services = new FakeServiceHostResolver();
+        services.Set(1500, new[] { "Dnscache", "NlaSvc", "Dhcp" });
+        var tracker = new SessionTracker(resolver, NoOpAppEnricher.Instance, services);
+
+        tracker.TryTrack(1500, 1000);
+
+        var pending = tracker.CollectPendingOpens();
+        pending.Should().ContainSingle();
+        pending[0].HostedServices.Should().Be("Dnscache,NlaSvc,Dhcp");
+        services.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void TryTrack_NonServiceHostPid_LeavesHostedServicesNull()
+    {
+        var resolver = new InMemoryProcessImageResolver();
+        resolver.Set(Image(pid: 1500, startMs: 500, path: @"C:\app\a.exe"));
+        var services = new FakeServiceHostResolver(); // no entry for 1500
+        var tracker = new SessionTracker(resolver, NoOpAppEnricher.Instance, services);
+
+        tracker.TryTrack(1500, 1000);
+
+        tracker.CollectPendingOpens()[0].HostedServices.Should().BeNull();
+    }
+
+    private sealed class RecordingEnricher : IAppEnricher
+    {
+        private readonly EnrichmentResult _result;
+        public int CallCount { get; private set; }
+        public string? LastImagePath { get; private set; }
+        public RecordingEnricher(EnrichmentResult result) => _result = result;
+        public EnrichmentResult Enrich(ProcessImageInfo image)
+        {
+            CallCount++;
+            LastImagePath = image.ImagePath;
+            return _result;
+        }
+    }
+
+    private sealed class FakeServiceHostResolver : IServiceHostResolver
+    {
+        private readonly Dictionary<int, IReadOnlyList<string>> _byPid = new();
+        public int CallCount { get; private set; }
+        public void Set(int pid, IEnumerable<string> services) => _byPid[pid] = services.ToList();
+        public IReadOnlyList<string>? ResolveHostedServices(int pid)
+        {
+            CallCount++;
+            return _byPid.TryGetValue(pid, out var list) ? list : null;
+        }
+    }
 }

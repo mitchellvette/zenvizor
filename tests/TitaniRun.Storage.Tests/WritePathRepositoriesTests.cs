@@ -218,6 +218,82 @@ public sealed class WritePathRepositoriesTests : IDisposable
     }
 
     [Fact]
+    public void Flush_NewSession_PersistsAllEnrichmentFields()
+    {
+        var identity = new AppIdentity(
+            ImagePath: @"C:\Programs\enriched.exe",
+            ImageName: "enriched.exe",
+            Publisher: "Acme Co",
+            SignatureStatus: "Signed",
+            IsUserWritablePath: false);
+
+        _sink.Flush(Batch(newSessions: new[]
+        {
+            new NewSessionEntry(100, identity, 500, HostedServices: "Dnscache,Dhcp"),
+        }));
+
+        var apps = QueryAll(
+            "SELECT publisher, signature_status, is_user_writable_path FROM apps;");
+        apps.Should().ContainSingle();
+        apps[0]["publisher"].Should().Be("Acme Co");
+        apps[0]["signature_status"].Should().Be("Signed");
+        apps[0]["is_user_writable_path"].Should().Be(0L);
+
+        var sessions = QueryAll("SELECT hosted_services FROM process_sessions;");
+        sessions.Should().ContainSingle();
+        sessions[0]["hosted_services"].Should().Be("Dnscache,Dhcp");
+    }
+
+    [Fact]
+    public void Flush_PublisherChange_CreatesSecondAppRow()
+    {
+        // Phase 2 Q8 dedup: (image_path, publisher) is the dedup key. A rotation
+        // of the signing cert should produce a new apps row, not overwrite the
+        // old one — preserves the security signal that the publisher changed.
+        var first  = new AppIdentity(@"C:\a\app.exe", "app.exe", "Old Cert Co",    "Signed",   false);
+        var second = new AppIdentity(@"C:\a\app.exe", "app.exe", "New Cert Co",    "Signed",   false);
+
+        _sink.Flush(Batch(newSessions: new[]
+        {
+            new NewSessionEntry(100, first, 500, null),
+        }));
+        _sink.Flush(Batch(newSessions: new[]
+        {
+            new NewSessionEntry(101, second, 600, null),
+        }));
+
+        var apps = QueryAll("SELECT image_path, publisher FROM apps ORDER BY publisher;");
+        apps.Should().HaveCount(2);
+        apps[0]["publisher"].Should().Be("New Cert Co");
+        apps[1]["publisher"].Should().Be("Old Cert Co");
+    }
+
+    [Fact]
+    public void Flush_UnsignedFromUserWritablePath_StoresAlertWorthyShape()
+    {
+        // The exact data shape Phase 6's alert rule will read. Phase 2's job is
+        // only to make sure these fields land correctly; Phase 6 wires the
+        // alert raising.
+        var identity = new AppIdentity(
+            ImagePath: @"C:\Users\alice\AppData\Local\Temp\dropper.exe",
+            ImageName: "dropper.exe",
+            Publisher: null,
+            SignatureStatus: "Unsigned",
+            IsUserWritablePath: true);
+
+        _sink.Flush(Batch(newSessions: new[]
+        {
+            new NewSessionEntry(999, identity, 500, null),
+        }));
+
+        var apps = QueryAll(
+            "SELECT signature_status, is_user_writable_path, publisher FROM apps;");
+        apps[0]["signature_status"].Should().Be("Unsigned");
+        apps[0]["is_user_writable_path"].Should().Be(1L);
+        apps[0]["publisher"].Should().Be(DBNull.Value);
+    }
+
+    [Fact]
     public void Flush_AtomicTransaction_FailingSqlRollsBackEverything()
     {
         // Inject a closed_session_id that does not exist. The UPDATE returns 0 rows

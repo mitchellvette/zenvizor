@@ -137,6 +137,18 @@ trctl <command> ...
 
 ---
 
+## Terminal / PowerShell gotchas (when proposing copy-paste commands)
+
+Reproducible paste-into-PowerShell failures we've hit on this project. Don't hand the user a command that triggers one of these.
+
+- **Never propose multi-line PowerShell here-strings (`@'…'@`) for the user to copy-paste into an interactive terminal.** The closing `'@` must land at column 0 on its own fresh input line. Real-world paste behavior (Windows Terminal, rendered markdown vs. raw `.md`, IDE selection sources) routinely drops or indents that token, leaving PowerShell stuck in a `>>` continuation prompt the user can't escape without Ctrl+C. This has bitten us at least twice (Phase 2 gate walkthrough, 2026-06-01).
+  - **Prefer:** single-line invocations with the SQL or payload as a double-quoted argument. For `sqlite3.exe`, use CLI flags (`-readonly -header -column`) instead of the dot-commands you'd type at the `sqlite>` prompt — e.g. `sqlite3.exe -readonly -header -column $db "SELECT ..."` covers `.headers on` + `.mode column` + the query in one line.
+  - **If multi-line input is genuinely required**, stage it via a one-line `Set-Content` from an array of single-line strings (e.g. `'line1','line2' | Set-Content path.sql`), then point the tool at the file (`sqlite3.exe ... ".read path.sql"`).
+- **Markdown ` ```sql ` blocks paste differently than ` ```powershell ` blocks** depending on whether the source is the rendered IDE preview or the raw `.md` source. When the user is going to copy from the doc, the doc should already wrap the SQL in a PowerShell-callable form. Don't rely on the user knowing which surface to copy from.
+- **Don't assume the user is in an elevated shell** just because they were a minute ago — sessions get reopened. Whenever a command needs admin (e.g. reading `C:\ProgramData\TitaniRun\titanirun.db`, which is ACL'd to SYSTEM + Administrators only), say so explicitly in the same message that contains the command.
+
+---
+
 ## Naming note
 
 "TitaniRun" is a working title. If it changes, it affects: solution/project names (`TitaniRun.*`), the `%ProgramData%\TitaniRun\` path, the `trctl` CLI name, the service name, and installer identifiers. Keep these consistent.

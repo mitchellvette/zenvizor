@@ -2,7 +2,10 @@ using System.Runtime.Versioning;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TitaniRun.Attribution;
+using TitaniRun.Attribution.Authenticode;
 using TitaniRun.Attribution.IpHelper;
+using TitaniRun.Attribution.Paths;
+using TitaniRun.Attribution.Services;
 using TitaniRun.Capture;
 using TitaniRun.Core.Aggregation;
 using TitaniRun.Core.Attribution;
@@ -77,7 +80,27 @@ internal sealed class TitaniRunHostedService : IHostedService
             pollIntervalMs: PidTablePollMs,
             logger: _loggerFactory.CreateLogger<IpHelperPidTableSource>());
 
-        var sessionTracker = new SessionTracker(imageResolver);
+        // ---- Phase 2 enrichment ----
+        var signatureVerifier = new WinVerifyTrustSignatureVerifier(
+            _loggerFactory.CreateLogger<WinVerifyTrustSignatureVerifier>());
+        var pathClassifier = new UserWritablePathClassifier();
+        var appEnricher = new AppEnricher(
+            signatureVerifier,
+            pathClassifier,
+            _loggerFactory.CreateLogger<AppEnricher>());
+        var serviceHostResolver = new ScmServiceHostResolver(
+            _loggerFactory.CreateLogger<ScmServiceHostResolver>());
+
+        // One-shot enrichment of any pre-Phase-2 'Unchecked' apps rows. Runs
+        // BEFORE the capture monitor starts so it cannot race with new-session
+        // inserts. Idempotent: re-runs are no-ops once all rows are enriched.
+        var backfill = new EnrichmentBackfill(
+            connections,
+            appEnricher,
+            _loggerFactory.CreateLogger<EnrichmentBackfill>());
+        backfill.Run();
+
+        var sessionTracker = new SessionTracker(imageResolver, appEnricher, serviceHostResolver);
         var aggregator = new TrafficAggregator(
             sessionTracker,
             new PidCorrector(),

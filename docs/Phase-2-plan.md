@@ -1,8 +1,25 @@
 # Phase 2 — Plan
 
-**Status:** Awaiting open-question answers, then ready to start
+**Status:** Open questions resolved 2026-06-01 — proceeding with implementation
 **Last updated:** 2026-06-01
 **Prerequisite:** Phase 1 complete (commit `8cda9ca`, CI green)
+
+## Resolved open questions (2026-06-01)
+
+All ten §2 questions accepted at the proposed defaults:
+
+| # | Decision |
+|---|---|
+| Q1 | Signature cache key: per `(image_path, mtime, size)` |
+| Q2 | svchost service-list: snapshot at session open, never refresh |
+| Q3 | svchost API: native SCM (`EnumServicesStatusEx` + `QueryServiceConfig`) |
+| Q4 | `is_user_writable_path`: prefix match against `%TEMP%` / `%LOCALAPPDATA%` / `%APPDATA%` / `%USERPROFILE%\Downloads` / `%PUBLIC%` |
+| Q5 | `signature_status` ∈ {Signed, Invalid, Unsigned, Unchecked}, mapped from `WinVerifyTrust` return codes |
+| Q6 | Self-signed: follow `WinVerifyTrust` — if local machine trusts the chain, `Signed` |
+| Q7 | Enrichment timing: synchronous in `SqliteFlushSink`, per-`(path,mtime,size)` cache |
+| Q8 | Publisher change → new app row (PRD §7.1 dedup key) |
+| Q9 | No Phase 6 alert plumbing in Phase 2 — strict scope |
+| Q10 | Yes, backfill existing `Unchecked` apps rows on first Phase 2 start. Implementation note: backfill runs **synchronously between migrate and capture-monitor start** so it cannot race with new-session inserts. The "batched in groups of 10 with 100 ms sleeps" guidance is preserved as a smoothing measure for the WinVerifyTrust workload, not as concurrency protection. |
 
 > **For a new Claude Code session picking this up cold:** start by reading this
 > file top-to-bottom. Surface §2 (Open Questions) to the user and **wait for

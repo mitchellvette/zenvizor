@@ -101,15 +101,17 @@ Do not advance past a phase until both checklists pass.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] Given fixture PIDs/paths, service resolution and dedup produce expected `apps`/`process_sessions` rows (service lookups mocked behind an interface).
-- [ ] Signature classifier maps known signed/unsigned/invalid fixtures to correct `signature_status`.
-- [ ] Path heuristic flags user-writable locations correctly.
+- [x] Given fixture PIDs/paths, service resolution and dedup produce expected `apps`/`process_sessions` rows (service lookups mocked behind an interface).
+- [x] Signature classifier maps known signed/unsigned/invalid fixtures to correct `signature_status`.
+- [x] Path heuristic flags user-writable locations correctly.
 
 **Acceptance criteria — manual (your QA)**
 
-- [ ] Real svchost traffic resolves to named services (e.g., `Dnscache`, `Dhcp`), not bare `svchost.exe`; multi-service PIDs show the honest list.
-- [ ] A known signed app shows its publisher; an unsigned binary run from `%TEMP%` shows `Unsigned` + user-writable flag.
-- [ ] Enrichment does **not** raise idle CPU above budget (caching verified — no repeated `WinVerifyTrust` per event).
+See `docs/phase-2-verification.md` for the full walkthrough.
+
+- [x] Real svchost traffic resolves to named services (e.g., `Dnscache`, `Dhcp`), not bare `svchost.exe`; multi-service PIDs show the honest list. *(Walked 2026-06-01: 5 svchost PIDs with named services. Multi-service comma-join deferred to CI — no co-hosted svchost generates network traffic on this Win11 build; covered by `SessionTrackerTests.TryTrack_SvchostPid_PopulatesHostedServices`.)*
+- [x] A known signed app shows its publisher; an unsigned binary run from `%TEMP%` shows `Unsigned` + user-writable flag. *(Walked 2026-06-01: Code/Discord/Chrome all `Signed` with correct publisher CNs; `Add-Type`-generated unsigned PE in `%TEMP%` correctly classified `Unsigned + is_user_writable_path=1`.)*
+- [x] Enrichment does **not** raise idle CPU above budget (caching verified — no repeated `WinVerifyTrust` per event). *(Walked 2026-06-01: 0.08% avg, 1.55% max over 60s sample.)*
 
 ---
 
