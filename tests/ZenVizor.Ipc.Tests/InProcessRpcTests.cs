@@ -63,6 +63,74 @@ public sealed class InProcessRpcTests
         status.ProtocolVersion.Should().Be(ProtocolVersion.Current);
     }
 
+    [Fact]
+    public async Task GetCurrentActivitySnapshot_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        var scripted = new ActivitySnapshot(
+            CapturedAtUnixMs: 1_700_000_005_000L,
+            WindowSeconds: 7.5,
+            Apps: new[]
+            {
+                new AppActivity(
+                    ImageName: "chrome.exe",
+                    ImagePath: @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    Publisher: "Google LLC",
+                    SignatureStatus: "Signed",
+                    IsUserWritablePath: false,
+                    HostedServices: null,
+                    BytesUpTotal: 7_500,
+                    BytesDownTotal: 90_000,
+                    BytesUpPerSec: 1_000.0,
+                    BytesDownPerSec: 12_000.0),
+                new AppActivity(
+                    ImageName: "svchost.exe",
+                    ImagePath: @"C:\Windows\System32\svchost.exe",
+                    Publisher: "Microsoft Corporation",
+                    SignatureStatus: "Signed",
+                    IsUserWritablePath: false,
+                    HostedServices: "Dnscache,DiagTrack",
+                    BytesUpTotal: 750,
+                    BytesDownTotal: 1_500,
+                    BytesUpPerSec: 100.0,
+                    BytesDownPerSec: 200.0),
+            });
+        handler.SetSnapshot(scripted);
+
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetCurrentActivitySnapshotAsync();
+
+        envelope.SchemaVersion.Should().Be(1);
+        envelope.Payload.CapturedAtUnixMs.Should().Be(1_700_000_005_000L);
+        envelope.Payload.WindowSeconds.Should().Be(7.5);
+        envelope.Payload.Apps.Should().HaveCount(2);
+
+        var chrome = envelope.Payload.Apps.Single(a => a.ImageName == "chrome.exe");
+        chrome.Publisher.Should().Be("Google LLC");
+        chrome.SignatureStatus.Should().Be("Signed");
+        chrome.IsUserWritablePath.Should().BeFalse();
+        chrome.HostedServices.Should().BeNull();
+        chrome.BytesDownPerSec.Should().Be(12_000.0);
+
+        var svchost = envelope.Payload.Apps.Single(a => a.ImageName == "svchost.exe");
+        svchost.HostedServices.Should().Be("Dnscache,DiagTrack");
+        svchost.BytesUpTotal.Should().Be(750);
+
+        handler.ActivitySnapshotCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task IpcEnvelope_SchemaVersion_SurvivesSerialization()
+    {
+        var handler = new FakeIpcHandler { SnapshotSchemaVersion = 42 };
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetCurrentActivitySnapshotAsync();
+
+        envelope.SchemaVersion.Should().Be(42);
+    }
+
     /// <summary>
     /// Owns the in-process duplex stream + the JsonRpc instances on both ends.
     /// </summary>

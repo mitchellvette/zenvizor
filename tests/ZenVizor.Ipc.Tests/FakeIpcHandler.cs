@@ -10,14 +10,22 @@ namespace ZenVizor.Ipc.Tests;
 internal sealed class FakeIpcHandler : IZenVizorIpc
 {
     private readonly Func<string, NegotiateVersionResult> _versionPolicy;
+    private Func<ActivitySnapshot> _snapshotProvider;
 
     public FakeIpcHandler(Func<string, NegotiateVersionResult>? versionPolicy = null)
     {
         _versionPolicy = versionPolicy ?? DefaultPolicy;
+        _snapshotProvider = () => new ActivitySnapshot(0, 0.0, Array.Empty<AppActivity>());
     }
 
     public int PingCount { get; private set; }
+    public int ActivitySnapshotCount { get; private set; }
     public string? LastNegotiatedClientVersion { get; private set; }
+
+    public int SnapshotSchemaVersion { get; set; } = 1;
+
+    public void SetSnapshot(ActivitySnapshot snapshot) => _snapshotProvider = () => snapshot;
+    public void SetSnapshotProvider(Func<ActivitySnapshot> provider) => _snapshotProvider = provider;
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -43,6 +51,26 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
             UptimeMs: 0,
             DbPath: @"C:\fake\zenvizor.db",
             CaptureActive: false));
+    }
+
+    public Task<IpcEnvelope<ActivitySnapshot>> GetCurrentActivitySnapshotAsync()
+    {
+        ActivitySnapshotCount++;
+        return Task.FromResult(new IpcEnvelope<ActivitySnapshot>(
+            SchemaVersion: SnapshotSchemaVersion,
+            Payload: _snapshotProvider()));
+    }
+
+    public CaptureStats Stats { get; set; } = new(
+        CapturedAtUnixMs: 1_700_000_000_000L,
+        ObservationsSeen: 0,
+        ObservationsUnattributed: 0);
+
+    public Task<IpcEnvelope<CaptureStats>> GetCaptureStatsAsync()
+    {
+        return Task.FromResult(new IpcEnvelope<CaptureStats>(
+            SchemaVersion: 1,
+            Payload: Stats));
     }
 
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>

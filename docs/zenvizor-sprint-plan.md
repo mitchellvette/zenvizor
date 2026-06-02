@@ -128,14 +128,16 @@ See `docs/phase-2-verification.md` for the full walkthrough.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] Contract tests: snapshot request/response and envelope versioning round-trip in-process.
-- [ ] Snapshot is served from the in-memory aggregate (test asserts no SQLite read on the snapshot path).
+- [x] Contract tests: snapshot request/response and envelope versioning round-trip in-process.
+- [x] Snapshot is served from the in-memory aggregate (test asserts no SQLite read on the snapshot path).
 
 **Acceptance criteria — manual (your QA)**
 
-- [ ] Generate live traffic; the dashboard reflects it with only minor delay/aggregation; rates match reality within tolerance.
-- [ ] **Self-monitoring check:** with the tool running and the UI open, the tool reports **zero outbound** from its own service/UI processes (named-pipe IPC produces no network rows). *This is the founding-invariant gate.*
-- [ ] `zvctl snapshot` returns the same data the UI shows.
+- [x] Generate live traffic; the dashboard reflects it with only minor delay/aggregation; rates match reality within tolerance. *(Gate #1 — verified by `scripts\verify-attribution.ps1`, 5/5 deterministic passes.)*
+- [x] **Self-monitoring check:** with the tool running and the UI open, the tool reports **zero outbound** from its own service/UI processes (named-pipe IPC produces no network rows). *This is the founding-invariant gate.*
+- [x] `zvctl snapshot` returns the same data the UI shows.
+
+**Note:** Phase 3 also uncovered and fixed two attribution gaps that the original plan didn't anticipate: (1) short-lived processes lost image resolution post-exit — fixed via `ProcessLifecycleResolver` fed by kernel ETW `ProcessStart`/`Stop` events; (2) sub-second TCP connections lost receive-path attribution because the polled `GetExtendedTcpTable` snapshot missed them — fixed via `ConnectionLifecycleResolver` fed by kernel ETW `TcpIpConnect`/`Accept`/`Disconnect`. Both fixes use a 60 s grace cache for post-event resolution. New gate: `verify-attribution.ps1` exercises N curl downloads and asserts zero unattributed observations.
 
 ---
 

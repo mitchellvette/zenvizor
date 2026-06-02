@@ -22,14 +22,18 @@ public sealed class TrafficAggregatorTests
         public SessionTracker Tracker { get; }
         public TrafficAggregator Aggregator { get; }
 
-        public Harness()
+        public long FakeNowUnixMs { get; set; }
+
+        public Harness(long initialNowUnixMs = 0)
         {
+            FakeNowUnixMs = initialNowUnixMs;
             Tracker = new SessionTracker(Resolver);
             Aggregator = new TrafficAggregator(
                 Tracker,
                 new PidCorrector(),
                 SnapshotSource,
-                Sink);
+                Sink,
+                nowProvider: () => FakeNowUnixMs);
         }
     }
 
@@ -155,6 +159,94 @@ public sealed class TrafficAggregatorTests
         h.Sink.AllSamples.Should().HaveCount(2);
         h.Sink.AllSamples.Single(s => s.RemoteClass == RemoteClass.Local).BytesUp.Should().Be(200);
         h.Sink.AllSamples.Single(s => s.RemoteClass == RemoteClass.Wan).BytesUp.Should().Be(800);
+    }
+
+    [Fact]
+    public void TakeActivitySnapshot_BeforeFirstFlush_ReturnsEmptyWindow()
+    {
+        var h = new Harness(initialNowUnixMs: 0);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 0));
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 12345);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        h.Aggregator.Observe(Obs(1_000, 100, local, remote, Direction.Up, 5_000));
+        h.FakeNowUnixMs = 2_000;
+
+        var snap = h.Aggregator.TakeActivitySnapshot();
+
+        snap.WindowSeconds.Should().Be(0.0);
+        snap.Apps.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TakeActivitySnapshot_AfterFlush_AggregatesByAppAndComputesRates()
+    {
+        // Bucket span: [0, 5_000]. Two PIDs of the same app contribute; one
+        // svchost PID hosts Dnscache. Snapshot at t=8_000 (5s bucket + 3s partial).
+        var h = new Harness(initialNowUnixMs: 0);
+
+        var chromePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
+        h.Resolver.Set(new ProcessImageInfo(101, chromePath, "chrome.exe", 50));
+        h.Resolver.Set(new ProcessImageInfo(102, chromePath, "chrome.exe", 60));
+        h.Resolver.Set(new ProcessImageInfo(200,
+            @"C:\Windows\System32\svchost.exe", "svchost.exe", 70));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 12345);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        // First bucket: t=1000 → flush at t=5000. Chrome PID 101 + 102, svchost PID 200.
+        h.Aggregator.Observe(Obs(1_000, 101, local, remote, Direction.Up,   500));
+        h.Aggregator.Observe(Obs(1_500, 102, local, remote, Direction.Up, 1_500));
+        h.Aggregator.Observe(Obs(2_000, 200, local, remote, Direction.Down,  250));
+
+        h.FakeNowUnixMs = 5_000;
+        h.Aggregator.Flush(5_000);
+
+        // Partial accumulator: t=5500–7500. Only chrome PID 101.
+        h.Aggregator.Observe(Obs(5_500, 101, local, remote, Direction.Down, 7_000));
+        h.Aggregator.Observe(Obs(7_500, 101, local, remote, Direction.Up,   1_000));
+
+        h.FakeNowUnixMs = 8_000;
+        var snap = h.Aggregator.TakeActivitySnapshot();
+
+        snap.WindowSeconds.Should().Be(8.0);
+        snap.Apps.Should().HaveCount(2);
+
+        var chrome = snap.Apps.Single(a => a.ImageName == "chrome.exe");
+        chrome.BytesUpTotal.Should().Be(3_000);    // 500 + 1500 + 1000
+        chrome.BytesDownTotal.Should().Be(7_000);
+        chrome.BytesUpPerSec.Should().Be(375.0);   // 3000 / 8
+        chrome.BytesDownPerSec.Should().Be(875.0); // 7000 / 8
+
+        var svchost = snap.Apps.Single(a => a.ImageName == "svchost.exe");
+        svchost.BytesUpTotal.Should().Be(0);
+        svchost.BytesDownTotal.Should().Be(250);
+    }
+
+    [Fact]
+    public void TakeActivitySnapshot_PreservesAcrossConsecutiveFlushes()
+    {
+        // After two flushes, only the SECOND bucket contributes to the window
+        // (sliding semantics). Verifies the aggregator and window agree.
+        var h = new Harness(initialNowUnixMs: 0);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 0));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 12345);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        h.Aggregator.Observe(Obs(1_000, 100, local, remote, Direction.Up, 99_999));
+        h.FakeNowUnixMs = 5_000;
+        h.Aggregator.Flush(5_000);
+
+        h.Aggregator.Observe(Obs(7_000, 100, local, remote, Direction.Up, 50));
+        h.FakeNowUnixMs = 10_000;
+        h.Aggregator.Flush(10_000);
+
+        h.FakeNowUnixMs = 10_000;
+        var snap = h.Aggregator.TakeActivitySnapshot();
+
+        snap.WindowSeconds.Should().Be(5.0);
+        snap.Apps.Single().BytesUpTotal.Should().Be(50);
     }
 
     [Fact]

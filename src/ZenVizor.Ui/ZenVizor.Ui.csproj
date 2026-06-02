@@ -5,11 +5,16 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- NU1701: LiveChartsCore.SkiaSharpView.WPF 2.0.4 transitively depends on
+         SkiaSharp.Views.WPF and OpenTK packages that still target legacy net48.
+         They are runtime-compatible with net10.0-windows; the warning is noise. -->
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="WPF-UI" />
     <PackageReference Include="H.NotifyIcon.Wpf" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 

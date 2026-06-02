@@ -4,6 +4,7 @@ using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Classification;
 using ZenVizor.Core.Observations;
 using ZenVizor.Core.Storage;
+using ZenVizor.Ipc.Contracts.Dto;
 
 namespace ZenVizor.Core.Aggregation;
 
@@ -22,10 +23,17 @@ public sealed class TrafficAggregator
     private readonly IFlushSink _sink;
     private readonly int _bucketSeconds;
     private readonly ILogger _logger;
+    private readonly Func<long> _nowProvider;
+    private readonly RollingActivityWindow _activityWindow = new();
 
     // Live accumulators keyed by PID. Swapped on flush.
     private Dictionary<SampleKey, SampleAcc> _samples = new();
     private Dictionary<ConnectionKey, ConnectionAcc> _connections = new();
+
+    // When the current partial accumulator started filling. Used as the start
+    // timestamp for the bucket sealed by the next Flush(); the snapshot rate
+    // denominator is (now − this).
+    private long _partialBucketStartUnixMs;
 
     public TrafficAggregator(
         SessionTracker sessions,
@@ -33,7 +41,8 @@ public sealed class TrafficAggregator
         IPidTableSnapshotSource snapshotSource,
         IFlushSink sink,
         int bucketSeconds = BucketAligner.DefaultBucketSeconds,
-        ILogger<TrafficAggregator>? logger = null)
+        ILogger<TrafficAggregator>? logger = null,
+        Func<long>? nowProvider = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _corrector = corrector ?? throw new ArgumentNullException(nameof(corrector));
@@ -46,6 +55,8 @@ public sealed class TrafficAggregator
         }
         _bucketSeconds = bucketSeconds;
         _logger = (ILogger?)logger ?? NullLogger.Instance;
+        _nowProvider = nowProvider ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _partialBucketStartUnixMs = _nowProvider();
     }
 
     /// <summary>Total observations seen since process start.</summary>
@@ -53,6 +64,15 @@ public sealed class TrafficAggregator
 
     /// <summary>Observations dropped because no PID could be attributed.</summary>
     public long ObservationsUnattributed { get; private set; }
+
+    /// <summary>Atomically snapshot both counters under the aggregator lock.</summary>
+    public (long Seen, long Unattributed) SnapshotObservationCounters()
+    {
+        lock (_gate)
+        {
+            return (ObservationsSeen, ObservationsUnattributed);
+        }
+    }
 
     public void Observe(NetworkObservation observation)
     {
@@ -114,6 +134,8 @@ public sealed class TrafficAggregator
         IReadOnlyList<NewSessionEntry> newSessions;
         IReadOnlyDictionary<int, int> knownPidToSessionId;
         IReadOnlyList<int> closedSessionIds;
+        IReadOnlyDictionary<int, SessionTracker.PidAppInfo> pidToAppSnapshot;
+        long bucketStartUnixMs;
 
         lock (_gate)
         {
@@ -125,6 +147,13 @@ public sealed class TrafficAggregator
             newSessions = _sessions.CollectPendingOpens();
             knownPidToSessionId = _sessions.SnapshotPersistedSessions();
             closedSessionIds = _sessions.CollectStaleSessionIds(nowUnixMs);
+            pidToAppSnapshot = _sessions.SnapshotPidToApp();
+
+            bucketStartUnixMs = _partialBucketStartUnixMs;
+            _partialBucketStartUnixMs = nowUnixMs;
+
+            var rollup = BuildPerAppRollup(samplesSnapshot, pidToAppSnapshot);
+            _activityWindow.OnFlush(rollup, bucketStartUnixMs, nowUnixMs);
         }
 
         var sampleRows = new List<PendingTrafficSample>(samplesSnapshot.Count);
@@ -186,6 +215,56 @@ public sealed class TrafficAggregator
             SampleRowsWritten: result.SampleRowsWritten,
             ConnectionUpserts: result.ConnectionUpserts,
             SessionsClosed: result.SessionsClosed);
+    }
+
+    /// <summary>
+    /// Returns the current rolling-window activity snapshot, served entirely
+    /// from in-memory state. MUST NOT perform any SQLite I/O — that invariant
+    /// is enforced by the Phase-3 integration guard (mirrors the "Observe must
+    /// not write to disk" check from Phase 1).
+    /// </summary>
+    public ActivitySnapshot TakeActivitySnapshot()
+    {
+        var nowUnixMs = _nowProvider();
+        lock (_gate)
+        {
+            var pidToApp = _sessions.SnapshotPidToApp();
+            var partial = BuildPerAppRollup(_samples, pidToApp);
+            return _activityWindow.TakeSnapshot(partial, nowUnixMs);
+        }
+    }
+
+    /// <summary>
+    /// Per-app byte rollup keyed by (AppIdentity, HostedServices). Multiple PIDs
+    /// of the same app collapse; distinct svchost PIDs hosting different service
+    /// sets stay separate (CLAUDE.md invariant #5). Skips samples whose PID is
+    /// no longer in the tracker (rare; happens if a session was reaped between
+    /// the Observe that recorded the sample and this rollup).
+    /// </summary>
+    private static Dictionary<ActivityKey, ActivityBytes> BuildPerAppRollup(
+        IReadOnlyDictionary<SampleKey, SampleAcc> samples,
+        IReadOnlyDictionary<int, SessionTracker.PidAppInfo> pidToApp)
+    {
+        var rollup = new Dictionary<ActivityKey, ActivityBytes>(pidToApp.Count);
+        foreach (var (sampleKey, acc) in samples)
+        {
+            if (!pidToApp.TryGetValue(sampleKey.Pid, out var info))
+            {
+                continue;
+            }
+            var key = new ActivityKey(info.AppIdentity, info.HostedServices);
+            if (rollup.TryGetValue(key, out var existing))
+            {
+                rollup[key] = new ActivityBytes(
+                    existing.BytesUp + acc.BytesUp,
+                    existing.BytesDown + acc.BytesDown);
+            }
+            else
+            {
+                rollup[key] = new ActivityBytes(acc.BytesUp, acc.BytesDown);
+            }
+        }
+        return rollup;
     }
 
     public sealed record FlushSummary(int SampleRowsWritten, int ConnectionUpserts, int SessionsClosed);

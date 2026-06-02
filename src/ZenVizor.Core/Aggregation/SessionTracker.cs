@@ -154,6 +154,22 @@ public sealed class SessionTracker
     }
 
     /// <summary>
+    /// Snapshot of <c>pid → (AppIdentity, HostedServices)</c> across ALL tracked
+    /// PIDs (pending AND persisted). Used by the per-app activity rollup so a
+    /// newly-tracked PID still has its first-window bytes attributed to its app
+    /// before its session row hits SQLite.
+    /// </summary>
+    public IReadOnlyDictionary<int, PidAppInfo> SnapshotPidToApp()
+    {
+        var snapshot = new Dictionary<int, PidAppInfo>(_byPid.Count);
+        foreach (var (pid, state) in _byPid)
+        {
+            snapshot[pid] = new PidAppInfo(state.AppIdentity, state.HostedServices);
+        }
+        return snapshot;
+    }
+
+    /// <summary>
     /// Snapshot of already-persisted (pid → session_id) for the aggregator to
     /// pass through the FlushBatch — the sink uses it to resolve sample/connection PIDs.
     /// </summary>
@@ -265,6 +281,9 @@ public sealed class SessionTracker
         }
         return string.Join(',', services);
     }
+
+    /// <summary>App-level projection of a tracked PID for the activity rollup.</summary>
+    public readonly record struct PidAppInfo(AppIdentity AppIdentity, string? HostedServices);
 
     private sealed class SessionState
     {

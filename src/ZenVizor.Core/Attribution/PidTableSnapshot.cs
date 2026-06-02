@@ -40,6 +40,24 @@ public sealed class PidTableSnapshot
     /// <summary>All distinct PIDs that owned at least one endpoint in this snapshot.</summary>
     public IReadOnlySet<int> Pids { get; }
 
+    /// <summary>Number of (protocol, local endpoint) entries in this snapshot.</summary>
+    public int EntryCount => _byEndpoint.Count;
+
+    /// <summary>
+    /// Enumerate the entries. Used by composing sources (e.g. the connection
+    /// lifecycle resolver) that need to merge multiple snapshot views.
+    /// </summary>
+    public IEnumerable<PidTableEntry> Entries
+    {
+        get
+        {
+            foreach (var (key, pid) in _byEndpoint)
+            {
+                yield return new PidTableEntry(key.Protocol, key.LocalEndpoint, pid);
+            }
+        }
+    }
+
     /// <summary>
     /// Look up the owning PID for a given local endpoint.
     /// </summary>

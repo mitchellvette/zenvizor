@@ -27,4 +27,19 @@ public interface IZenVizorIpc
     /// Phase 0 stub: capture/DB fields will be wired in later phases.
     /// </summary>
     Task<ServiceStatusResult> GetServiceStatusAsync();
+
+    /// <summary>
+    /// Returns a point-in-time view of per-app network activity for the dashboard
+    /// and <c>zvctl snapshot</c>. Served from the in-memory aggregate; the service
+    /// MUST NOT read SQLite on this path (architectural guard, mirrors the
+    /// "Observe must not write to disk" invariant).
+    /// </summary>
+    Task<IpcEnvelope<ActivitySnapshot>> GetCurrentActivitySnapshotAsync();
+
+    /// <summary>
+    /// Returns the hot-path observation counters (seen / unattributed) so QA
+    /// can verify attribution reliability for short-lived processes — the
+    /// Phase-3 lifecycle-resolver gate.
+    /// </summary>
+    Task<IpcEnvelope<CaptureStats>> GetCaptureStatsAsync();
 }

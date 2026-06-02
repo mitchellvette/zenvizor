@@ -10,22 +10,47 @@ namespace ZenVizor.Service;
 /// </summary>
 internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 {
+    /// <summary>Schema version of the <see cref="ActivitySnapshot"/> payload. Bump on incompatible changes.</summary>
+    private const int ActivitySnapshotSchemaVersion = 1;
+
+    /// <summary>Schema version of the <see cref="CaptureStats"/> payload.</summary>
+    private const int CaptureStatsSchemaVersion = 1;
+
     private readonly long _startedAtUnixMs;
     private readonly string _dbPath;
     private readonly Func<bool> _isCaptureActive;
+    private readonly Func<ActivitySnapshot> _snapshotProvider;
+    private readonly Func<CaptureStats> _statsProvider;
     private readonly string _serviceVersion;
 
-    public ZenVizorIpcHandler(long startedAtUnixMs, string dbPath, Func<bool>? isCaptureActive = null)
+    public ZenVizorIpcHandler(
+        long startedAtUnixMs,
+        string dbPath,
+        Func<bool>? isCaptureActive = null,
+        Func<ActivitySnapshot>? snapshotProvider = null,
+        Func<CaptureStats>? statsProvider = null)
     {
         _startedAtUnixMs = startedAtUnixMs;
         _dbPath = dbPath;
         _isCaptureActive = isCaptureActive ?? (() => false);
+        _snapshotProvider = snapshotProvider ?? EmptySnapshot;
+        _statsProvider = statsProvider ?? EmptyStats;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
             ?? typeof(ZenVizorIpcHandler).Assembly.GetName().Version?.ToString()
             ?? "0.0.0";
     }
+
+    private static ActivitySnapshot EmptySnapshot() => new(
+        CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        WindowSeconds: 0.0,
+        Apps: Array.Empty<AppActivity>());
+
+    private static CaptureStats EmptyStats() => new(
+        CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        ObservationsSeen: 0,
+        ObservationsUnattributed: 0);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -61,5 +86,21 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
             UptimeMs: now - _startedAtUnixMs,
             DbPath: _dbPath,
             CaptureActive: _isCaptureActive()));
+    }
+
+    public Task<IpcEnvelope<ActivitySnapshot>> GetCurrentActivitySnapshotAsync()
+    {
+        var payload = _snapshotProvider();
+        return Task.FromResult(new IpcEnvelope<ActivitySnapshot>(
+            SchemaVersion: ActivitySnapshotSchemaVersion,
+            Payload: payload));
+    }
+
+    public Task<IpcEnvelope<CaptureStats>> GetCaptureStatsAsync()
+    {
+        var payload = _statsProvider();
+        return Task.FromResult(new IpcEnvelope<CaptureStats>(
+            SchemaVersion: CaptureStatsSchemaVersion,
+            Payload: payload));
     }
 }

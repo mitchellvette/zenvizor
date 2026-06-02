@@ -74,11 +74,29 @@ internal sealed class ZenVizorHostedService : IHostedService
         var connections = new ConnectionFactory(dbPath);
         var flushSink = new SqliteFlushSink(connections);
 
-        var imageResolver = new RealProcessImageResolver(
-            _loggerFactory.CreateLogger<RealProcessImageResolver>());
-        var pidTableSource = new IpHelperPidTableSource(
+        // ProcessLifecycleResolver is the Phase-3 fix for short-lived process
+        // attribution: an ETW-fed image cache keyed by PID, populated at
+        // process-start time and held past process-exit for a grace window so
+        // trailing network events still resolve. Without this, sub-second
+        // processes (fast curl, single-shot CLI tools) silently lost ALL
+        // attribution because their image couldn't be looked up via Win32
+        // after they exited.
+        var imageResolver = new ProcessLifecycleResolver(
+            logger: _loggerFactory.CreateLogger<ProcessLifecycleResolver>());
+        imageResolver.PrimeFromRunningProcesses();
+
+        // The IpHelper polling source covers two cases the ETW lifecycle
+        // resolver does not: (a) connections that existed before ZenVizor
+        // started — we never see their connect event — and (b) UDP, which
+        // has no connect event. The ConnectionLifecycleResolver layers an
+        // eager ETW-fed cache on top with grace-period retention so trailing
+        // receive events for short-lived TCP connections still resolve.
+        var ipHelperSource = new IpHelperPidTableSource(
             pollIntervalMs: PidTablePollMs,
             logger: _loggerFactory.CreateLogger<IpHelperPidTableSource>());
+        var pidTableSource = new ConnectionLifecycleResolver(
+            ipHelperSource,
+            logger: _loggerFactory.CreateLogger<ConnectionLifecycleResolver>());
 
         // ---- Phase 2 enrichment ----
         var signatureVerifier = new WinVerifyTrustSignatureVerifier(
@@ -109,7 +127,9 @@ internal sealed class ZenVizorHostedService : IHostedService
             logger: _loggerFactory.CreateLogger<TrafficAggregator>());
 
         _captureSource = new EtwCaptureSource(
-            logger: _loggerFactory.CreateLogger<EtwCaptureSource>());
+            logger: _loggerFactory.CreateLogger<EtwCaptureSource>(),
+            processSink: imageResolver,
+            connectionSink: pidTableSource);
         _captureMonitor = new CaptureMonitor(
             _captureSource,
             aggregator,
@@ -123,7 +143,16 @@ internal sealed class ZenVizorHostedService : IHostedService
         var handler = new ZenVizorIpcHandler(
             startedAtUnixMs,
             dbPath,
-            () => _captureMonitor?.IsRunning ?? false);
+            isCaptureActive: () => _captureMonitor?.IsRunning ?? false,
+            snapshotProvider: () => aggregator.TakeActivitySnapshot(),
+            statsProvider: () =>
+            {
+                var (seen, unattributed) = aggregator.SnapshotObservationCounters();
+                return new ZenVizor.Ipc.Contracts.Dto.CaptureStats(
+                    CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    ObservationsSeen: seen,
+                    ObservationsUnattributed: unattributed);
+            });
 
         _pipeServer = new ZenVizorPipeServer(
             handler,

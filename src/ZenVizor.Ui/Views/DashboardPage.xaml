@@ -1,0 +1,101 @@
+<Page x:Class="ZenVizor.Ui.Views.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{DynamicResource ApplicationBackgroundBrush}">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="2*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:TextBlock FontTypography="Subtitle" Text="Current Activity" />
+            <Border x:Name="WarmingBanner" Visibility="Collapsed" Margin="16,0,0,0"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                    Padding="8,4" CornerRadius="4">
+                <TextBlock Text="warming up — first flush bucket lands within ~5 s"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </Border>
+            <Border x:Name="DisconnectedBanner" Visibility="Collapsed" Margin="16,0,0,0"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    Padding="8,4" CornerRadius="4">
+                <TextBlock x:Name="DisconnectedText"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                           Text="service disconnected" />
+            </Border>
+        </StackPanel>
+
+        <Border Grid.Row="1" Padding="8" CornerRadius="6"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <lvc:CartesianChart x:Name="RatesChart" LegendPosition="Top" />
+        </Border>
+
+        <Border Grid.Row="2" Margin="0,12,0,0" CornerRadius="6"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Padding="12,8" BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="200" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="110" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="App" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="Publisher" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="2" Text="Signature" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="3" Text="Up/s" FontWeight="SemiBold" TextAlignment="Right" />
+                        <TextBlock Grid.Column="4" Text="Dn/s" FontWeight="SemiBold" TextAlignment="Right" />
+                    </Grid>
+                </Border>
+
+                <ListView Grid.Row="1" x:Name="TalkersList"
+                          Background="Transparent" BorderThickness="0"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="8,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="200" />
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="110" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding AppLabel}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="{Binding Publisher}" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="2" Text="{Binding SignatureStatus}" />
+                                <TextBlock Grid.Column="3" Text="{Binding UpRateText}" TextAlignment="Right" />
+                                <TextBlock Grid.Column="4" Text="{Binding DownRateText}" TextAlignment="Right" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

@@ -4,8 +4,11 @@ namespace ZenVizor.Storage.Repositories;
 
 /// <summary>
 /// Centralizes the connection string used by all write-path repositories.
+/// <c>Open()</c> is virtual so the Phase-3 integration test can subclass it
+/// to enforce "no SQLite open during a snapshot call" — production code
+/// uses this class directly without subclassing.
 /// </summary>
-public sealed class ConnectionFactory
+public class ConnectionFactory
 {
     private readonly string _connectionString;
 
@@ -23,7 +26,7 @@ public sealed class ConnectionFactory
         }.ToString();
     }
 
-    public SqliteConnection Open()
+    public virtual SqliteConnection Open()
     {
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
