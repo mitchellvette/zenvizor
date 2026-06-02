@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Stop and unregister the TitaniRun dev service.
+    Stop and unregister the ZenVizor dev service.
 
 .DESCRIPTION
-    Mirror of install-dev.ps1. Does NOT delete %ProgramData%\TitaniRun\ -- the
+    Mirror of install-dev.ps1. Does NOT delete %ProgramData%\ZenVizor\ -- the
     SQLite database stays so re-installs preserve history. Pass -PurgeData to
     remove the data directory as well.
 #>
@@ -21,8 +21,8 @@ if (-not ([Security.Principal.WindowsPrincipal] `
     exit 1
 }
 
-$serviceName = 'TitaniRun'
-$dataDir     = Join-Path $env:ProgramData 'TitaniRun'
+$serviceName = 'ZenVizor'
+$dataDir     = Join-Path $env:ProgramData 'ZenVizor'
 
 $existing = & sc.exe query $serviceName 2>$null
 if ($LASTEXITCODE -eq 0) {

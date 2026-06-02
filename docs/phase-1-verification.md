@@ -33,28 +33,28 @@ Get-Command procmon64.exe -ErrorAction SilentlyContinue
 ## 0. One-time build + reinstall
 
 ```powershell
-cd C:\dev\titanirun-monitor
+cd C:\dev\zenvizor-monitor
 
-dotnet build .\TitaniRun.slnx -c Release
-dotnet test  .\TitaniRun.slnx -c Release
+dotnet build .\ZenVizor.slnx -c Release
+dotnet test  .\ZenVizor.slnx -c Release
 
 # Phase 1 service includes the ETW capture engine. Reinstall and start.
 .\scripts\uninstall-dev.ps1 -PurgeData    # clean slate so attribution starts fresh
 .\scripts\install-dev.ps1
-sc.exe query TitaniRun                    # confirm STATE 4 RUNNING
+sc.exe query ZenVizor                    # confirm STATE 4 RUNNING
 
 # Confirm capture is reported active:
-& .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe status
+& .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe status
 # Should print: Capture active  : True
 ```
 
 Test totals to expect from `dotnet test`:
 
-- `TitaniRun.Core.Tests` — 48 pass
-- `TitaniRun.Storage.Tests` — 16 pass
-- `TitaniRun.Ipc.Tests` — 11 pass
-- `TitaniRun.Attribution.Tests` — 8 pass
-- `TitaniRun.Integration.Tests` — 3 pass
+- `ZenVizor.Core.Tests` — 48 pass
+- `ZenVizor.Storage.Tests` — 16 pass
+- `ZenVizor.Ipc.Tests` — 11 pass
+- `ZenVizor.Attribution.Tests` — 8 pass
+- `ZenVizor.Integration.Tests` — 3 pass
 
 ---
 
@@ -91,14 +91,14 @@ Invoke-WebRequest $url -OutFile $dest
 
 Note the **PID** that PowerShell prints — you'll use it as the filter in 1b.
 
-### 1b. Query the DB for what TitaniRun attributed
+### 1b. Query the DB for what ZenVizor attributed
 
 Wait ~10 seconds after the download completes so the next flush tick lands.
 Then query the DB (read-only access; ACL'd to SYSTEM + Administrators — run
 this as an Admin):
 
 ```powershell
-$db = "$env:ProgramData\TitaniRun\titanirun.db"
+$db = "$env:ProgramData\ZenVizor\zenvizor.db"
 
 # Sanity check the DB exists and the schema is in place.
 Test-Path $db                           # True
@@ -160,9 +160,9 @@ attribution bug.
 Stop generating traffic. Wait ~30 seconds. Then:
 
 ```powershell
-# Sample TitaniRun.Service for 60s, report avg % CPU and avg working-set MB.
+# Sample ZenVizor.Service for 60s, report avg % CPU and avg working-set MB.
 $samples = 1..60 | ForEach-Object {
-    $p = Get-Process TitaniRun.Service -ErrorAction SilentlyContinue
+    $p = Get-Process ZenVizor.Service -ErrorAction SilentlyContinue
     if (-not $p) { return }
     [pscustomobject]@{
         Cpu = $p.CPU                                # cumulative seconds
@@ -209,8 +209,8 @@ properties and one scaling property.
 
 1. Launch `procmon.exe` (elevated).
 2. **Filter → Filter** (Ctrl+L), set:
-   - Process Name → `is` → `TitaniRun.Service.exe` → Include
-   - Path → `contains` → `titanirun.db` → Include
+   - Process Name → `is` → `ZenVizor.Service.exe` → Include
+   - Path → `contains` → `zenvizor.db` → Include
    - Operation → `is` → `WriteFile` → Include
 3. Press **OK** and **Clear the display** (Ctrl+X).
 4. Generate steady but modest traffic for 60 seconds (browser tab streaming a
@@ -222,8 +222,8 @@ properties and one scaling property.
 
 | Check                                | Expected                                    | Why                                                                                                                         |
 | ------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Writes to `titanirun.db-wal`         | The overwhelming majority of writes         | WAL is where transactional change pages land; this confirms transactions are short and not bypassing the journal.           |
-| Writes to `titanirun.db` (main file) | Zero or a small number (WAL checkpoints)    | Each non-zero entry here is one auto-checkpoint. Expect zero in a 60s quiet window; a handful is fine under sustained load. |
+| Writes to `zenvizor.db-wal`         | The overwhelming majority of writes         | WAL is where transactional change pages land; this confirms transactions are short and not bypassing the journal.           |
+| Writes to `zenvizor.db` (main file) | Zero or a small number (WAL checkpoints)    | Each non-zero entry here is one auto-checkpoint. Expect zero in a 60s quiet window; a handful is fine under sustained load. |
 | Avg write size                       | ≈ 4,096 bytes (one SQLite page)             | If you see many <100-byte writes, statements are being committed individually instead of batched.                           |
 | Total writes / 12 (flushes/min)      | Pages-per-flush in the low tens (e.g. 5–30) | Each flush transaction writes its dirty page set in one go. Pages-per-flush scales with batch size, not with event rate.    |
 
@@ -277,5 +277,5 @@ services) produces **~200–400 WriteFile/min** in this configuration, all to
   still uses `GetServiceStatus` from Phase 0; per-app live rates land in P3.
 - **Zero-own-traffic self-monitoring** (Phase 3 + 6) — Phase 3 wires the
   self-monitoring assertion. For Phase 1, you can spot-check by running
-  `trctl status` and observing that no IPC RPCs show up as outbound
+  `zvctl status` and observing that no IPC RPCs show up as outbound
   network traffic in the DB (named pipes don't traverse the IP stack).

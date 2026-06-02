@@ -37,24 +37,24 @@ The repo at commit `8cda9ca` has Phase 0 (scaffold/IPC/migrator) and Phase 1
 (ETW capture + PID correction + flushing aggregator) shipped. CI is green on
 windows-latest. 92 headless tests pass:
 
-- `TitaniRun.Core.Tests` (53) — domain types, classification, aggregation, session tracking
-- `TitaniRun.Storage.Tests` (16) — migrator + `SqliteFlushSink` end-to-end
-- `TitaniRun.Ipc.Tests` (11) — version negotiation + round-trip
-- `TitaniRun.Attribution.Tests` (8) — PID correction across all scenarios
-- `TitaniRun.Integration.Tests` (4) — synthetic capture → real SQLite, includes
+- `ZenVizor.Core.Tests` (53) — domain types, classification, aggregation, session tracking
+- `ZenVizor.Storage.Tests` (16) — migrator + `SqliteFlushSink` end-to-end
+- `ZenVizor.Ipc.Tests` (11) — version negotiation + round-trip
+- `ZenVizor.Attribution.Tests` (8) — PID correction across all scenarios
+- `ZenVizor.Integration.Tests` (4) — synthetic capture → real SQLite, includes
   the architectural guard *"Observe() must not write to disk"*
 
 ### 1.2 What's already in place that Phase 2 builds on
 
 | Concern | Where it lives | Phase 2 hooks here? |
 |---|---|---|
-| App identity record | `src/TitaniRun.Core/Storage/AppIdentity.cs` | **Yes** — Phase 1 fills `Publisher=null`, `SignatureStatus="Unchecked"`, `IsUserWritablePath=false`. Phase 2 populates them. |
-| Process image resolver | `src/TitaniRun.Attribution/RealProcessImageResolver.cs` | **Yes** — `AppIdentity` is built from `ProcessImageInfo` in `SessionTracker.ToAppIdentity`. Refactor target. |
-| Session tracker | `src/TitaniRun.Core/Aggregation/SessionTracker.cs` | **Yes** — `ToAppIdentity` is the construction site. Needs to accept an enrichment lookup. |
-| Flush sink | `src/TitaniRun.Storage/Repositories/SqliteFlushSink.cs` | **Yes** — `InsertNewSessions` could trigger enrichment as part of the flush transaction (sync) or defer to a background worker (async). |
-| Schema | `src/TitaniRun.Storage/Migrations/001_initial.sql` | **No schema changes needed** — the columns `publisher`, `signature_status`, `is_user_writable_path` on `apps` and `hosted_services` on `process_sessions` already exist. |
-| Settings | `src/TitaniRun.Storage/Migrations/002_phase1_settings.sql` | Possibly — Phase 2 may add `enrichment.backfill_on_start` etc. |
-| ProgramData/SQLite ACL | `src/TitaniRun.Service/ProgramDataAcl.cs` | **No** — Phase 2 doesn't touch storage perms. |
+| App identity record | `src/ZenVizor.Core/Storage/AppIdentity.cs` | **Yes** — Phase 1 fills `Publisher=null`, `SignatureStatus="Unchecked"`, `IsUserWritablePath=false`. Phase 2 populates them. |
+| Process image resolver | `src/ZenVizor.Attribution/RealProcessImageResolver.cs` | **Yes** — `AppIdentity` is built from `ProcessImageInfo` in `SessionTracker.ToAppIdentity`. Refactor target. |
+| Session tracker | `src/ZenVizor.Core/Aggregation/SessionTracker.cs` | **Yes** — `ToAppIdentity` is the construction site. Needs to accept an enrichment lookup. |
+| Flush sink | `src/ZenVizor.Storage/Repositories/SqliteFlushSink.cs` | **Yes** — `InsertNewSessions` could trigger enrichment as part of the flush transaction (sync) or defer to a background worker (async). |
+| Schema | `src/ZenVizor.Storage/Migrations/001_initial.sql` | **No schema changes needed** — the columns `publisher`, `signature_status`, `is_user_writable_path` on `apps` and `hosted_services` on `process_sessions` already exist. |
+| Settings | `src/ZenVizor.Storage/Migrations/002_phase1_settings.sql` | Possibly — Phase 2 may add `enrichment.backfill_on_start` etc. |
+| ProgramData/SQLite ACL | `src/ZenVizor.Service/ProgramDataAcl.cs` | **No** — Phase 2 doesn't touch storage perms. |
 
 ### 1.3 What's intentionally NOT in scope here
 
@@ -170,7 +170,7 @@ signature record at all).
 **Why this matters for the product:** the value of `Signed` is supposed to
 mean "the local machine trusts this code's identity." Defining it as
 "`WinVerifyTrust` succeeded" makes that statement true. Anything stricter
-introduces a TitaniRun-specific definition that diverges from OS behavior.
+introduces a ZenVizor-specific definition that diverges from OS behavior.
 
 ### Q7. Enrichment timing — sync in `SqliteFlushSink` vs async background worker?
 
@@ -230,7 +230,7 @@ again — which for short-lived processes might be never.
 
 ## 3. Sprint Plan Phase 2 reference
 
-Restated from `docs/titanirun-sprint-plan.md` lines 91–103:
+Restated from `docs/zenvizor-sprint-plan.md` lines 91–103:
 
 **Goal:** Turn "svchost.exe / unknown" into actionable identity — the core of
 the product's value.
@@ -266,13 +266,13 @@ the product's value.
 
 ## 4. Proposed implementation plan
 
-### 4.1 New abstractions (TitaniRun.Core)
+### 4.1 New abstractions (ZenVizor.Core)
 
 Defined as interfaces in `Core` so the `Storage` layer can call into
 implementations from `Attribution`, and tests can swap mocks behind them.
 
 ```
-src/TitaniRun.Core/Attribution/
+src/ZenVizor.Core/Attribution/
   IAppEnricher.cs              — single entry point. Sync method.
                                  AppIdentity Enrich(image_path, image_name, nowMs);
   EnrichmentResult.cs          — record carrying signature_status, publisher,
@@ -283,12 +283,12 @@ src/TitaniRun.Core/Attribution/
                                  returns null if PID is not a service host.
 ```
 
-### 4.2 Implementations (TitaniRun.Attribution)
+### 4.2 Implementations (ZenVizor.Attribution)
 
 Phase 2's home for the Win32-specific pieces.
 
 ```
-src/TitaniRun.Attribution/
+src/ZenVizor.Attribution/
   Authenticode/
     WinVerifyTrustSignatureVerifier.cs
       — P/Invoke wrapNet.WinTrust calls.
@@ -318,7 +318,7 @@ src/TitaniRun.Attribution/
 Phase 2 changes:
 
 ```csharp
-// Before (Phase 1, src/TitaniRun.Core/Aggregation/SessionTracker.cs):
+// Before (Phase 1, src/ZenVizor.Core/Aggregation/SessionTracker.cs):
 private static AppIdentity ToAppIdentity(ProcessImageInfo image) =>
     new(image.ImagePath, image.ImageName, Publisher: null,
         SignatureStatus: "Unchecked", IsUserWritablePath: false);
@@ -337,10 +337,10 @@ verbatim per CLAUDE.md invariant #5 (no byte-splitting).
 
 ### 4.4 Backfill worker (per Q10)
 
-A one-shot startup task in `TitaniRunHostedService`:
+A one-shot startup task in `ZenVizorHostedService`:
 
 ```
-src/TitaniRun.Service/EnrichmentBackfill.cs
+src/ZenVizor.Service/EnrichmentBackfill.cs
   — On Phase 2 first start (detected by SELECT COUNT FROM apps
     WHERE signature_status='Unchecked' > 0), enumerate Unchecked apps,
     enrich each, UPDATE the apps row.
@@ -360,7 +360,7 @@ src/TitaniRun.Service/EnrichmentBackfill.cs
 5. `AppEnricher` composition + cache + tests.
 6. Refactor `SessionTracker` to accept `IAppEnricher`. Update tests.
 7. Refactor `SqliteFlushSink` to write the enriched fields. Update tests.
-8. Wire enrichment in `TitaniRunHostedService`.
+8. Wire enrichment in `ZenVizorHostedService`.
 9. `EnrichmentBackfill` worker.
 10. Update `docs/phase-2-verification.md` with manual gate walkthroughs.
 11. Full build/test sweep, commit, watch CI, manual gates on real box.
@@ -390,10 +390,10 @@ Already present from Phase 1:
 
 | Project | Adds |
 |---|---|
-| `TitaniRun.Attribution.Tests` | `UserWritablePathClassifierTests` (prefix-match correctness). `AppEnricherTests` (composition + caching: same path+mtime+size hits cache; mtime change invalidates). |
-| `TitaniRun.Storage.Tests` | `SqliteFlushSink` writes enriched fields correctly; publisher-change-creates-new-app dedup behavior. |
-| `TitaniRun.Integration.Tests` | End-to-end with a fake `IAppEnricher` that returns scripted results; assert exact `apps` rows reflect the enrichment. |
-| `TitaniRun.Core.Tests` | `SessionTrackerTests` — verify the enricher is called once per `(path, mtime, size)`, not per `ResolveSessionId`. |
+| `ZenVizor.Attribution.Tests` | `UserWritablePathClassifierTests` (prefix-match correctness). `AppEnricherTests` (composition + caching: same path+mtime+size hits cache; mtime change invalidates). |
+| `ZenVizor.Storage.Tests` | `SqliteFlushSink` writes enriched fields correctly; publisher-change-creates-new-app dedup behavior. |
+| `ZenVizor.Integration.Tests` | End-to-end with a fake `IAppEnricher` that returns scripted results; assert exact `apps` rows reflect the enrichment. |
+| `ZenVizor.Core.Tests` | `SessionTrackerTests` — verify the enricher is called once per `(path, mtime, size)`, not per `ResolveSessionId`. |
 
 ### 6.2 Fixture binaries
 
@@ -488,7 +488,7 @@ All of the following pass:
 ### File listing of Phase 1 outputs (commit `8cda9ca`)
 
 ```
-src/TitaniRun.Core/
+src/ZenVizor.Core/
   Aggregation/
     BucketAligner.cs
     SessionTracker.cs       ← Phase 2 modifies ToAppIdentity here
@@ -511,11 +511,11 @@ src/TitaniRun.Core/
     FlushBatch.cs           ← NewSessionEntry already carries AppIdentity
     IFlushSink.cs
 
-src/TitaniRun.Attribution/
+src/ZenVizor.Attribution/
   IpHelper/                 ← Phase 1
   RealProcessImageResolver.cs  ← Phase 2 may compose with enricher
 
-src/TitaniRun.Storage/
+src/ZenVizor.Storage/
   Migrations/
     001_initial.sql         ← apps columns already exist; no schema changes
     002_phase1_settings.sql
@@ -524,19 +524,19 @@ src/TitaniRun.Storage/
     ConnectionFactory.cs
     SqliteFlushSink.cs      ← Phase 2 writes the enriched fields
 
-src/TitaniRun.Service/
+src/ZenVizor.Service/
   CaptureMonitor.cs
   ProgramDataAcl.cs
-  TitaniRunHostedService.cs  ← Phase 2 wires enricher into pipeline
-  TitaniRunIpcHandler.cs
+  ZenVizorHostedService.cs  ← Phase 2 wires enricher into pipeline
+  ZenVizorIpcHandler.cs
 ```
 
 ### How to run the full test sweep locally
 
 ```powershell
-cd C:\dev\titanirun-monitor
-dotnet build .\TitaniRun.slnx -c Release
-dotnet test  .\TitaniRun.slnx -c Release
+cd C:\dev\zenvizor-monitor
+dotnet build .\ZenVizor.slnx -c Release
+dotnet test  .\ZenVizor.slnx -c Release
 ```
 
 ### How to install/reinstall the dev service
@@ -545,6 +545,6 @@ dotnet test  .\TitaniRun.slnx -c Release
 # Elevated:
 .\scripts\uninstall-dev.ps1 [-PurgeData]
 .\scripts\install-dev.ps1
-sc.exe query TitaniRun
-& .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe status
+sc.exe query ZenVizor
+& .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe status
 ```

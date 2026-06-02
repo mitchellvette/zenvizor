@@ -1,12 +1,12 @@
-# CLAUDE.md — TitaniRun
+# CLAUDE.md — ZenVizor
 
-Project conventions and standing constraints for Claude Code. Read this before doing work in this repo. The full spec is in `titanirun-prd.md`; the build sequence and QA gates are in `titanirun-sprint-plan.md`.
+Project conventions and standing constraints for Claude Code. Read this before doing work in this repo. The full spec is in `zenvizor-prd.md`; the build sequence and QA gates are in `zenvizor-sprint-plan.md`.
 
 ---
 
 ## What this project is
 
-TitaniRun is a lightweight, **passive** Windows network monitor/reporter. It attributes up/down network traffic to the originating process/service, stores history locally in SQLite, shows a near-live dashboard, and produces daily reports. It is **not** a firewall — there is no blocking, shaping, or active intervention of any kind.
+ZenVizor is a lightweight, **passive** Windows network monitor/reporter. It attributes up/down network traffic to the originating process/service, stores history locally in SQLite, shows a near-live dashboard, and produces daily reports. It is **not** a firewall — there is no blocking, shaping, or active intervention of any kind.
 
 ---
 
@@ -44,30 +44,30 @@ Pin dependency versions in the project files. Do not introduce a dependency that
 ## Repository layout
 
 ```
-TitaniRun.sln
+ZenVizor.sln
   src/
-    TitaniRun.Service/        # Windows Service host (LocalSystem)
-    TitaniRun.Capture/        # ICaptureSource: ETW source + synthetic source
-    TitaniRun.Attribution/    # PID correction, svchost resolution, signer/path
-    TitaniRun.Core/           # aggregation, rollups, alert pipeline, domain models
-    TitaniRun.Storage/        # SQLite, migrations, repositories
-    TitaniRun.Ipc.Contracts/  # versioned IPC contract — single source of truth
-    TitaniRun.Ipc.Server/     # named-pipe + StreamJsonRpc server
-    TitaniRun.Ipc.Client/     # named-pipe + StreamJsonRpc client
-    TitaniRun.Ui/             # WPF + WPF-UI + LiveCharts2, system tray
-    TitaniRun.Cli/            # trctl — CLI client for QA/automation
+    ZenVizor.Service/        # Windows Service host (LocalSystem)
+    ZenVizor.Capture/        # ICaptureSource: ETW source + synthetic source
+    ZenVizor.Attribution/    # PID correction, svchost resolution, signer/path
+    ZenVizor.Core/           # aggregation, rollups, alert pipeline, domain models
+    ZenVizor.Storage/        # SQLite, migrations, repositories
+    ZenVizor.Ipc.Contracts/  # versioned IPC contract — single source of truth
+    ZenVizor.Ipc.Server/     # named-pipe + StreamJsonRpc server
+    ZenVizor.Ipc.Client/     # named-pipe + StreamJsonRpc client
+    ZenVizor.Ui/             # WPF + WPF-UI + LiveCharts2, system tray
+    ZenVizor.Cli/            # zvctl — CLI client for QA/automation
   tests/
-    TitaniRun.Core.Tests/
-    TitaniRun.Attribution.Tests/
-    TitaniRun.Storage.Tests/
-    TitaniRun.Ipc.Tests/            # contract tests, no real pipe
-    TitaniRun.Integration.Tests/    # pipe round-trips, synthetic end-to-end
+    ZenVizor.Core.Tests/
+    ZenVizor.Attribution.Tests/
+    ZenVizor.Storage.Tests/
+    ZenVizor.Ipc.Tests/            # contract tests, no real pipe
+    ZenVizor.Integration.Tests/    # pipe round-trips, synthetic end-to-end
   installer/
-    TitaniRun.Installer/      # WiX project
+    ZenVizor.Installer/      # WiX project
   .github/workflows/          # CI
 ```
 
-Runtime data lives under `%ProgramData%\TitaniRun\` (DB + config), ACL'd to SYSTEM + Administrators.
+Runtime data lives under `%ProgramData%\ZenVizor\` (DB + config), ACL'd to SYSTEM + Administrators.
 
 ---
 
@@ -89,10 +89,10 @@ Build these as specified; they exist so post-MVP modules slot in without re-arch
 
 ```bash
 # Build
-dotnet build TitaniRun.sln -c Release
+dotnet build ZenVizor.sln -c Release
 
 # Headless tests (these run in CI — must pass before advancing a phase)
-dotnet test TitaniRun.sln -c Release
+dotnet test ZenVizor.sln -c Release
 
 # Installer (must be CLI-drivable)
 wix build ...   # produces the .msi artifact
@@ -101,9 +101,9 @@ wix build ...   # produces the .msi artifact
 sc.exe create / start / stop / delete   # or the provided install scripts
 
 # CLI client for manual/scripted QA
-trctl ping
-trctl snapshot
-trctl <command> ...
+zvctl ping
+zvctl snapshot
+zvctl <command> ...
 ```
 
 ---
@@ -128,11 +128,11 @@ trctl <command> ...
 
 ## Workflow expectations
 
-- **Work phase by phase** per `titanirun-sprint-plan.md`. Each phase has CI and manual acceptance criteria; do not start a later phase before the current one's criteria pass.
+- **Work phase by phase** per `zenvizor-sprint-plan.md`. Each phase has CI and manual acceptance criteria; do not start a later phase before the current one's criteria pass.
 - **The human personally QAs each milestone.** Produce the artifacts and the means to verify them (CLI commands, test output, clear "how to check" notes) at each phase boundary.
 - **Surface tool dependencies up front, before the user runs the validation.** When a manual gate's commands require an external tool that isn't built into Windows (e.g. `psexec`, `accesschk`, `wix`, `signtool`), check whether it's installed *first* and tell the user how to get it (winget command preferred) *before* they try to run the steps. This applies to verification docs (`docs/phase-*-verification.md`) and to any inline instructions in chat — anything the user is about to copy/paste. If a fallback that uses only built-in tools exists, mention it alongside the primary path. Reason: a missing dependency mid-validation forces the user to context-switch into install/troubleshoot, and the validation ends up taking 5x as long as it should.
 - When something is ambiguous or a request conflicts with an invariant above, **stop and ask** rather than guessing.
-- Keep `TitaniRun.Ipc.Contracts` the single source of truth for the IPC surface; service, UI, and `trctl` all depend on it.
+- Keep `ZenVizor.Ipc.Contracts` the single source of truth for the IPC surface; service, UI, and `zvctl` all depend on it.
 - Update the PRD/Sprint Plan if a decision changes — don't let code and docs drift.
 
 ---
@@ -145,10 +145,10 @@ Reproducible paste-into-PowerShell failures we've hit on this project. Don't han
   - **Prefer:** single-line invocations with the SQL or payload as a double-quoted argument. For `sqlite3.exe`, use CLI flags (`-readonly -header -column`) instead of the dot-commands you'd type at the `sqlite>` prompt — e.g. `sqlite3.exe -readonly -header -column $db "SELECT ..."` covers `.headers on` + `.mode column` + the query in one line.
   - **If multi-line input is genuinely required**, stage it via a one-line `Set-Content` from an array of single-line strings (e.g. `'line1','line2' | Set-Content path.sql`), then point the tool at the file (`sqlite3.exe ... ".read path.sql"`).
 - **Markdown ` ```sql ` blocks paste differently than ` ```powershell ` blocks** depending on whether the source is the rendered IDE preview or the raw `.md` source. When the user is going to copy from the doc, the doc should already wrap the SQL in a PowerShell-callable form. Don't rely on the user knowing which surface to copy from.
-- **Don't assume the user is in an elevated shell** just because they were a minute ago — sessions get reopened. Whenever a command needs admin (e.g. reading `C:\ProgramData\TitaniRun\titanirun.db`, which is ACL'd to SYSTEM + Administrators only), say so explicitly in the same message that contains the command.
+- **Don't assume the user is in an elevated shell** just because they were a minute ago — sessions get reopened. Whenever a command needs admin (e.g. reading `C:\ProgramData\ZenVizor\zenvizor.db`, which is ACL'd to SYSTEM + Administrators only), say so explicitly in the same message that contains the command.
 
 ---
 
 ## Naming note
 
-"TitaniRun" is a working title. If it changes, it affects: solution/project names (`TitaniRun.*`), the `%ProgramData%\TitaniRun\` path, the `trctl` CLI name, the service name, and installer identifiers. Keep these consistent.
+The project is **ZenVizor** (renamed 2026-06-01 from the working title "TitaniRun"). All identifiers are consistent: solution/project names (`ZenVizor.*`), the `%ProgramData%\ZenVizor\` data dir, the `zvctl` CLI, the Windows Service name (`ZenVizor`), the named pipe (`ZenVizor.Ipc.v1`), and (future) installer identifiers. If you find a stray `TitaniRun` / `titanirun` / `trctl` reference in source, scripts, or docs, treat it as a rename miss and fix it.

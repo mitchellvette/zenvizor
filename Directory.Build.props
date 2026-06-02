@@ -18,9 +18,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <Deterministic>true</Deterministic>
-    <Product>TitaniRun</Product>
-    <Company>TitaniRun</Company>
-    <Copyright>Copyright (c) TitaniRun</Copyright>
+    <Product>ZenVizor</Product>
+    <Company>ZenVizor</Company>
+    <Copyright>Copyright (c) ZenVizor</Copyright>
     <Version>0.1.0</Version>
   </PropertyGroup>
 

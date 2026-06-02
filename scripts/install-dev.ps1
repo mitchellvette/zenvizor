@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Register the TitaniRun service from the Release build output for development.
+    Register the ZenVizor service from the Release build output for development.
 
 .DESCRIPTION
     Builds the Service project in Release if needed, then registers it with the
@@ -31,17 +31,17 @@ if (-not ([Security.Principal.WindowsPrincipal] `
 }
 
 $repoRoot   = Resolve-Path (Join-Path $PSScriptRoot '..')
-$serviceCsproj = Join-Path $repoRoot 'src\TitaniRun.Service\TitaniRun.Service.csproj'
-$serviceName = 'TitaniRun'
+$serviceCsproj = Join-Path $repoRoot 'src\ZenVizor.Service\ZenVizor.Service.csproj'
+$serviceName = 'ZenVizor'
 
 if (-not $NoBuild) {
-    Write-Host "Building TitaniRun.Service (Release)..." -ForegroundColor Cyan
+    Write-Host "Building ZenVizor.Service (Release)..." -ForegroundColor Cyan
     & dotnet build $serviceCsproj -c Release --nologo | Write-Host
     if ($LASTEXITCODE -ne 0) { throw "Build failed." }
 }
 
-$serviceDll = Join-Path $repoRoot 'src\TitaniRun.Service\bin\Release\net10.0-windows\TitaniRun.Service.dll'
-$serviceExe = Join-Path $repoRoot 'src\TitaniRun.Service\bin\Release\net10.0-windows\TitaniRun.Service.exe'
+$serviceDll = Join-Path $repoRoot 'src\ZenVizor.Service\bin\Release\net10.0-windows\ZenVizor.Service.dll'
+$serviceExe = Join-Path $repoRoot 'src\ZenVizor.Service\bin\Release\net10.0-windows\ZenVizor.Service.exe'
 
 # Worker template produces both a .dll and a small launcher .exe on Windows.
 if (-not (Test-Path $serviceExe)) {
@@ -60,10 +60,10 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host "Registering $serviceName from $serviceExe..." -ForegroundColor Cyan
-& sc.exe create $serviceName binPath= "`"$serviceExe`"" start= $StartMode DisplayName= "TitaniRun" | Write-Host
+& sc.exe create $serviceName binPath= "`"$serviceExe`"" start= $StartMode DisplayName= "ZenVizor" | Write-Host
 if ($LASTEXITCODE -ne 0) { throw "sc create failed." }
 
-& sc.exe description $serviceName "TitaniRun passive network monitor (dev install)." | Out-Null
+& sc.exe description $serviceName "ZenVizor passive network monitor (dev install)." | Out-Null
 
 Write-Host "Starting $serviceName..." -ForegroundColor Cyan
 & sc.exe start $serviceName | Write-Host
@@ -72,5 +72,5 @@ if ($LASTEXITCODE -ne 0) { throw "sc start failed." }
 Write-Host ""
 Write-Host "Service is installed and running. Verify with:" -ForegroundColor Green
 Write-Host "  sc.exe query $serviceName"
-Write-Host "  trctl ping       (build src/TitaniRun.Cli first)"
-Write-Host "  Get-EventLog -LogName Application -Source TitaniRun -Newest 5"
+Write-Host "  zvctl ping       (build src/ZenVizor.Cli first)"
+Write-Host "  Get-EventLog -LogName Application -Source ZenVizor -Newest 5"

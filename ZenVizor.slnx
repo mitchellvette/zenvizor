@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ZenVizor.Attribution/ZenVizor.Attribution.csproj" />
+    <Project Path="src/ZenVizor.Capture/ZenVizor.Capture.csproj" />
+    <Project Path="src/ZenVizor.Cli/ZenVizor.Cli.csproj" />
+    <Project Path="src/ZenVizor.Core/ZenVizor.Core.csproj" />
+    <Project Path="src/ZenVizor.Ipc.Client/ZenVizor.Ipc.Client.csproj" />
+    <Project Path="src/ZenVizor.Ipc.Contracts/ZenVizor.Ipc.Contracts.csproj" />
+    <Project Path="src/ZenVizor.Ipc.Server/ZenVizor.Ipc.Server.csproj" />
+    <Project Path="src/ZenVizor.Service/ZenVizor.Service.csproj" />
+    <Project Path="src/ZenVizor.Storage/ZenVizor.Storage.csproj" />
+    <Project Path="src/ZenVizor.Ui/ZenVizor.Ui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ZenVizor.Attribution.Tests/ZenVizor.Attribution.Tests.csproj" />
+    <Project Path="tests/ZenVizor.Core.Tests/ZenVizor.Core.Tests.csproj" />
+    <Project Path="tests/ZenVizor.Integration.Tests/ZenVizor.Integration.Tests.csproj" />
+    <Project Path="tests/ZenVizor.Ipc.Tests/ZenVizor.Ipc.Tests.csproj" />
+    <Project Path="tests/ZenVizor.Storage.Tests/ZenVizor.Storage.Tests.csproj" />
+  </Folder>
+</Solution>

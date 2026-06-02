@@ -29,14 +29,14 @@ jobs:
         run: dotnet --info
 
       - name: Restore
-        run: dotnet restore TitaniRun.slnx
+        run: dotnet restore ZenVizor.slnx
 
       - name: Build
-        run: dotnet build TitaniRun.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
+        run: dotnet build ZenVizor.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
 
       - name: Test
         run: >
-          dotnet test TitaniRun.slnx
+          dotnet test ZenVizor.slnx
           --configuration ${{ env.CONFIGURATION }}
           --no-build
           --logger "trx;LogFileName=test-results.trx"

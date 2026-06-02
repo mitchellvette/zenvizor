@@ -7,7 +7,7 @@ and svchost-PID → hosted-service-name resolution. CI covers the headless gates
 walks through the **five manual gates** that must hold on a real Windows box.
 
 > Run everything below from an **elevated PowerShell**. The service runs
-> as LocalSystem and the DB at `C:\ProgramData\TitaniRun\titanirun.db` is
+> as LocalSystem and the DB at `C:\ProgramData\ZenVizor\zenvizor.db` is
 > ACL'd to SYSTEM + Administrators only — a non-elevated shell will get
 > "unable to open database file" even if your account is in the
 > Administrators group (UAC strips the admin half of the split token from
@@ -22,7 +22,7 @@ dependency mid-validation makes the whole exercise take 5× longer.
 
 ```powershell
 # Sysinternals sigcheck — used in Gate #2 to cross-verify Authenticode
-# verdicts against the value TitaniRun stores.
+# verdicts against the value ZenVizor stores.
 Get-Command sigcheck.exe -ErrorAction SilentlyContinue
 Get-Command sigcheck64.exe -ErrorAction SilentlyContinue
 # Both empty? Install:
@@ -61,30 +61,30 @@ the command line.
 ## 0. One-time build + reinstall
 
 ```powershell
-cd C:\dev\titanirun-monitor
+cd C:\dev\zenvizor-monitor
 
-dotnet build .\TitaniRun.slnx -c Release
-dotnet test  .\TitaniRun.slnx -c Release
+dotnet build .\ZenVizor.slnx -c Release
+dotnet test  .\ZenVizor.slnx -c Release
 
 # Phase 2 changes the apps-table column population pattern but does not
 # require dropping the DB. To exercise the backfill path (Gate #5), keep the
 # Phase 1 DB. To start clean, pass -PurgeData.
 .\scripts\uninstall-dev.ps1               # leave -PurgeData OFF to test backfill
 .\scripts\install-dev.ps1
-sc.exe query TitaniRun                    # confirm STATE 4 RUNNING
+sc.exe query ZenVizor                    # confirm STATE 4 RUNNING
 
 # Confirm capture is reported active and the service is talking:
-& .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe status
+& .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe status
 # Should print: Capture active  : True
 ```
 
 Test totals to expect from `dotnet test`:
 
-- `TitaniRun.Core.Tests` — 58 pass
-- `TitaniRun.Storage.Tests` — 24 pass
-- `TitaniRun.Ipc.Tests` — 11 pass
-- `TitaniRun.Attribution.Tests` — 30 pass
-- `TitaniRun.Integration.Tests` — 4 pass
+- `ZenVizor.Core.Tests` — 58 pass
+- `ZenVizor.Storage.Tests` — 24 pass
+- `ZenVizor.Ipc.Tests` — 11 pass
+- `ZenVizor.Attribution.Tests` — 30 pass
+- `ZenVizor.Integration.Tests` — 4 pass
 
 Let the service run for ~3 minutes before starting the gates so several
 flush windows have completed.
@@ -92,7 +92,7 @@ flush windows have completed.
 ```powershell
 # Convenience: open a read-only query window against the DB. Must be an
 # elevated PowerShell — the DB is ACL'd to SYSTEM + Administrators.
-$db = 'C:\ProgramData\TitaniRun\titanirun.db'
+$db = 'C:\ProgramData\ZenVizor\zenvizor.db'
 sqlite3.exe -readonly $db
 ```
 
@@ -183,8 +183,8 @@ Get-CimInstance Win32_Service |
     Select-Object Name, DisplayName, State
 ```
 
-The names returned by `Get-CimInstance` should be the same set TitaniRun
-stored in `hosted_services` (order may differ — TitaniRun sorts ordinally).
+The names returned by `Get-CimInstance` should be the same set ZenVizor
+stored in `hosted_services` (order may differ — ZenVizor sorts ordinally).
 
 ---
 
@@ -239,7 +239,7 @@ sigcheck.exe -nobanner -n -q "C:\Path\To\Code.exe"
 Get-AuthenticodeSignature "C:\Path\To\Code.exe" | Format-List Status, SignerCertificate
 ```
 
-The verdicts should agree. If TitaniRun says `Signed` and sigcheck says
+The verdicts should agree. If ZenVizor says `Signed` and sigcheck says
 `Signed`, the gate passes for this binary.
 
 ### Known boundaries (NOT a Phase 2 failure)
@@ -341,7 +341,7 @@ icacls $p
 # the current user can write the file.
 ```
 
-If the ACL check shows the user has write access but TitaniRun stored
+If the ACL check shows the user has write access but ZenVizor stored
 `is_user_writable_path = 0`, the gate has failed (false negative in the
 heuristic). Investigate `UserWritablePathClassifier.EnumerateDefaultPrefixes`.
 
@@ -359,10 +359,10 @@ of per binary version — measurable as a CPU spike.
 
 ```powershell
 # Sample the service over 60 seconds; report mean and 95th-percentile CPU.
-$proc = Get-Process -Name TitaniRun.Service -ErrorAction Stop
+$proc = Get-Process -Name ZenVizor.Service -ErrorAction Stop
 $samples = @()
 for ($i = 0; $i -lt 60; $i++) {
-    $samples += (Get-Counter "\Process(TitaniRun.Service)\% Processor Time" -SampleInterval 1 -MaxSamples 1).CounterSamples.CookedValue
+    $samples += (Get-Counter "\Process(ZenVizor.Service)\% Processor Time" -SampleInterval 1 -MaxSamples 1).CounterSamples.CookedValue
 }
 $samples | Measure-Object -Average -Maximum |
     Select-Object @{N='avg_cpu_pct'; E={[math]::Round($_.Average, 2)}},
@@ -397,13 +397,13 @@ Phase 1 DB has rows with `signature_status = 'Unchecked'` and `publisher
 IS NULL`. Backfill should sweep them on first Phase 2 start.
 
 Check the service's most recent start sequence. The Serilog file sink at
-`C:\ProgramData\TitaniRun\logs\service-<date>.log` is the source of truth
-(set up in `src/TitaniRun.Service/Program.cs`). The Event Log sink is
+`C:\ProgramData\ZenVizor\logs\service-<date>.log` is the source of truth
+(set up in `src/ZenVizor.Service/Program.cs`). The Event Log sink is
 secondary and may fail silently on first install if event-source creation
 hits a permissions wall.
 
 ```powershell
-Get-ChildItem "C:\ProgramData\TitaniRun\logs\service-*.log" |
+Get-ChildItem "C:\ProgramData\ZenVizor\logs\service-*.log" |
     ForEach-Object { Get-Content $_.FullName | Select-String 'Enrichment backfill' }
 ```
 
@@ -412,7 +412,7 @@ and `-ProviderName` are in different parameter sets and can't be combined
 directly):
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='TitaniRun'} `
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ZenVizor'} `
     -MaxEvents 100 -ErrorAction SilentlyContinue |
     Where-Object Message -Match 'Enrichment backfill' |
     Select-Object TimeCreated, Message
@@ -472,5 +472,5 @@ sqlite3.exe -readonly -header -column $db "SELECT signature_status, COUNT(*) AS 
 ## Done
 
 If all five gates pass, mark the Phase 2 boxes in
-`docs/titanirun-sprint-plan.md` and proceed to Phase 3 (live IPC for the
+`docs/zenvizor-sprint-plan.md` and proceed to Phase 3 (live IPC for the
 UI).

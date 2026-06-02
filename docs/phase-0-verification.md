@@ -4,7 +4,7 @@ Phase 0 produces a buildable solution, a do-nothing service, a launchable UI, an
 in-process IPC contract, and a SQLite migration runner. CI covers the headless
 gates; this doc walks through the three **manual** gates from the Sprint Plan.
 
-> Run everything below from an **elevated PowerShell** unless noted. `trctl`
+> Run everything below from an **elevated PowerShell** unless noted. `zvctl`
 > commands work from a normal shell since they only consume the pipe as an
 > interactive user.
 
@@ -13,14 +13,14 @@ gates; this doc walks through the three **manual** gates from the Sprint Plan.
 ## 0. One-time build
 
 ```powershell
-dotnet build .\TitaniRun.slnx -c Release
-dotnet test  .\TitaniRun.slnx -c Release
+dotnet build .\ZenVizor.slnx -c Release
+dotnet test  .\ZenVizor.slnx -c Release
 ```
 
 `dotnet test` should report:
 
-- `TitaniRun.Storage.Tests` — 8/8 pass (covers the migration runner CI gate).
-- `TitaniRun.Ipc.Tests` — 11/11 pass (covers the in-process IPC version-negotiation CI gate).
+- `ZenVizor.Storage.Tests` — 8/8 pass (covers the migration runner CI gate).
+- `ZenVizor.Ipc.Tests` — 11/11 pass (covers the in-process IPC version-negotiation CI gate).
 - Other test projects: 0 tests (placeholders for later phases).
 
 ---
@@ -40,34 +40,34 @@ From an **elevated** PowerShell:
 Verify the service is running:
 
 ```powershell
-sc.exe query TitaniRun
+sc.exe query ZenVizor
 # STATE should be: 4  RUNNING
 ```
 
 Verify the startup log line in **both** sinks:
 
 ```powershell
-# Event Viewer (Application log) — source "TitaniRun":
-Get-EventLog -LogName Application -Source TitaniRun -Newest 3 |
+# Event Viewer (Application log) — source "ZenVizor":
+Get-EventLog -LogName Application -Source ZenVizor -Newest 3 |
     Format-List TimeGenerated, EntryType, Message
 
-# Serilog rolling file under %ProgramData%\TitaniRun\logs\:
-Get-Content "$env:ProgramData\TitaniRun\logs\service-*.log" -Tail 10
+# Serilog rolling file under %ProgramData%\ZenVizor\logs\:
+Get-Content "$env:ProgramData\ZenVizor\logs\service-*.log" -Tail 10
 ```
 
 You should see a line containing:
 
-> `TitaniRun service started. DbPath=...\titanirun.db Pipe=\\.\pipe\TitaniRun.Ipc.v1`
+> `ZenVizor service started. DbPath=...\zenvizor.db Pipe=\\.\pipe\ZenVizor.Ipc.v1`
 
 Confirm stop/uninstall:
 
 ```powershell
 .\scripts\uninstall-dev.ps1
-sc.exe query TitaniRun
+sc.exe query ZenVizor
 # Should report: 1060 — service does not exist
 ```
 
-The DB at `%ProgramData%\TitaniRun\titanirun.db` is preserved by default. Pass
+The DB at `%ProgramData%\ZenVizor\zenvizor.db` is preserved by default. Pass
 `-PurgeData` to `uninstall-dev.ps1` to remove the data directory.
 
 ---
@@ -82,41 +82,41 @@ Reinstall the service if you uninstalled it (`.\scripts\install-dev.ps1`).
 From a **non-elevated** terminal:
 
 ```powershell
-dotnet run --project .\src\TitaniRun.Ui\TitaniRun.Ui.csproj -c Release
+dotnet run --project .\src\ZenVizor.Ui\ZenVizor.Ui.csproj -c Release
 ```
 
 Or run the built EXE directly:
 
 ```powershell
-& .\src\TitaniRun.Ui\bin\Release\net10.0-windows\TitaniRun.Ui.exe
+& .\src\ZenVizor.Ui\bin\Release\net10.0-windows\ZenVizor.Ui.exe
 ```
 
 Verify, in order:
 
-- [x] Window appears with TitaniRun title bar and a left-side NavigationView containing **Dashboard, Per-App, History, Reports, Alerts, Settings**.
-- [x] A TitaniRun tray icon appears in the system tray (notification area).
+- [x] Window appears with ZenVizor title bar and a left-side NavigationView containing **Dashboard, Per-App, History, Reports, Alerts, Settings**.
+- [x] A ZenVizor tray icon appears in the system tray (notification area).
 - [x] The bottom-bar status shows **"Service: connected (0.1.0, proto 1.0)"** within ~5 seconds (or **"disconnected …"** if the service is not running).
 - [x] Clicking the title-bar **X** hides the window but the tray icon remains (close-to-tray).
 - [x] Left-clicking the tray icon **restores** the window.
-- [x] Right-clicking the tray → **Show TitaniRun** also restores.
-- [x] Right-clicking the tray → **Exit** terminates the process (verify with Task Manager — `TitaniRun.Ui` is gone).
+- [x] Right-clicking the tray → **Show ZenVizor** also restores.
+- [x] Right-clicking the tray → **Exit** terminates the process (verify with Task Manager — `ZenVizor.Ui` is gone).
 
 ---
 
-## 3. `trctl` round-trips + unauthorized access is rejected
+## 3. `zvctl` round-trips + unauthorized access is rejected
 
 > Sprint Plan, Phase 0 manual gate:
-> *"`trctl ping` round-trips over the real named pipe; unauthorized/unACL'd access is rejected."*
+> *"`zvctl ping` round-trips over the real named pipe; unauthorized/unACL'd access is rejected."*
 
 ### 3a. Round-trip
 
 ```powershell
 # Build the CLI once:
-dotnet build .\src\TitaniRun.Cli\TitaniRun.Cli.csproj -c Release
+dotnet build .\src\ZenVizor.Cli\ZenVizor.Cli.csproj -c Release
 
-# Run it (named output is trctl.dll/trctl.exe):
-& .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe ping
-& .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe status
+# Run it (named output is zvctl.dll/zvctl.exe):
+& .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe ping
+& .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe status
 ```
 
 `ping` prints a single `pong  (Nms)  server-ts <unix-ms>` line and exits 0.
@@ -153,23 +153,23 @@ Get-Command psexec.exe -ErrorAction SilentlyContinue
 & psexec.exe -u "NT AUTHORITY\NetworkService" `
     -accepteula -nobanner `
     powershell.exe -Command `
-    "& '.\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe' ping"
+    "& '.\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe' ping"
 ```
 
-Expected: `trctl` exits non-zero with an UnauthorizedAccessException or pipe
+Expected: `zvctl` exits non-zero with an UnauthorizedAccessException or pipe
 connect failure (NetworkService is not in the Interactive group).
 
 **Option B — schtasks one-shot as a non-interactive account:**
 
 ```powershell
-# Run trctl from the Task Scheduler as NetworkService and inspect the result.
-$exe = (Resolve-Path .\src\TitaniRun.Cli\bin\Release\net10.0-windows\trctl.exe).Path
-schtasks /create /tn TitaniRunPipeAclTest /ru "NT AUTHORITY\NetworkService" `
+# Run zvctl from the Task Scheduler as NetworkService and inspect the result.
+$exe = (Resolve-Path .\src\ZenVizor.Cli\bin\Release\net10.0-windows\zvctl.exe).Path
+schtasks /create /tn ZenVizorPipeAclTest /ru "NT AUTHORITY\NetworkService" `
     /tr "`"$exe`" ping" /sc once /st 23:59 /f | Out-Null
-schtasks /run /tn TitaniRunPipeAclTest
+schtasks /run /tn ZenVizorPipeAclTest
 Start-Sleep -Seconds 2
-schtasks /query /tn TitaniRunPipeAclTest /v /fo LIST | Select-String "Last Result"
-schtasks /delete /tn TitaniRunPipeAclTest /f | Out-Null
+schtasks /query /tn ZenVizorPipeAclTest /v /fo LIST | Select-String "Last Result"
+schtasks /delete /tn ZenVizorPipeAclTest /f | Out-Null
 ```
 
 The reported "Last Result" should be **non-zero** (the non-interactive account
