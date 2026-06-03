@@ -5,7 +5,10 @@
       "Bash(dotnet new worker *)",
       "Bash(dotnet new wpf *)",
       "Bash(git push *)",
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(dotnet --info)",
+      "Bash(git -C /c/dev/zenvizor commit -m ' *)",
+      "Bash(git -C /c/dev/zenvizor log --oneline -3)"
     ]
   }
 }
