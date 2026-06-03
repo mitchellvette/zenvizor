@@ -7,8 +7,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- NU1701: LiveChartsCore.SkiaSharpView.WPF 2.0.4 transitively depends on
          SkiaSharp.Views.WPF and OpenTK packages that still target legacy net48.
-         They are runtime-compatible with net10.0-windows; the warning is noise. -->
-    <NoWarn>$(NoWarn);NU1701</NoWarn>
+         They are runtime-compatible with net10.0-windows; the warning is noise.
+         VSTHRD100/101: async-void event handlers and async lambdas attached to
+         WPF events are idiomatic in code-behind; exceptions inside RefreshAsync
+         are caught and surfaced via the StatusBanner, not allowed to propagate. -->
+    <NoWarn>$(NoWarn);NU1701;VSTHRD100;VSTHRD101</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ZenVizor.Core\ZenVizor.Core.csproj" />
     <ProjectReference Include="..\ZenVizor.Ipc.Client\ZenVizor.Ipc.Client.csproj" />
     <ProjectReference Include="..\ZenVizor.Ipc.Contracts\ZenVizor.Ipc.Contracts.csproj" />
   </ItemGroup>

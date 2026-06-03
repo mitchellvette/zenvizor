@@ -19,6 +19,25 @@ public partial class MainWindow : FluentWindow
         _poller = new ServiceStatusPoller();
         _poller.StatusChanged += OnStatusChanged;
 
+        // Wire navigation targets in code so XAML doesn't need to resolve
+        // same-assembly view types via x:Type (BAML pass-1 can't see them).
+        NavDashboard.TargetPageType = typeof(DashboardPage);
+        NavPerApp.TargetPageType    = typeof(PerAppPage);
+        NavHistory.TargetPageType   = typeof(HistoryPage);
+        NavReports.TargetPageType   = typeof(ReportsPage);
+        NavAlerts.TargetPageType    = typeof(AlertsPage);
+        NavSettings.TargetPageType  = typeof(SettingsPage);
+
+        // Cache page instances so picker state (window, grain, scroll position)
+        // survives navigation away and back. Without this, each nav rail click
+        // constructs a fresh page and resets every picker to its default.
+        NavDashboard.NavigationCacheMode = NavigationCacheMode.Enabled;
+        NavPerApp.NavigationCacheMode    = NavigationCacheMode.Enabled;
+        NavHistory.NavigationCacheMode   = NavigationCacheMode.Enabled;
+        NavReports.NavigationCacheMode   = NavigationCacheMode.Enabled;
+        NavAlerts.NavigationCacheMode    = NavigationCacheMode.Enabled;
+        NavSettings.NavigationCacheMode  = NavigationCacheMode.Enabled;
+
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -78,30 +97,6 @@ public partial class MainWindow : FluentWindow
             WindowState = WindowState.Normal;
         }
         Activate();
-    }
-
-    private void OnNavigationSelectionChanged(NavigationView sender, RoutedEventArgs args)
-    {
-        if (sender.SelectedItem is not NavigationViewItem item || item.Tag is not string tag)
-        {
-            return;
-        }
-
-        var pageType = tag switch
-        {
-            "Dashboard" => typeof(DashboardPage),
-            "PerApp"    => typeof(PerAppPage),
-            "History"   => typeof(HistoryPage),
-            "Reports"   => typeof(ReportsPage),
-            "Alerts"    => typeof(AlertsPage),
-            "Settings"  => typeof(SettingsPage),
-            _ => (Type?)null,
-        };
-
-        if (pageType is not null)
-        {
-            sender.Navigate(pageType);
-        }
     }
 
     private void OnStatusChanged(object? sender, ServiceStatusUpdate update)

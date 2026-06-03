@@ -12,7 +12,7 @@ namespace ZenVizor.Ui.Services;
 internal sealed class ServiceStatusPoller : IDisposable
 {
     private readonly TimeSpan _interval = TimeSpan.FromSeconds(5);
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource? _cts;
     private Task? _loop;
 
     public event EventHandler<ServiceStatusUpdate>? StatusChanged;
@@ -23,44 +23,84 @@ internal sealed class ServiceStatusPoller : IDisposable
         {
             return;
         }
-
+        // Fresh CTS per Start() so a Stop()/Start() sequence resumes polling
+        // — mirrors ActivitySnapshotPoller. Currently MainWindow only starts /
+        // disposes once, but the latent bug surfaces if the lifetime ever changes.
+        _cts = new CancellationTokenSource();
         _loop = Task.Run(() => RunAsync(_cts.Token));
+    }
+
+    public void Stop()
+    {
+        var cts = _cts;
+        _cts = null;
+        _loop = null;
+        if (cts is not null)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        // Persistent pipe across ticks; reconnects on any error. See
+        // ActivitySnapshotPoller for the same rationale.
+        ZenVizorPipeClient? client = null;
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await using var client = await ZenVizorPipeClient.ConnectAsync(
-                    connectTimeout: TimeSpan.FromSeconds(2),
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    client ??= await ZenVizorPipeClient.ConnectAsync(
+                        connectTimeout: TimeSpan.FromSeconds(2),
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                var status = await client.Proxy.GetServiceStatusAsync().ConfigureAwait(false);
+                    var status = await client.Proxy.GetServiceStatusAsync().ConfigureAwait(false);
 
-                Raise(new ServiceStatusUpdate(
-                    IsConnected: true,
-                    ServiceVersion: status.Version,
-                    ProtocolVersion: status.ProtocolVersion,
-                    Message: "connected"));
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Raise(new ServiceStatusUpdate(
-                    IsConnected: false,
-                    ServiceVersion: null,
-                    ProtocolVersion: null,
-                    Message: $"disconnected ({ex.GetType().Name})"));
-            }
+                    Raise(new ServiceStatusUpdate(
+                        IsConnected: true,
+                        ServiceVersion: status.Version,
+                        ProtocolVersion: status.ProtocolVersion,
+                        Message: "connected"));
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Raise(new ServiceStatusUpdate(
+                        IsConnected: false,
+                        ServiceVersion: null,
+                        ProtocolVersion: null,
+                        Message: $"disconnected ({ex.GetType().Name})"));
 
-            try
-            {
-                await Task.Delay(_interval, cancellationToken).ConfigureAwait(false);
+                    if (client is not null)
+                    {
+                        try { await client.DisposeAsync().ConfigureAwait(false); }
+                        catch { }
+                        client = null;
+                    }
+                }
+
+                try
+                {
+                    await Task.Delay(_interval, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
-            catch (OperationCanceledException)
+        }
+        finally
+        {
+            if (client is not null)
             {
-                break;
+                try { await client.DisposeAsync().ConfigureAwait(false); }
+                catch { }
             }
         }
     }
@@ -68,11 +108,7 @@ internal sealed class ServiceStatusPoller : IDisposable
     private void Raise(ServiceStatusUpdate update) =>
         StatusChanged?.Invoke(this, update);
 
-    public void Dispose()
-    {
-        _cts.Cancel();
-        _cts.Dispose();
-    }
+    public void Dispose() => Stop();
 }
 
 internal sealed record ServiceStatusUpdate(

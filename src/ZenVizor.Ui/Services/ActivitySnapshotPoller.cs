@@ -16,7 +16,7 @@ namespace ZenVizor.Ui.Services;
 internal sealed class ActivitySnapshotPoller : IDisposable
 {
     private readonly TimeSpan _interval = TimeSpan.FromSeconds(2);
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource? _cts;
     private Task? _loop;
 
     public event EventHandler<ActivitySnapshotUpdate>? SnapshotReceived;
@@ -27,42 +27,87 @@ internal sealed class ActivitySnapshotPoller : IDisposable
         {
             return;
         }
+        // Fresh CTS each Start() so that a Stop()/Start() sequence (the cached
+        // DashboardPage Unload→Load cycle) resumes polling instead of hitting
+        // the disposed token from the previous run.
+        _cts = new CancellationTokenSource();
         _loop = Task.Run(() => RunAsync(_cts.Token));
+    }
+
+    public void Stop()
+    {
+        var cts = _cts;
+        _cts = null;
+        _loop = null;
+        if (cts is not null)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        // One persistent pipe across ticks; reconnects opportunistically after
+        // any error. Cuts the steady-state cost of a fresh handshake per 2 s
+        // tick — the dashboard banner is what surfaces a disconnect, so a
+        // brief delay before next reconnect is fine.
+        ZenVizorPipeClient? client = null;
+        try
         {
-            try
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await using var client = await ZenVizorPipeClient.ConnectAsync(
-                    connectTimeout: TimeSpan.FromSeconds(2),
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    client ??= await ZenVizorPipeClient.ConnectAsync(
+                        connectTimeout: TimeSpan.FromSeconds(2),
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                var envelope = await client.Proxy.GetCurrentActivitySnapshotAsync()
-                    .ConfigureAwait(false);
+                    var envelope = await client.Proxy.GetCurrentActivitySnapshotAsync()
+                        .ConfigureAwait(false);
 
-                Raise(new ActivitySnapshotUpdate(
-                    IsConnected: true,
-                    Envelope: envelope,
-                    FailureReason: null));
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Raise(new ActivitySnapshotUpdate(
-                    IsConnected: false,
-                    Envelope: null,
-                    FailureReason: ex.GetType().Name));
-            }
+                    Raise(new ActivitySnapshotUpdate(
+                        IsConnected: true,
+                        Envelope: envelope,
+                        FailureReason: null));
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Raise(new ActivitySnapshotUpdate(
+                        IsConnected: false,
+                        Envelope: null,
+                        FailureReason: ex.GetType().Name));
 
-            try
-            {
-                await Task.Delay(_interval, cancellationToken).ConfigureAwait(false);
+                    // Any error invalidates the connection. Drop the client
+                    // so the next tick reconnects from scratch.
+                    if (client is not null)
+                    {
+                        try { await client.DisposeAsync().ConfigureAwait(false); }
+                        catch { }
+                        client = null;
+                    }
+                }
+
+                try
+                {
+                    await Task.Delay(_interval, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
-            catch (OperationCanceledException)
+        }
+        finally
+        {
+            if (client is not null)
             {
-                break;
+                try { await client.DisposeAsync().ConfigureAwait(false); }
+                catch { }
             }
         }
     }
@@ -70,11 +115,7 @@ internal sealed class ActivitySnapshotPoller : IDisposable
     private void Raise(ActivitySnapshotUpdate update) =>
         SnapshotReceived?.Invoke(this, update);
 
-    public void Dispose()
-    {
-        _cts.Cancel();
-        _cts.Dispose();
-    }
+    public void Dispose() => Stop();
 }
 
 internal sealed record ActivitySnapshotUpdate(

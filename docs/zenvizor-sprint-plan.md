@@ -153,15 +153,21 @@ See `docs/phase-2-verification.md` for the full walkthrough.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] Rollup correctness: sample fixtures roll up to exact hourly/daily totals.
-- [ ] Retention: rows older than configured windows are purged; newer retained; rollups preserved per policy.
-- [ ] User-defined-window query over fixtures returns exact expected totals at each grain.
+- [x] Rollup correctness: sample fixtures roll up to exact hourly/daily totals.
+- [x] Retention: rows older than configured windows are purged; newer retained; rollups preserved per policy.
+- [x] User-defined-window query over fixtures returns exact expected totals at each grain.
 
 **Acceptance criteria — manual (your QA)**
 
-- [ ] Per-app list totals reconcile with the daily numbers and with the live view over the same window.
-- [ ] Drill app → connections shows correct endpoints with local/WAN + protocol; drill → history series matches.
-- [ ] Changing the query window updates results correctly; large windows stay responsive (served from rollups).
+- [x] Per-app list totals reconcile with the daily numbers and with the live view over the same window.
+- [x] Drill app → connections shows correct endpoints with local/WAN + protocol; drill → history series matches.
+- [x] Changing the query window updates results correctly; large windows stay responsive (served from rollups).
+
+Manual gates documented in `docs/phase-4-verification.md`. CI gates cover the
+rollup-on-flush path, retention-by-tier deletion, and per-tier query
+correctness via fixtures. All three manual gates passed on 2026-06-03 after
+a UI-side perf round (DataGrid virtualization, chart point cap, persistent
+IPC, duplicate-scan removal). 212 / 212 tests passing.
 
 ---
 

@@ -1,0 +1,69 @@
+<Page x:Class="ZenVizor.Ui.Views.PerAppPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Background="{DynamicResource ApplicationBackgroundBrush}">
+
+    <!-- AppsGrid row virtualization is engaged programmatically — see
+         PerAppPage.EnforceAppsGridBound. See AppDetailPage.xaml for the
+         full rationale. -->
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:TextBlock FontTypography="Subtitle" Text="Per-App" />
+            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    Padding="8,4" CornerRadius="4">
+                <TextBlock x:Name="StatusBannerText"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+            </Border>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox x:Name="WindowCombo" Width="200"
+                      SelectionChanged="OnWindowSelectionChanged" />
+            <ui:Button x:Name="RefreshButton" Margin="12,0,0,0"
+                       Content="Refresh" Click="OnRefreshClick" />
+        </StackPanel>
+
+        <Border Grid.Row="2" CornerRadius="6"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <DataGrid x:Name="AppsGrid"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="None"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      RowBackground="Transparent"
+                      AlternatingRowBackground="{DynamicResource SubtleFillColorTertiaryBrush}"
+                      MouseDoubleClick="OnRowDoubleClick"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      EnableRowVirtualization="True"
+                      EnableColumnVirtualization="False"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      VirtualizingPanel.ScrollUnit="Item"
+                      ScrollViewer.CanContentScroll="True"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="App"         Binding="{Binding ImageName}"        Width="2*" />
+                    <DataGridTextColumn Header="Publisher"   Binding="{Binding PublisherDisplay}" Width="2*" />
+                    <DataGridTextColumn Header="Signature"   Binding="{Binding SignatureStatus}"  Width="100" />
+                    <DataGridTextColumn Header="Up"          Binding="{Binding UpText}"           Width="110" />
+                    <DataGridTextColumn Header="Down"        Binding="{Binding DownText}"         Width="110" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</Page>

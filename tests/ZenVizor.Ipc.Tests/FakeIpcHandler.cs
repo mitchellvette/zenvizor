@@ -73,6 +73,31 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
             Payload: Stats));
     }
 
+    // ---- Phase 4 query surface: scriptable stubs for contract tests ----
+
+    public AppListResult AppList { get; set; } =
+        new(new QueryWindow(0, 0), Array.Empty<AppListEntry>());
+    public AppDetailResult AppDetail { get; set; } =
+        new(new QueryWindow(0, 0), TrafficGrain.Samples,
+            new AppListEntry(0, "", "", null, "Unchecked", false, 0, 0, 0, 0),
+            Array.Empty<TrafficPoint>(), Array.Empty<SessionInfo>());
+    public ConnectionListResult Connections { get; set; } =
+        new(new QueryWindow(0, 0), Array.Empty<ConnectionRow>());
+    public TrafficHistoryResult History { get; set; } =
+        new(new QueryWindow(0, 0), TrafficGrain.Samples, Array.Empty<TrafficPoint>());
+
+    public Task<IpcEnvelope<AppListResult>> GetAppListAsync(QueryWindow window) =>
+        Task.FromResult(new IpcEnvelope<AppListResult>(1, AppList));
+
+    public Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain) =>
+        Task.FromResult(new IpcEnvelope<AppDetailResult>(1, AppDetail));
+
+    public Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window) =>
+        Task.FromResult(new IpcEnvelope<ConnectionListResult>(1, Connections));
+
+    public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain) =>
+        Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(1, History));
+
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>
         ProtocolVersion.IsCompatible(clientVersion)
             ? new NegotiateVersionResult(Accepted: true, ServerVersion: ProtocolVersion.Current, Reason: null)

@@ -57,7 +57,7 @@ public partial class DashboardPage : Page
         _poller.SnapshotReceived += OnSnapshotReceived;
 
         Loaded += (_, _) => _poller.Start();
-        Unloaded += (_, _) => _poller.Dispose();
+        Unloaded += (_, _) => _poller.Stop();
     }
 
     private void OnSnapshotReceived(object? sender, ActivitySnapshotUpdate update)

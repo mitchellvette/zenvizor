@@ -101,9 +101,10 @@ for ($i = 1; $i -le $Iterations; $i++) {
     }
     Write-Host ("  curl finished in {0:n0} ms" -f $sw.ElapsedMilliseconds)
 
-    # Give the service ONE poll cycle for ETW events to drain into the partial
-    # accumulator. The bytes don't need to flush -- they're in the rolling window.
-    Start-Sleep -Milliseconds 500
+    # Give the service time for ETW events to drain through the kernel buffer
+    # into the partial accumulator. 500 ms was too tight under load -- TraceEvent
+    # buffer flush cadence can be 250-1000 ms depending on rate.
+    Start-Sleep -Milliseconds 1500
 
     $after = Get-Stats
     Write-Host ("  after:    seen={0} unattributed={1}" -f $after.Seen, $after.Unattributed)

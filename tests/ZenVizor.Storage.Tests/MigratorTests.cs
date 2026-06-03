@@ -44,7 +44,7 @@ public sealed class MigratorTests : IDisposable
 
         var applied = migrator.Migrate(_dbPath);
 
-        applied.Should().BeEquivalentTo(new[] { 1, 2 });
+        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4 });
     }
 
     [Fact]
@@ -81,11 +81,15 @@ public sealed class MigratorTests : IDisposable
             "SELECT version, name FROM schema_migrations ORDER BY version;",
             r => (Version: r.GetInt32(0), Name: r.GetString(1)));
 
-        rows.Should().HaveCount(2);
+        rows.Should().HaveCount(4);
         rows[0].Version.Should().Be(1);
         rows[0].Name.Should().Be("initial");
         rows[1].Version.Should().Be(2);
         rows[1].Name.Should().Be("phase1_settings");
+        rows[2].Version.Should().Be(3);
+        rows[2].Name.Should().Be("phase4_rollup_unique");
+        rows[3].Version.Should().Be(4);
+        rows[3].Name.Should().Be("phase4_rollup_backfill");
     }
 
     [Fact]
@@ -137,8 +141,11 @@ public sealed class MigratorTests : IDisposable
         indexes.Should().Contain("ix_traffic_samples_bucket");
         indexes.Should().Contain("ix_traffic_samples_session_bucket");
         indexes.Should().Contain("ux_connections_endpoint");
-        indexes.Should().Contain("ix_traffic_hourly_app_bucket");
-        indexes.Should().Contain("ix_traffic_daily_app_bucket");
+        // Phase 4: rollup tables get unique indexes for ON CONFLICT UPSERT;
+        // the original non-unique ix_traffic_hourly_app_bucket / _daily_app_bucket
+        // are dropped by migration 003.
+        indexes.Should().Contain("ux_traffic_hourly_app_bucket_class");
+        indexes.Should().Contain("ux_traffic_daily_app_bucket_class");
         indexes.Should().Contain("ux_apps_path_publisher");
     }
 

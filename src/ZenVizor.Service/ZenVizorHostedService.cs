@@ -29,6 +29,7 @@ internal sealed class ZenVizorHostedService : IHostedService
 {
     // Defaults; later phases will source these from the settings table.
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(5000);
+    private static readonly TimeSpan RetentionPurgeInterval = TimeSpan.FromHours(24);
     private const long PidTablePollMs = 1000;
 
     private readonly ILogger<ZenVizorHostedService> _logger;
@@ -36,6 +37,8 @@ internal sealed class ZenVizorHostedService : IHostedService
     private ZenVizorPipeServer? _pipeServer;
     private CaptureMonitor? _captureMonitor;
     private EtwCaptureSource? _captureSource;
+    private CancellationTokenSource? _retentionCts;
+    private Task? _retentionLoop;
 
     public ZenVizorHostedService(
         ILogger<ZenVizorHostedService> logger,
@@ -139,6 +142,7 @@ internal sealed class ZenVizorHostedService : IHostedService
         await _captureMonitor.StartAsync(cancellationToken).ConfigureAwait(false);
 
         // ---- IPC ----
+        var queryRepo = new AppHistoryQueryRepository(connections);
         var startedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var handler = new ZenVizorIpcHandler(
             startedAtUnixMs,
@@ -152,21 +156,77 @@ internal sealed class ZenVizorHostedService : IHostedService
                     CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     ObservationsSeen: seen,
                     ObservationsUnattributed: unattributed);
-            });
+            },
+            appListProvider:     w        => queryRepo.GetAppList(w),
+            appDetailProvider:   (id,w,g) => queryRepo.GetAppDetail(id, w, g),
+            connectionsProvider: (id,w)   => queryRepo.GetConnections(id, w),
+            historyProvider:     (w,g)    => queryRepo.GetTrafficHistory(w, g));
 
         _pipeServer = new ZenVizorPipeServer(
             handler,
             _loggerFactory.CreateLogger<ZenVizorPipeServer>());
         _pipeServer.Start();
 
+        // ---- Retention purge: one immediate run + once per 24 h thereafter. ----
+        var retention = new RetentionRepository(
+            connections, _loggerFactory.CreateLogger<RetentionRepository>());
+        _retentionCts = new CancellationTokenSource();
+        _retentionLoop = Task.Run(() => RunRetentionLoopAsync(retention, _retentionCts.Token));
+
         _logger.LogInformation(
             "ZenVizor service started. DbPath={DbPath} Pipe=\\\\.\\pipe\\ZenVizor.Ipc.v1 CaptureActive={Active}",
             dbPath, _captureMonitor.IsRunning);
     }
 
+    private async Task RunRetentionLoopAsync(RetentionRepository retention, CancellationToken cancellationToken)
+    {
+        // Immediate purge on startup so a freshly-installed service that
+        // hasn't run for a long time doesn't carry a backlog into capture.
+        TryRunPurge(retention);
+
+        try
+        {
+            using var timer = new PeriodicTimer(RetentionPurgeInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            {
+                TryRunPurge(retention);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void TryRunPurge(RetentionRepository retention)
+    {
+        try
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            retention.PurgeOlderThan(now);
+        }
+        catch (Exception ex)
+        {
+            // Purge failures are non-fatal — the next tick retries.
+            _logger.LogWarning(ex, "Retention purge failed; will retry on next tick.");
+        }
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("ZenVizor service stopping.");
+
+        if (_retentionCts is not null)
+        {
+            _retentionCts.Cancel();
+            if (_retentionLoop is not null)
+            {
+                try { await _retentionLoop.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+            _retentionCts.Dispose();
+            _retentionCts = null;
+            _retentionLoop = null;
+        }
 
         if (_pipeServer is not null)
         {

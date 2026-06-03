@@ -29,37 +29,40 @@
                            Grid.Row="1"
                            PaneDisplayMode="Left"
                            IsBackButtonVisible="Collapsed"
-                           OpenPaneLength="220"
-                           SelectionChanged="OnNavigationSelectionChanged">
+                           OpenPaneLength="220">
+            <!-- TargetPageType is wired programmatically in MainWindow.xaml.cs
+                 to avoid the same-assembly XAML type-reference issue (WPF's
+                 BAML pass-1 can't resolve x:Type to types defined in other
+                 XAML files in the same assembly). -->
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Dashboard" Tag="Dashboard">
+                <ui:NavigationViewItem x:Name="NavDashboard" Content="Dashboard">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="DataPie24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Per-App" Tag="PerApp">
+                <ui:NavigationViewItem x:Name="NavPerApp" Content="Per-App">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Apps24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="History" Tag="History">
+                <ui:NavigationViewItem x:Name="NavHistory" Content="History">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="History24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Reports" Tag="Reports">
+                <ui:NavigationViewItem x:Name="NavReports" Content="Reports">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="DocumentText24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Alerts" Tag="Alerts">
+                <ui:NavigationViewItem x:Name="NavAlerts" Content="Alerts">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Alert24" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem Content="Settings" Tag="Settings">
+                <ui:NavigationViewItem x:Name="NavSettings" Content="Settings">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Settings24" />
                     </ui:NavigationViewItem.Icon>

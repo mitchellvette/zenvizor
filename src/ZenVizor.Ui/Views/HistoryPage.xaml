@@ -1,0 +1,60 @@
+<Page x:Class="ZenVizor.Ui.Views.HistoryPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{DynamicResource ApplicationBackgroundBrush}">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:TextBlock FontTypography="Subtitle" Text="History" />
+            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    Padding="8,4" CornerRadius="4">
+                <TextBlock x:Name="StatusBannerText"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+            </Border>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox x:Name="WindowCombo" Width="180" SelectionChanged="OnSelectionChanged" />
+            <ui:Button Margin="12,0,0,0" Content="Refresh" Click="OnRefreshClick" />
+        </StackPanel>
+
+        <Border Grid.Row="2" Margin="0,0,0,12" Padding="12,8" CornerRadius="6"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <StackPanel>
+                <TextBlock x:Name="ChartSubtitle"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="SummaryLine" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" Padding="8" CornerRadius="6" MinHeight="320"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <Grid>
+                <lvc:CartesianChart x:Name="HistoryChart" MinHeight="280"
+                                    LegendPosition="Top" />
+                <TextBlock x:Name="NoDataOverlay"
+                           Visibility="Collapsed"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="No traffic recorded in this window."
+                           IsHitTestVisible="False" />
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

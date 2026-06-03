@@ -16,11 +16,18 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     /// <summary>Schema version of the <see cref="CaptureStats"/> payload.</summary>
     private const int CaptureStatsSchemaVersion = 1;
 
+    /// <summary>Schema version of the Phase-4 query result payloads.</summary>
+    private const int QuerySchemaVersion = 1;
+
     private readonly long _startedAtUnixMs;
     private readonly string _dbPath;
     private readonly Func<bool> _isCaptureActive;
     private readonly Func<ActivitySnapshot> _snapshotProvider;
     private readonly Func<CaptureStats> _statsProvider;
+    private readonly Func<QueryWindow, AppListResult> _appListProvider;
+    private readonly Func<int, QueryWindow, TrafficGrain, AppDetailResult> _appDetailProvider;
+    private readonly Func<int, QueryWindow, ConnectionListResult> _connectionsProvider;
+    private readonly Func<QueryWindow, TrafficGrain, TrafficHistoryResult> _historyProvider;
     private readonly string _serviceVersion;
 
     public ZenVizorIpcHandler(
@@ -28,13 +35,23 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         string dbPath,
         Func<bool>? isCaptureActive = null,
         Func<ActivitySnapshot>? snapshotProvider = null,
-        Func<CaptureStats>? statsProvider = null)
+        Func<CaptureStats>? statsProvider = null,
+        Func<QueryWindow, AppListResult>? appListProvider = null,
+        Func<int, QueryWindow, TrafficGrain, AppDetailResult>? appDetailProvider = null,
+        Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
+        Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null)
     {
         _startedAtUnixMs = startedAtUnixMs;
         _dbPath = dbPath;
         _isCaptureActive = isCaptureActive ?? (() => false);
         _snapshotProvider = snapshotProvider ?? EmptySnapshot;
         _statsProvider = statsProvider ?? EmptyStats;
+        _appListProvider = appListProvider ?? (w => new AppListResult(w, Array.Empty<AppListEntry>()));
+        _appDetailProvider = appDetailProvider ?? ((_, w, g) => new AppDetailResult(
+            w, g, new AppListEntry(0, "", "", null, "Unchecked", false, 0, 0, 0, 0),
+            Array.Empty<TrafficPoint>(), Array.Empty<SessionInfo>()));
+        _connectionsProvider = connectionsProvider ?? ((_, w) => new ConnectionListResult(w, Array.Empty<ConnectionRow>()));
+        _historyProvider = historyProvider ?? ((w, g) => new TrafficHistoryResult(w, g, Array.Empty<TrafficPoint>()));
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
@@ -102,5 +119,29 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         return Task.FromResult(new IpcEnvelope<CaptureStats>(
             SchemaVersion: CaptureStatsSchemaVersion,
             Payload: payload));
+    }
+
+    public Task<IpcEnvelope<AppListResult>> GetAppListAsync(QueryWindow window)
+    {
+        var payload = _appListProvider(window);
+        return Task.FromResult(new IpcEnvelope<AppListResult>(QuerySchemaVersion, payload));
+    }
+
+    public Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain)
+    {
+        var payload = _appDetailProvider(appId, window, grain);
+        return Task.FromResult(new IpcEnvelope<AppDetailResult>(QuerySchemaVersion, payload));
+    }
+
+    public Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window)
+    {
+        var payload = _connectionsProvider(appId, window);
+        return Task.FromResult(new IpcEnvelope<ConnectionListResult>(QuerySchemaVersion, payload));
+    }
+
+    public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain)
+    {
+        var payload = _historyProvider(window, grain);
+        return Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(QuerySchemaVersion, payload));
     }
 }

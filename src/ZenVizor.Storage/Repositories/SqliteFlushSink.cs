@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using ZenVizor.Core.Aggregation;
 using ZenVizor.Core.Observations;
 using ZenVizor.Core.Storage;
 
@@ -39,7 +40,9 @@ public sealed class SqliteFlushSink : IFlushSink
         using var connection = _connections.Open();
         using var transaction = connection.BeginTransaction();
 
-        var newPidToSessionId = InsertNewSessions(connection, transaction, batch.NewSessions, batch.FlushTimeUnixMs);
+        var newSessionInfo = InsertNewSessions(connection, transaction, batch.NewSessions, batch.FlushTimeUnixMs);
+        var newPidToSessionId = newSessionInfo.PidToSessionId;
+        var sessionIdToAppId = newSessionInfo.SessionIdToAppId;
 
         // Resolution map for samples/connections: new sessions take precedence
         // over already-persisted snapshot.
@@ -53,6 +56,11 @@ public sealed class SqliteFlushSink : IFlushSink
         var connectionUpserts = UpsertConnections(connection, transaction, batch.Connections, pidToSessionId);
         var sessionsClosed = CloseSessions(connection, transaction, batch.ClosedSessionIds, batch.FlushTimeUnixMs);
 
+        // Phase-4 incremental rollup: UPSERT hourly/daily totals in the SAME
+        // transaction as traffic_samples so the two tiers can never diverge.
+        // Requires migration 003's unique indexes for ON CONFLICT.
+        UpsertRollups(connection, transaction, batch.Samples, pidToSessionId, sessionIdToAppId, batch.KnownPidToSessionId);
+
         transaction.Commit();
 
         return new FlushBatchResult(
@@ -62,16 +70,21 @@ public sealed class SqliteFlushSink : IFlushSink
             SessionsClosed: sessionsClosed);
     }
 
-    private static Dictionary<int, int> InsertNewSessions(
+    private readonly record struct NewSessionInfo(
+        Dictionary<int, int> PidToSessionId,
+        Dictionary<int, int> SessionIdToAppId);
+
+    private static NewSessionInfo InsertNewSessions(
         SqliteConnection connection,
         SqliteTransaction transaction,
         IReadOnlyList<NewSessionEntry> newSessions,
         long flushTimeUnixMs)
     {
-        var result = new Dictionary<int, int>(newSessions.Count);
+        var pidToSession = new Dictionary<int, int>(newSessions.Count);
+        var sessionToApp = new Dictionary<int, int>(newSessions.Count);
         if (newSessions.Count == 0)
         {
-            return result;
+            return new NewSessionInfo(pidToSession, sessionToApp);
         }
 
         // Build a per-flush AppIdentity → app_id cache so we don't re-look-up
@@ -82,10 +95,11 @@ public sealed class SqliteFlushSink : IFlushSink
         {
             var appId = GetOrCreateAppId(connection, transaction, entry.App, flushTimeUnixMs, appCache);
             var sessionId = InsertSession(connection, transaction, appId, entry);
-            result[entry.Pid] = sessionId;
+            pidToSession[entry.Pid] = sessionId;
+            sessionToApp[sessionId] = appId;
         }
 
-        return result;
+        return new NewSessionInfo(pidToSession, sessionToApp);
     }
 
     private static int GetOrCreateAppId(
@@ -270,6 +284,119 @@ public sealed class SqliteFlushSink : IFlushSink
         }
         return written;
     }
+
+    /// <summary>
+    /// UPSERT incremental rollups into <c>traffic_hourly</c> and
+    /// <c>traffic_daily</c> keyed by <c>(app_id, bucket_start, remote_class)</c>.
+    /// Runs inside the same transaction as the sample inserts so the rollup
+    /// tier is always consistent with the high-res tier — never partial.
+    /// </summary>
+    private static void UpsertRollups(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        IReadOnlyList<PendingTrafficSample> samples,
+        Dictionary<int, int> pidToSessionId,
+        Dictionary<int, int> newSessionIdToAppId,
+        IReadOnlyDictionary<int, int> previouslyKnownPidToSessionId)
+    {
+        if (samples.Count == 0) return;
+
+        // Pre-aggregate the flush's samples by (app_id, bucket, remote_class)
+        // before hitting SQLite, so we issue one UPSERT per unique rollup row
+        // instead of one per sample. With ~50 apps in a 5 s flush this is at
+        // most a few dozen rows per tier.
+        var hourly = new Dictionary<RollupKey, (long Up, long Down)>();
+        var daily  = new Dictionary<RollupKey, (long Up, long Down)>();
+
+        // Lazily resolve app_id for sessions we didn't open this flush
+        // (the "previously known" set). One SELECT per unseen session_id.
+        var sessionToApp = new Dictionary<int, int>(newSessionIdToAppId);
+
+        foreach (var s in samples)
+        {
+            if (!pidToSessionId.TryGetValue(s.Pid, out var sessionId))
+            {
+                continue;
+            }
+
+            if (!sessionToApp.TryGetValue(sessionId, out var appId))
+            {
+                appId = LookupAppIdForSession(connection, transaction, sessionId);
+                if (appId == 0)
+                {
+                    continue; // shouldn't happen — session id exists but no app row?
+                }
+                sessionToApp[sessionId] = appId;
+            }
+
+            var hourKey = new RollupKey(appId, BucketAligner.AlignToHour(s.BucketStartUnixMs), s.RemoteClass);
+            var dayKey  = new RollupKey(appId, BucketAligner.AlignToDay(s.BucketStartUnixMs),  s.RemoteClass);
+
+            if (hourly.TryGetValue(hourKey, out var hh))
+                hourly[hourKey] = (hh.Up + s.BytesUp, hh.Down + s.BytesDown);
+            else
+                hourly[hourKey] = (s.BytesUp, s.BytesDown);
+
+            if (daily.TryGetValue(dayKey, out var dd))
+                daily[dayKey] = (dd.Up + s.BytesUp, dd.Down + s.BytesDown);
+            else
+                daily[dayKey] = (s.BytesUp, s.BytesDown);
+        }
+
+        UpsertRollupTable(connection, transaction, "traffic_hourly", hourly);
+        UpsertRollupTable(connection, transaction, "traffic_daily",  daily);
+        _ = previouslyKnownPidToSessionId;
+    }
+
+    private static int LookupAppIdForSession(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int sessionId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "SELECT app_id FROM process_sessions WHERE session_id = $id;";
+        cmd.Parameters.AddWithValue("$id", sessionId);
+        var v = cmd.ExecuteScalar();
+        return v is long l ? (int)l : 0;
+    }
+
+    private static void UpsertRollupTable(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        Dictionary<RollupKey, (long Up, long Down)> rows)
+    {
+        if (rows.Count == 0) return;
+
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"""
+            INSERT INTO {table} (app_id, bucket_start, remote_class, bytes_up, bytes_down)
+            VALUES ($appId, $bucket, $class, $up, $down)
+            ON CONFLICT (app_id, bucket_start, remote_class) DO UPDATE SET
+                bytes_up   = bytes_up   + excluded.bytes_up,
+                bytes_down = bytes_down + excluded.bytes_down;
+            """;
+        var pAppId  = cmd.Parameters.Add("$appId",  SqliteType.Integer);
+        var pBucket = cmd.Parameters.Add("$bucket", SqliteType.Integer);
+        var pClass  = cmd.Parameters.Add("$class",  SqliteType.Text);
+        var pUp     = cmd.Parameters.Add("$up",     SqliteType.Integer);
+        var pDown   = cmd.Parameters.Add("$down",   SqliteType.Integer);
+        cmd.Prepare();
+
+        foreach (var (key, totals) in rows)
+        {
+            pAppId.Value  = key.AppId;
+            pBucket.Value = key.BucketStartUnixMs;
+            pClass.Value  = key.RemoteClass.ToStorageString();
+            pUp.Value     = totals.Up;
+            pDown.Value   = totals.Down;
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    private readonly record struct RollupKey(int AppId, long BucketStartUnixMs, RemoteClass RemoteClass);
 
     private static int CloseSessions(
         SqliteConnection connection,

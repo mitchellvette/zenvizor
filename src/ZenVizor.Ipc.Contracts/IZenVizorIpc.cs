@@ -42,4 +42,18 @@ public interface IZenVizorIpc
     /// Phase-3 lifecycle-resolver gate.
     /// </summary>
     Task<IpcEnvelope<CaptureStats>> GetCaptureStatsAsync();
+
+    // ---- Phase 4 query surface (history tiers, per-app drill-down) ----
+
+    /// <summary>Apps ranked by total bytes over the window. Empty filter; filters land in the UI polish phase.</summary>
+    Task<IpcEnvelope<AppListResult>> GetAppListAsync(QueryWindow window);
+
+    /// <summary>Drill into one app: summary, time series at chosen grain, recent sessions.</summary>
+    Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain = TrafficGrain.Auto);
+
+    /// <summary>Endpoints an app talked to during the window. Server-aggregated per (protocol, remote_addr, remote_port).</summary>
+    Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window);
+
+    /// <summary>Aggregate (all apps) traffic series at chosen grain. Auto-grain by default.</summary>
+    Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain = TrafficGrain.Auto);
 }

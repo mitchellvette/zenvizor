@@ -131,6 +131,84 @@ public sealed class InProcessRpcTests
         envelope.SchemaVersion.Should().Be(42);
     }
 
+    [Fact]
+    public async Task GetAppList_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        handler.AppList = new AppListResult(
+            new QueryWindow(1_000, 7_000),
+            new[]
+            {
+                new AppListEntry(1, "chrome.exe", @"C:\chrome.exe", "Google LLC",
+                    "Signed", false, 5_000, 50_000, 100, 6_000),
+            });
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetAppListAsync(new QueryWindow(1_000, 7_000));
+
+        envelope.SchemaVersion.Should().Be(1);
+        envelope.Payload.Window.FromUnixMs.Should().Be(1_000);
+        envelope.Payload.Apps.Should().ContainSingle()
+            .Which.Publisher.Should().Be("Google LLC");
+    }
+
+    [Fact]
+    public async Task GetAppDetail_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        handler.AppDetail = new AppDetailResult(
+            new QueryWindow(0, 3_600_000),
+            TrafficGrain.Samples,
+            new AppListEntry(7, "x.exe", "/x.exe", null, "Unchecked", true, 1, 2, 0, 0),
+            new[] { new TrafficPoint(0, "Wan", 1, 2) },
+            new[] { new SessionInfo(99, 1234, 0, null, "Dnscache") });
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetAppDetailAsync(7, new QueryWindow(0, 3_600_000), TrafficGrain.Auto);
+
+        envelope.Payload.Summary.AppId.Should().Be(7);
+        envelope.Payload.GrainUsed.Should().Be(TrafficGrain.Samples);
+        envelope.Payload.Series.Should().ContainSingle();
+        envelope.Payload.RecentSessions.Single().HostedServices.Should().Be("Dnscache");
+    }
+
+    [Fact]
+    public async Task GetConnections_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        handler.Connections = new ConnectionListResult(
+            new QueryWindow(0, 1_000),
+            new[] { new ConnectionRow("TCP", "8.8.8.8", 443, "Wan", 100, 200, 0, 1_000) });
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetConnectionsAsync(1, new QueryWindow(0, 1_000));
+
+        envelope.Payload.Connections.Should().ContainSingle()
+            .Which.RemoteAddress.Should().Be("8.8.8.8");
+    }
+
+    [Fact]
+    public async Task GetTrafficHistory_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        handler.History = new TrafficHistoryResult(
+            new QueryWindow(0, 86_400_000L * 60),
+            TrafficGrain.Daily,
+            new[]
+            {
+                new TrafficPoint(0, "Wan", 1_000, 0),
+                new TrafficPoint(86_400_000L, "Wan", 2_000, 0),
+            });
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetTrafficHistoryAsync(
+            new QueryWindow(0, 86_400_000L * 60), TrafficGrain.Daily);
+
+        envelope.Payload.GrainUsed.Should().Be(TrafficGrain.Daily);
+        envelope.Payload.Series.Should().HaveCount(2);
+        envelope.Payload.Series.Sum(p => p.BytesUp).Should().Be(3_000);
+    }
+
     /// <summary>
     /// Owns the in-process duplex stream + the JsonRpc instances on both ends.
     /// </summary>

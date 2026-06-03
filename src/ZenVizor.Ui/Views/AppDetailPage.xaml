@@ -1,0 +1,155 @@
+<Page x:Class="ZenVizor.Ui.Views.AppDetailPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{DynamicResource ApplicationBackgroundBrush}">
+
+    <!-- DataGrid row virtualization is engaged programmatically — see
+         AppDetailPage.EnforceDataGridBounds in the code-behind. Wpf.Ui's
+         NavigationView wraps each hosted page in a DynamicScrollViewer that
+         passes infinite vertical extent down, so XAML MaxHeight bindings up
+         the visual-tree chain don't propagate a finite measure constraint.
+         Setting MaxHeight directly on each DataGrid at Loaded / SizeChanged
+         is the only thing that reliably caps it. -->
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <ui:Button Content="&lt; Per-App" Margin="0,0,16,0" Click="OnBackClick" />
+            <ui:TextBlock x:Name="HeaderText" FontTypography="Subtitle" Text="App detail" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox x:Name="WindowCombo" Width="180" SelectionChanged="OnSelectionChanged" />
+            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    Padding="8,4" CornerRadius="4">
+                <TextBlock x:Name="StatusBannerText"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+            </Border>
+        </StackPanel>
+
+        <Border Grid.Row="2" CornerRadius="6" Padding="12,8"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                Margin="0,0,0,12">
+            <StackPanel x:Name="SummaryStack" Orientation="Vertical">
+                <TextBlock x:Name="SummaryLine1" />
+                <TextBlock x:Name="SummaryLine2"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" CornerRadius="6" Padding="8" MinHeight="220"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <ui:TextBlock Grid.Row="0" Text="Traffic over time" Margin="4,2,0,2" />
+                <TextBlock Grid.Row="1" x:Name="ChartSubtitle"
+                           Margin="4,0,0,8"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Grid Grid.Row="2">
+                    <lvc:CartesianChart x:Name="SeriesChart"
+                                        MinHeight="180"
+                                        LegendPosition="Top" />
+                    <TextBlock x:Name="NoDataOverlay"
+                               Visibility="Collapsed"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Text="No traffic recorded in this window."
+                               IsHitTestVisible="False" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="4" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Margin="0,0,6,0" CornerRadius="6"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <ui:TextBlock Grid.Row="0" Text="Connections (endpoints)"
+                                  Margin="12,8,0,4" />
+                    <DataGrid Grid.Row="1" x:Name="ConnectionsGrid"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="None"
+                              Background="Transparent" BorderThickness="0"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="False"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Item"
+                              ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Proto"   Binding="{Binding Protocol}"      Width="60" />
+                            <DataGridTextColumn Header="Address" Binding="{Binding RemoteAddress}" Width="2*" />
+                            <DataGridTextColumn Header="Port"    Binding="{Binding RemotePort}"    Width="60" />
+                            <DataGridTextColumn Header="Up"      Binding="{Binding UpText}"        Width="90" />
+                            <DataGridTextColumn Header="Down"    Binding="{Binding DownText}"      Width="90" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="1" Margin="6,0,0,0" CornerRadius="6"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <ui:TextBlock Grid.Row="0" Text="Recent sessions"
+                                  Margin="12,8,0,4" />
+                    <DataGrid Grid.Row="1" x:Name="SessionsGrid"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="None"
+                              Background="Transparent" BorderThickness="0"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="False"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Item"
+                              ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Session" Binding="{Binding SessionId}"   Width="80" />
+                            <DataGridTextColumn Header="PID"     Binding="{Binding Pid}"         Width="70" />
+                            <DataGridTextColumn Header="Start"   Binding="{Binding StartText}"   Width="*" />
+                            <DataGridTextColumn Header="End"     Binding="{Binding EndText}"     Width="*" />
+                            <DataGridTextColumn Header="Services" Binding="{Binding HostedServices}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>
