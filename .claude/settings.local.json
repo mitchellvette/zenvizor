@@ -8,7 +8,13 @@
       "Bash(dotnet build *)",
       "Bash(dotnet --info)",
       "Bash(git -C /c/dev/zenvizor commit -m ' *)",
-      "Bash(git -C /c/dev/zenvizor log --oneline -3)"
+      "Bash(git -C /c/dev/zenvizor log --oneline -3)",
+      "Bash(dotnet test *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api *)",
+      "Bash(gh issue *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
