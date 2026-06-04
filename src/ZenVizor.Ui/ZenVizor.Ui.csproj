@@ -30,13 +30,20 @@
   <!-- Design system fonts. Linked under Fonts/ in the assembly so the pack URI
        resolves as pack://application:,,,/Fonts/#<FamilyName>. Internal family
        names (probed via System.Windows.Media.Fonts.GetFontFamilies): Urbanist,
-       NF Code, Nuqun. -->
+       NF Code, Nuqun.
+
+       All four Urbanist faces ship so FontWeight resolves to a real on-disk
+       glyph (300/400/600/700) — never a synthesized weight. SemiBold (600) is
+       the brand's title/subtitle weight; without the SemiBold .ttf, WPF would
+       fake the weight from Regular, which produces blurry strokes and
+       inconsistent metrics. -->
   <ItemGroup Label="Design system fonts">
-    <Resource Include="..\..\fonts\Urbanist-Light.ttf"   Link="Fonts\Urbanist-Light.ttf" />
-    <Resource Include="..\..\fonts\Urbanist-Regular.ttf" Link="Fonts\Urbanist-Regular.ttf" />
-    <Resource Include="..\..\fonts\Urbanist-Bold.ttf"    Link="Fonts\Urbanist-Bold.ttf" />
-    <Resource Include="..\..\fonts\NFCode-Regular.otf"   Link="Fonts\NFCode-Regular.otf" />
-    <Resource Include="..\..\fonts\Nuqun-Regular.otf"    Link="Fonts\Nuqun-Regular.otf" />
+    <Resource Include="..\..\fonts\Urbanist-Light.ttf"    Link="Fonts\Urbanist-Light.ttf" />
+    <Resource Include="..\..\fonts\Urbanist-Regular.ttf"  Link="Fonts\Urbanist-Regular.ttf" />
+    <Resource Include="..\..\fonts\Urbanist-SemiBold.ttf" Link="Fonts\Urbanist-SemiBold.ttf" />
+    <Resource Include="..\..\fonts\Urbanist-Bold.ttf"     Link="Fonts\Urbanist-Bold.ttf" />
+    <Resource Include="..\..\fonts\NFCode-Regular.otf"    Link="Fonts\NFCode-Regular.otf" />
+    <Resource Include="..\..\fonts\Nuqun-Regular.otf"     Link="Fonts\Nuqun-Regular.otf" />
   </ItemGroup>
 
 </Project>

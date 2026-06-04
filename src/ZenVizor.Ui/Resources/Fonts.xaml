@@ -4,22 +4,30 @@
     <!-- Three font families ship in fonts/ (probed via
          System.Windows.Media.Fonts.GetFontFamilies):
 
-           - "Urbanist"  — Corey Hu, geometric sans (Light/Regular/Bold)
+           - "Urbanist"  — Corey Hu, geometric sans (Light/Regular/SemiBold/Bold)
            - "NF Code"   — Steve Gigou, monospace with ligatures (Regular)
            - "Nuqun"     — KFprod display face (Regular)
 
          The Resource entries that back these pack URIs live in
          ZenVizor.Ui.csproj under <ItemGroup Label="Design system fonts">,
-         linked under Fonts/ in the assembly.
+         linked under Fonts/ in the assembly. All four Urbanist faces are
+         registered there so a single pack-URI reference resolves the whole
+         family — WPF picks the right .ttf for the FontWeight you set.
 
          Token roles:
            font.display — primary UI / body / headers (Urbanist)
            font.mono    — numeric, paths, hex, code-like text (NF Code)
            font.brand   — wordmark / decorative only — NOT body text (Nuqun)
 
-         Note: Urbanist supplies multiple weights, so use FontWeight to pick
-         (Light=300, Regular=400, Bold=700). NF Code and Nuqun are
-         single-weight Regular only — setting FontWeight on them is a no-op. -->
+         Weight notes:
+           - Urbanist resolves Light=300, Regular=400, SemiBold=600, Bold=700
+             to real on-disk glyphs. SemiBold (600) is the brand title/subtitle
+             weight (see text.subtitle / text.title styles in DesignTokens.xaml);
+             without the SemiBold .ttf registered in csproj, WPF would fake it
+             from Regular and produce blurry strokes — a real visual regression.
+           - NF Code and Nuqun ship Regular only; setting FontWeight on them is
+             a no-op. -->
+
 
     <FontFamily x:Key="font.display">pack://application:,,,/Fonts/#Urbanist</FontFamily>
     <FontFamily x:Key="font.mono">pack://application:,,,/Fonts/#NF Code</FontFamily>

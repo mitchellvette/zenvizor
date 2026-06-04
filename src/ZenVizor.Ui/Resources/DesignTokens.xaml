@@ -4,32 +4,45 @@
 
     <!--
         ZenVizor design tokens. The semantic-name keys (e.g. surface.card,
-        accent.default) are the contract between Claude Design mockups and
-        Claude Code XAML. Mockup annotations literally name the token; this
-        file is where that name resolves to a concrete value.
+        accent.default, radius.card, text.subtitle) are the contract between
+        Claude Design mockups and Claude Code XAML. Mockup annotations literally
+        name the token; this file is where that name resolves to a concrete
+        value.
 
-        v1 strategy: every brush token aliases an existing Wpf.Ui Color
-        resource via Color="{DynamicResource <WpfUiColor>}". Result: zero
-        visual change vs. pre-tokenization, AND theme swap (Light/Dark, OS
-        accent change) still propagates because the underlying Wpf.Ui Color
-        is what gets re-resolved when the theme dictionary swaps.
+        Sources of truth (see CLAUDE.md "Design system: source of truth"):
+          - THIS FILE is canonical for the app.
+          - docs/design/colors_and_type.css is canonical for Claude Design mocks.
+          - The crosswalk in that CSS header documents value differences and
+            is the bridge between the two. The two must not drift; when a
+            token value changes here, change it there and vice versa.
 
-        WHY use DynamicResource at the Color level (not StaticResource): the
+        v1 brush strategy: every brush token aliases an existing Wpf.Ui Color
+        resource via Color="{DynamicResource <WpfUiColor>}". Result: Wpf.Ui's
+        own theme dictionary swap (Light/Dark, OS accent change) re-resolves
+        the underlying Color and our aliased brush picks up the new value
+        automatically.
+
+        WHY DynamicResource at the Color level (not StaticResource): the
         DynamicResource lookup re-fires on theme changes, so our aliased
         brush picks up the new Color the moment Wpf.Ui swaps its theme
         dictionary. StaticResource would snapshot at load and break theming.
+        The aliasing approach is honest about a limit: tokens that the brand
+        wants to differ from Wpf.Ui's auto-tinted values (e.g. accent.fill =
+        constant brand violet in BOTH themes) carry a CONCRETE Color value
+        instead of aliasing — they don't theme-swap, which is the intended
+        behavior for accent.fill (AA against white in both themes).
 
-        High-contrast: this file defines NEW keys with semantic names; it
-        does NOT override any SystemColors brush or any standard WPF default
-        brush, so Windows high-contrast behavior is unchanged from baseline
-        Wpf.Ui (which is the limit of what we can offer without a dedicated
-        high-contrast token dictionary — out of scope for the polish
-        interlude).
+        High contrast: handled by a separate ResourceDictionary
+        (HighContrast.xaml) that overrides the semantic tokens onto
+        SystemColors brushes when SystemParameters.HighContrast is true. App
+        startup is responsible for merging it on/off; see HighContrast.xaml
+        header for the wiring contract.
 
-        Dotted x:Key literals (accent.default, surface.card) are preserved
-        exactly. Do NOT PascalCase them or strip the dots — the literal
-        string is the contract that lets a mockup annotation map mechanically
-        to a {DynamicResource ...} reference.
+        Dotted x:Key literals (accent.default, surface.card, radius.card) are
+        preserved exactly. Do NOT PascalCase them or strip the dots — the
+        literal string is the contract that lets a mockup annotation map
+        mechanically to a {DynamicResource ...} / {StaticResource ...}
+        reference.
     -->
 
     <!--  Surfaces  ============================================================
@@ -38,7 +51,14 @@
           Wpf.Ui's SolidBackgroundFillColorBase, which is an opaque solid (not
           a translucent fill), so text on top is not subject to Mica showing
           through. surface.background is the page background — Mica's job to
-          handle, so it aliases the application background color. -->
+          handle, so it aliases the application background color.
+
+          surface.layer is the OPAQUE flyout/section grouping surface. Per the
+          Acrylic decision (see docs/design-system.md), the App-Detail flyout
+          is OPAQUE surface.layer, not a frosted panel — WPF has no per-element
+          backdrop, and a translucent flyout over Mica would make its text
+          contrast wallpaper-dependent. Real Acrylic is reserved for OS-level
+          surfaces only (tray menu, context menus). -->
 
     <SolidColorBrush x:Key="surface.background" Color="{DynamicResource ApplicationBackgroundColor}" />
     <SolidColorBrush x:Key="surface.card"       Color="{DynamicResource SolidBackgroundFillColorBase}" />
@@ -58,23 +78,48 @@
     <SolidColorBrush x:Key="text.on-accent"  Color="{DynamicResource TextOnAccentFillColorPrimary}" />
 
     <!--  Accent  ==============================================================
-          OS accent color, surfaced via Wpf.Ui's SystemAccentColor* aliases. -->
+          accent.default / .secondary / .tertiary alias Wpf.Ui's SystemAccent*
+          for now (matches OS accent). Brand target is to override these to
+          violet always — that migration is a separate decision because it
+          affects every focus ring and primary button in the app.
+
+          accent.fill is the brand's answer to the dark-accent contrast issue:
+          a CONSTANT brand violet (#6d3fd1 = violet-600) used for accent
+          SURFACES that carry on-accent (white) text — filled buttons, pills,
+          selection indicators. Constant value in BOTH themes; in dark theme
+          this is one stop DARKER than accent.default (which can be lighter
+          for text/borders/focus), so white text clears AA 4.5:1 on every
+          accent.fill surface regardless of theme. DO NOT use accent.default
+          as the background of a filled button — on dark theme it's lighter
+          (violet-500 in the brand spec) and fails AA against white. -->
 
     <SolidColorBrush x:Key="accent.default"   Color="{DynamicResource SystemAccentColorPrimary}" />
     <SolidColorBrush x:Key="accent.secondary" Color="{DynamicResource SystemAccentColorSecondary}" />
     <SolidColorBrush x:Key="accent.tertiary"  Color="{DynamicResource SystemAccentColorTertiary}" />
+    <SolidColorBrush x:Key="accent.fill"      Color="#6D3FD1" />
 
     <!--  Status  ==============================================================
           Generic status semantics (success/caution/critical/neutral) plus
           ZenVizor-specific connection-state tokens. The service-status dot in
           MainWindow is hardcoded Brushes.DarkOrange / Brushes.MediumSeaGreen
           today; status.connected / .warming / .disconnected are the tokens
-          that should replace those during the polish pass. -->
+          that should replace those during the polish pass.
+
+          status.caution.text is the AA-safe text colour on a caution tint
+          background. The plain status.caution is bright amber (for dots /
+          graphics / icon fills); using it as text on the soft caution
+          background fails AA at small body sizes in light theme. The brand
+          value for caution.text in light is #8A5A00 (~5.2:1 on light tint);
+          in dark, the bright amber already passes against the dark tint and
+          can be reused, but we encode them separately so the migration to
+          theme-aware brushes is mechanical. v1 carries the light value as a
+          constant; HighContrast.xaml overrides to SystemColors.ControlTextBrush. -->
 
     <SolidColorBrush x:Key="status.success"            Color="{DynamicResource SystemFillColorSuccess}" />
     <SolidColorBrush x:Key="status.success.background" Color="{DynamicResource SystemFillColorSuccessBackground}" />
     <SolidColorBrush x:Key="status.caution"            Color="{DynamicResource SystemFillColorCaution}" />
     <SolidColorBrush x:Key="status.caution.background" Color="{DynamicResource SystemFillColorCautionBackground}" />
+    <SolidColorBrush x:Key="status.caution.text"       Color="#8A5A00" />
     <SolidColorBrush x:Key="status.critical"           Color="{DynamicResource SystemFillColorCritical}" />
     <SolidColorBrush x:Key="status.critical.background" Color="{DynamicResource SystemFillColorCriticalBackground}" />
     <SolidColorBrush x:Key="status.neutral"            Color="{DynamicResource SystemFillColorNeutral}" />
@@ -102,18 +147,20 @@
           them into SKPaints. That wiring is a follow-up; these tokens are the
           contract that wiring code targets.
 
-          Colors picked from the Okabe-Ito colorblind-safe palette
-          (deuteranopia + protanopia friendly), AA-legible against both
-          Light and Dark Mica backdrops. Two role pairs (up/down, wan/local)
-          plus an 8-step categorical ramp for stacked-column segments.
+          Categorical palette (chart.series.1..8, chart.wan, chart.local) is
+          the Okabe-Ito colourblind-safe set: deuteranopia + protanopia
+          friendly, AA-legible on both Light and Dark Mica. Fixed hex, does
+          NOT theme-swap — same in light and dark.
 
-          NOTE: these values do NOT theme-swap. They are the same in light and
-          dark — they are bright on dark, slightly darker but still legible on
-          light. If a later iteration wants per-theme chart palettes, swap the
-          chart.* keys via a theme-specific merged dictionary. -->
+          chart.upSeries and chart.downSeries are the brand's deliberate
+          deviation: violet/teal that theme-swap (per docs/design/colors_and_type.css
+          and the design-system spec). v1 carries the light-theme brand values
+          as a constant; the theme-swap wiring requires a brand-dict refactor
+          and is tracked as a follow-up — see docs/design-system.md "Native
+          reconciliation". -->
 
-    <SolidColorBrush x:Key="chart.upSeries"   Color="#56B4E9" />
-    <SolidColorBrush x:Key="chart.downSeries" Color="#E69F00" />
+    <SolidColorBrush x:Key="chart.upSeries"   Color="#6D3FD1" />
+    <SolidColorBrush x:Key="chart.downSeries" Color="#20B6C6" />
     <SolidColorBrush x:Key="chart.wan"        Color="#0072B2" />
     <SolidColorBrush x:Key="chart.local"      Color="#009E73" />
 
@@ -126,43 +173,224 @@
     <SolidColorBrush x:Key="chart.series.7" Color="#F0E442" />
     <SolidColorBrush x:Key="chart.series.8" Color="#999999" />
 
+    <!--  Chart chrome  ========================================================
+          LiveCharts2 paints NONE of the axis/gridline/label/tooltip/legend
+          chrome from the UI theme — set them explicitly on every chart. These
+          tokens are read by ChartBuilder and fed into SKPaints / axis Label
+          paints / tooltip styles.
+
+          Mappings from the design-system spec:
+            chart.axis         -> border.subtle (faint stroke for axis line)
+            chart.gridline     -> border.subtle at lower alpha (set in code:
+                                  read the Color and apply alpha ~0x0B)
+            chart.axis.label   -> text.tertiary (de-emphasized label text)
+            chart.tooltip.bg   -> surface.card (OPAQUE — never translucent)
+            chart.tooltip.text -> text.primary
+            chart.legend.text  -> text.secondary
+
+          All theme-swapping (they alias theme-swapping Wpf.Ui Colors). -->
+
+    <SolidColorBrush x:Key="chart.axis"         Color="{DynamicResource CardStrokeColorDefaultSolid}" />
+    <SolidColorBrush x:Key="chart.gridline"     Color="{DynamicResource CardStrokeColorDefault}" />
+    <SolidColorBrush x:Key="chart.axis.label"   Color="{DynamicResource TextFillColorTertiary}" />
+    <SolidColorBrush x:Key="chart.tooltip.bg"   Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    <SolidColorBrush x:Key="chart.tooltip.text" Color="{DynamicResource TextFillColorPrimary}" />
+    <SolidColorBrush x:Key="chart.legend.text"  Color="{DynamicResource TextFillColorSecondary}" />
+
     <!--  Spacing scale  =======================================================
-          Used directly as Margin/Padding values. The scale is 4-based; use
-          space.12 (not space.10) for medium spacing — keeps rhythm. -->
+          4-based scale, named by pixel value. App set {4,8,12,16,24,32,48} is
+          a clean subset of the brand scale; brand adds {20,40,64}. Use
+          space.12 (not space.10) for medium spacing — keeps rhythm. Tokens
+          slot directly into Margin/Padding via {StaticResource space.16}. -->
 
     <sys:Double x:Key="space.4">4</sys:Double>
     <sys:Double x:Key="space.8">8</sys:Double>
     <sys:Double x:Key="space.12">12</sys:Double>
     <sys:Double x:Key="space.16">16</sys:Double>
+    <sys:Double x:Key="space.20">20</sys:Double>
     <sys:Double x:Key="space.24">24</sys:Double>
     <sys:Double x:Key="space.32">32</sys:Double>
+    <sys:Double x:Key="space.40">40</sys:Double>
     <sys:Double x:Key="space.48">48</sys:Double>
+    <sys:Double x:Key="space.64">64</sys:Double>
 
     <!--  Corner radius  =======================================================
-          radius.md (6) matches today's card CornerRadius — keep using it for
-          existing cards so the swap is invisible. radius.sm for banners and
-          radius.lg for larger surfaces (Reports cards, dialogs). -->
+          BRAND values (reconciled from the placeholder Wpf.Ui ladder). The
+          crosswalk in docs/design/colors_and_type.css records the migration
+          (radius.sm 4->6, radius.md 6->10, radius.lg 8->14, radius.xs new at
+          4 for backwards compat with the old radius.sm value).
 
-    <CornerRadius x:Key="radius.sm">4</CornerRadius>
-    <CornerRadius x:Key="radius.md">6</CornerRadius>
-    <CornerRadius x:Key="radius.lg">8</CornerRadius>
+          SPLIT into scale + semantic roles. Reason: Wpf.Ui's controls share
+          a single CornerRadius resource for both controls and cards; pushing
+          radius.md to 10 (cards) would drag button/input radius along if
+          anything pointed them at radius.md. The semantic role tokens
+          (radius.control / radius.card / radius.overlay) name the INTENT, so
+          future scale tuning never affects the wrong surface — and the
+          eventual override of Wpf.Ui's ControlCornerRadius can point at
+          radius.control without ambiguity.
+
+          Usage:
+            - Buttons, inputs, chips, inline banners: radius.control (6)
+            - Cards, list rows:                       radius.card (10)
+            - Flyouts, dialogs, overlays:             radius.overlay (14)
+            - Bare scale values exist for one-off needs but prefer the role
+              tokens at call-sites.
+
+          Migration note for Wpf.Ui controls: brand wants controls at 6px
+          (currently render at Wpf.Ui's 4px). The override is in App.xaml
+          merged dictionaries AFTER Wpf.Ui's theme dict:
+              <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
+          (or point ControlCornerRadius at radius.control via an alias). This
+          is deferred until the polish-pass call-site sweep so the visual jump
+          is auditable in one diff. -->
+
+    <CornerRadius x:Key="radius.xs">4</CornerRadius>
+    <CornerRadius x:Key="radius.sm">6</CornerRadius>
+    <CornerRadius x:Key="radius.md">10</CornerRadius>
+    <CornerRadius x:Key="radius.lg">14</CornerRadius>
+    <CornerRadius x:Key="radius.xl">20</CornerRadius>
+    <!-- radius.pill is a sentinel — XAML has no native "fully rounded" value.
+         At call-sites that need a pill, set CornerRadius to half the control
+         height directly (e.g. a 24-tall chip uses CornerRadius="12"). 9999 is
+         the conventional pill value and renders rounded for any control
+         height up to that size. -->
+    <CornerRadius x:Key="radius.pill">9999</CornerRadius>
+
+    <!-- Semantic role tokens. These are the keys to USE at call-sites. -->
+    <CornerRadius x:Key="radius.control">6</CornerRadius>
+    <CornerRadius x:Key="radius.card">10</CornerRadius>
+    <CornerRadius x:Key="radius.overlay">14</CornerRadius>
 
     <!--  Typography scale  ====================================================
-          Sizes mirror Wpf.Ui's FontTypography enum (Caption=12, Body=14,
-          Subtitle=16, Title=20, TitleLarge=24, Display=32) so swapping
-          ui:TextBlock FontTypography="…" for explicit FontSize/FontFamily is
-          1:1 in size. -->
+          BRAND sizes (reconciled from the smaller Fluent ladder shipping
+          today). The crosswalk in colors_and_type.css records each delta.
+
+          Only font.size.display renders in font.brand (Nuqun); everything
+          from title.large down renders in font.display (Urbanist). -->
 
     <sys:Double x:Key="font.size.caption">12</sys:Double>
     <sys:Double x:Key="font.size.body">14</sys:Double>
-    <sys:Double x:Key="font.size.subtitle">16</sys:Double>
-    <sys:Double x:Key="font.size.title">20</sys:Double>
-    <sys:Double x:Key="font.size.title.large">24</sys:Double>
-    <sys:Double x:Key="font.size.display">32</sys:Double>
+    <sys:Double x:Key="font.size.body.large">18</sys:Double>
+    <sys:Double x:Key="font.size.subtitle">20</sys:Double>
+    <sys:Double x:Key="font.size.title">28</sys:Double>
+    <sys:Double x:Key="font.size.title.large">40</sys:Double>
+    <sys:Double x:Key="font.size.display">68</sys:Double>
 
     <FontWeight x:Key="font.weight.regular">Normal</FontWeight>
     <FontWeight x:Key="font.weight.semibold">SemiBold</FontWeight>
     <FontWeight x:Key="font.weight.bold">Bold</FontWeight>
+
+    <!--  Type ramp Styles  ====================================================
+          Keyed TextBlock Styles with ABSOLUTE LineHeight values computed from
+          the brand line-height ratios (display 1.12, title-large 1.20, title
+          1.28, subtitle 1.40, body-* 1.50, caption 1.40).
+
+          WHY absolute LineHeight not multipliers: WPF's TextBlock.LineHeight
+          takes a Double in DIPs, not a multiplier. Setting it explicitly
+          gives consistent vertical rhythm across pages even when the font
+          falls back. LineStackingStrategy=BlockLineHeight makes LineHeight
+          authoritative — without it, ascenders/descenders that overshoot the
+          declared line height push lines apart and the rhythm drifts.
+
+          Apply via Style="{StaticResource text.subtitle}" etc. The styles
+          target plain WPF TextBlock; the implicit base TextBlock style below
+          still sets Foreground app-wide, and these keyed styles inherit from
+          nothing (so they don't have to opt in). -->
+
+    <Style x:Key="text.display" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.brand}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.display}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.regular}" />
+        <Setter Property="LineHeight" Value="76" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.title.large" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.title.large}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="48" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.title" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.title}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="36" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.subtitle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.subtitle}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="28" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.body.large" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.body.large}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.regular}" />
+        <Setter Property="LineHeight" Value="27" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.body.strong" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="21" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.body" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.regular}" />
+        <Setter Property="LineHeight" Value="21" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+    <Style x:Key="text.caption" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.regular}" />
+        <Setter Property="LineHeight" Value="17" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+    <!-- Eyebrow: uppercase, tracked, semibold caption — used for tiny
+         section labels above a title. Foreground = accent.text role (alias
+         accent.default for now; brand spec wants violet-700/violet-300 by
+         theme — deferred with the brand-dict migration). -->
+    <Style x:Key="text.eyebrow" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="17" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+        <!-- WPF has no text-transform: uppercase the source string at the
+             call-site (e.g. Text="STATUS"). WPF also has no letter-spacing
+             on TextBlock/TextElement — the brand's tracking-wide (0.04em)
+             on eyebrows can't be applied here without per-character Runs.
+             Accepted limitation; visually OK because eyebrows are small,
+             short, and always uppercase. -->
+    </Style>
+    <!-- Mono / data: NF Code with tabular numerics. Used for rates, byte
+         counts, IPs, ports, PIDs — anywhere column alignment of digits
+         matters. font.mono ships single-weight Regular only; FontWeight is
+         a no-op. -->
+    <Style x:Key="text.mono" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.mono}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.regular}" />
+        <Setter Property="LineHeight" Value="21" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
 
     <!--  Density  =============================================================
           Default Fluent grid spacing is too airy for ZenVizor's data-dense
@@ -172,7 +400,14 @@
               <DataGrid Style="{StaticResource style.datagrid.compact}" ... />
 
           density.row.default / .compact are exposed as raw Doubles for cases
-          where a custom row template needs to read the row height directly. -->
+          where a custom row template needs to read the row height directly.
+
+          KNOWN MIGRATION ISSUE: the reconciled type sizes (subtitle 20,
+          title 28) push above the 22px compact row height. If a future grid
+          column header uses text.subtitle, that row clips. Either keep
+          column headers at text.body.strong (14, semibold — fits the 22px
+          row) or bump density.row.compact to ~30 for grids that need bigger
+          headers. Tracked in docs/design-system.md "Native reconciliation". -->
 
     <sys:Double x:Key="density.row.default">28</sys:Double>
     <sys:Double x:Key="density.row.compact">22</sys:Double>
@@ -203,7 +438,9 @@
           without touching every call-site. Implicit styles only apply to the
           EXACT type, so this does NOT shadow <ui:TextBlock>'s style. Any
           TextBlock that sets Foreground locally also wins via WPF property
-          precedence (local value > setter). -->
+          precedence (local value > setter). Keyed text.* styles above use
+          BasedOn=null implicitly (no explicit BasedOn) and set Foreground
+          themselves, so they win when applied. -->
 
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />

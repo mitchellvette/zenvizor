@@ -1,0 +1,519 @@
+/* ============================================================================
+   ZenVizor Design System — Colors & Type  (RECONCILED with native XAML spec)
+   ----------------------------------------------------------------------------
+   Aesthetic: "utopian-future" — porcelain/steel aerodynamic surfaces with
+   luminous violet accents. Built on WPF-UI (Fluent) material + layering bones,
+   re-skinned. Supports light + dark, equal weight.
+
+   NAMING: canonical CSS variables mirror the native app's dotted XAML token
+   names, with dots rendered as hyphens:
+       surface.card   -> --surface-card
+       text.primary   -> --text-primary
+       accent.default -> --accent-default
+       space.12       -> --space-12        (named by PIXEL VALUE, not ordinal)
+       radius.md      -> --radius-md
+       font.display   -> --font-display    (Urbanist — UI)
+       font.brand     -> --font-brand      (Nuqun — wordmark only)
+   The dotted form is the conceptual XAML DynamicResource key; the hyphenated
+   form is the CSS handle. Both refer to the same token.
+
+   ⚠ XAML resource type — the difference between a working and a broken theme
+   toggle: any color/brush that appears in BOTH the light and dark blocks below
+   MUST be a DynamicResource (it has to re-resolve when the OS theme flips).
+   Theme-INVARIANT tokens MAY be StaticResource: the spacing scale, radii, font
+   families / weights / sizes, and the FIXED Okabe-Ito categorical chart palette
+   (chart.series.1–8, chart.wan, chart.local). The up/down chart series and every
+   chart-chrome token DO theme-swap → DynamicResource.
+
+   BACK-COMPAT: every legacy variable (--fg1, --fill-card, --series-up,
+   --accent, --space-3 …where non-colliding) is preserved as a single-definition
+   var() ALIAS pointing at its canonical token, so existing mockups + the UI kit
+   keep running. Aliases follow the theme automatically.
+
+   ----------------------------------------------------------------------------
+   RECONCILIATION CROSSWALK  (brand values win; app is the placeholder)
+   ----------------------------------------------------------------------------
+   Tokens whose VALUE differs from the as-built native app. These are NOT
+   mock-only — they are buildable in XAML (a StaticResource value swap in the
+   theme dictionary). The table is a MIGRATION MAP: it records the delta the
+   native side still needs to apply so a developer knows which resources to
+   update. "Current XAML" = stock Wpf.Ui value shipping today.
+
+     Token                  Current XAML   Reconciled (brand)   Status
+     --------------------   ------------   ------------------   --------------
+     radius.sm              4px            6px                  needs-migration
+     radius.md   (cards)    6px            10px                 needs-migration
+     radius.lg              8px            14px                 needs-migration
+     font.size.subtitle     16px           20px                 needs-migration
+     font.size.title        20px           28px                 needs-migration
+     font.size.title.large  24px           40px                 needs-migration
+     font.size.display      32px           68px                 needs-migration
+     chart.upSeries         #56B4E9 fixed  brand violet, swaps  intentional dev.
+     chart.downSeries       #E69F00 fixed  brand teal, swaps    intentional dev.
+
+   Identical in both (no migration): space.4/8/12/16/24/32/48, font.size.body
+   (14), font.size.caption (12), radius.xs (4). The app spacing set is a clean
+   SUBSET of the brand scale — brand only ADDS space.20/40/64.
+
+   MIGRATION CAVEATS (native feasibility — buildable, but real work):
+     • Larger type inside 22–28px compact DataGrid rows needs a row-height /
+       line-height pass so dense grids don't clip.
+     • Wpf.Ui shares some CornerRadius resources across control + card; pushing
+       cards to 10px may pull button/input radius unless the resource keys are
+       split first.
+
+   CHART NOTE: per product decision the up/down series use the brand violet/teal
+   and theme-swap (overriding the app's fixed Okabe-Ito blue/orange). Tradeoff:
+   violet/teal is not as colorblind-distinct as blue/orange. To preserve
+   safety, the 8-slot CATEGORICAL palette (chart.series.1–8) stays Okabe-Ito
+   and fixed, matching the native app.
+
+   METALLIC / MATERIAL NOTE (native-buildable, cheap): the brushed-steel + edge
+   highlight + restrained violet glow are static gradients / strokes / a single
+   small shadow — they map to LinearGradientBrush, a 1px Border, and one
+   Composition DropShadow on the accent only. ~free natively. Two things are
+   deliberately EXCLUDED to honor "light & fast — no glow that pays no benchmark
+   dividend": (1) live Acrylic backdrop-blur on text-bearing cards — text cards
+   are OPAQUE (surface.card); Acrylic is reserved for the App-Detail flyout
+   only; (2) animated sheen sweeps — --sheen is a STATIC highlight, never
+   animated.
+
+   Load order:
+     1. this file (self-hosts Nuqun / Urbanist / NFCode via @font-face below)
+   Then set theme with  <html data-theme="light">  or  data-theme="dark".
+   With no attribute, it follows the OS via prefers-color-scheme.
+   ============================================================================ */
+
+/* Brand fonts — self-hosted (uploaded). Urbanist = UI/body sans (font.display),
+   NFCode = data/mono (font.mono), Nuqun = wordmark (font.brand). */
+@font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Light.ttf') format('truetype');   font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-SemiBold.ttf') format('truetype'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Bold.ttf') format('truetype');    font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'NFCode';   src: url('fonts/NFCode-Regular.otf') format('opentype');  font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Nuqun';    src: url('fonts/Nuqun-Regular.otf') format('opentype');   font-weight: 400; font-style: normal; font-display: swap; }
+
+/* ----------------------------------------------------------------------------
+   1. PRIMITIVES — raw brand scales (theme-independent)
+   ---------------------------------------------------------------------------- */
+:root {
+  /* Steel — the porcelain/aerodynamic neutral (cool, faint blue undertone).
+     This is the PRIMARY brand tone: surfaces, chrome, the "body". */
+  --steel-0:   #ffffff;
+  --steel-50:  #f5f6fb;
+  --steel-100: #eceef6;
+  --steel-150: #e3e6f0;
+  --steel-200: #d8dce9;
+  --steel-300: #c2c7d9;
+  --steel-400: #9aa1b7;
+  --steel-500: #6e7589;
+  --steel-600: #515872;  /* shifted cool */
+  --steel-700: #383d52;
+  --steel-800: #262a3a;
+  --steel-850: #1e2230;
+  --steel-900: #181b27;
+  --steel-950: #10121b;
+
+  /* Violet — the SECONDARY brand color & interactive ACCENT (LSU tiger purple
+     anchored at 800). Echo's luminous visor light. */
+  --violet-50:  #f3eefe;
+  --violet-100: #e7ddfd;
+  --violet-200: #cfbcfb;
+  --violet-300: #b294f6;
+  --violet-400: #9a72f0;
+  --violet-500: #8254e6;  /* accent default */
+  --violet-600: #6d3fd1;
+  --violet-700: #561fb0;
+  --violet-800: #461d7c;  /* ← LSU tiger purple — brand anchor */
+  --violet-900: #2e1456;
+
+  /* Data-viz / semantic hues — refined, slightly desaturated to sit calm
+     against the porcelain palette. */
+  --teal-400:   #34d0e0;
+  --teal-500:   #20b6c6;   /* "Down" data series */
+  --emerald-500:#2fb67c;   /* healthy / signed / success */
+  --amber-500:  #e8a33d;   /* warning / connecting */
+  --coral-500:  #e5594f;   /* danger / unsigned-from-temp / critical */
+  --blue-500:   #4c8df5;   /* info / WAN class */
+
+  /* Okabe-Ito colorblind-safe primitives — fixed, do NOT theme-swap.
+     Source of the native app's categorical chart palette. */
+  --oki-blue:    #0072B2;  /* WAN-class endpoint */
+  --oki-sky:     #56B4E9;
+  --oki-orange:  #E69F00;
+  --oki-vermil:  #D55E00;
+  --oki-green:   #009E73;  /* LAN/local endpoint */
+  --oki-yellow:  #F0E442;
+  --oki-purple:  #CC79A7;
+  --oki-grey:    #999999;
+
+  /* ---- Corner radius (radius.*) — brand scale ------------------------------
+     radius.sm/md/lg carry BRAND values (6/10/14); native app currently ships
+     4/6/8 — see crosswalk. radius.xs (4) matches the app's radius.sm. */
+  --radius-xs:   4px;    /* radius.xs   — = app radius.sm */
+  --radius-sm:   6px;    /* radius.sm   — controls: buttons, inputs */
+  --radius-md:   10px;   /* radius.md   — cards, list rows */
+  --radius-lg:   14px;   /* radius.lg   — overlays, flyouts, hero surfaces */
+  --radius-xl:   20px;   /* radius.xl   — large brand surfaces */
+  --radius-pill: 999px;  /* radius.pill */
+
+  /* ---- Spacing (space.*) — named by PIXEL VALUE (matches XAML convention) ---
+     4px grid. App spacing set {4,8,12,16,24,32,48} is a subset; brand adds
+     {20,40,64}. NOTE: legacy ORDINAL names (--space-3 = 12px, etc.) are removed
+     because they collide with by-value names; use --space-<px>. */
+  --space-4:  4px;
+  --space-8:  8px;
+  --space-12: 12px;   /* card header -> body */
+  --space-16: 16px;   /* gap between major card stacks */
+  --space-20: 20px;   /* brand extra */
+  --space-24: 24px;   /* page outer margin */
+  --space-32: 32px;
+  --space-40: 40px;   /* brand extra */
+  --space-48: 48px;
+  --space-64: 64px;   /* brand extra */
+
+  /* ---- Density (density.row.*) — data-grid row heights --------------------- */
+  --density-row-default: 28px;  /* density.row.default — standard DataGrid rows */
+  --density-row-compact: 22px;  /* density.row.compact — data-dense grids       */
+
+  /* ---- Typography: font roles --------------------------------------------- */
+  --font-display: 'Urbanist', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif; /* font.display — primary UI */
+  --font-mono:    'NFCode', 'Cascadia Code', ui-monospace, 'SF Mono', Menlo, monospace;              /* font.mono    — data/numeric */
+  --font-brand:   'Nuqun', 'Urbanist', system-ui, sans-serif;                                        /* font.brand   — wordmark ONLY */
+
+  /* ---- Typography: size scale (font.size.*) — BRAND values ----------------- */
+  --font-size-caption:     12px;
+  --font-size-body:        14px;
+  --font-size-body-large:  18px;   /* brand extra */
+  --font-size-subtitle:    20px;   /* brand (app 16) */
+  --font-size-title:       28px;   /* brand (app 20) */
+  --font-size-title-large: 40px;   /* brand (app 24) */
+  --font-size-display:     68px;   /* brand (app 32) */
+
+  /* ---- Typography: weights (font.weight.*) -------------------------------- */
+  --font-weight-regular:  400;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  /* Composite type ramp (the WPF-UI ladder) — drives the .zv-* helper classes.
+     NOTE: the display treatment uses font.brand (Nuqun); all other roles use
+     font.display (Urbanist). */
+  --type-display:      var(--font-weight-regular)  var(--font-size-display)/1.12     var(--font-brand);
+  --type-title-large:  var(--font-weight-semibold) var(--font-size-title-large)/1.2  var(--font-display);
+  --type-title:        var(--font-weight-semibold) var(--font-size-title)/1.28       var(--font-display);
+  --type-subtitle:     var(--font-weight-semibold) var(--font-size-subtitle)/1.4     var(--font-display);
+  --type-body-large:   var(--font-weight-regular)  var(--font-size-body-large)/1.5   var(--font-display);
+  --type-body-strong:  var(--font-weight-semibold) var(--font-size-body)/1.5         var(--font-display);
+  --type-body:         var(--font-weight-regular)  var(--font-size-body)/1.5         var(--font-display);
+  --type-caption:      var(--font-weight-regular)  var(--font-size-caption)/1.4      var(--font-display);
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;   /* eyebrows / labels */
+  --tracking-display: 0.05em; /* Nuqun display/title-large — needs air; logomark uses its own */
+
+  /* Motion — calm, aerodynamic. No bounce. */
+  --ease-glide: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+
+  /* ---- Chart palette: categorical (chart.series.1–8) — Okabe-Ito, FIXED -----
+     Theme-independent + colorblind-safe; matches the native app exactly. */
+  --chart-series-1: var(--oki-blue);
+  --chart-series-2: var(--oki-orange);
+  --chart-series-3: var(--oki-green);
+  --chart-series-4: var(--oki-purple);
+  --chart-series-5: var(--oki-sky);
+  --chart-series-6: var(--oki-vermil);
+  --chart-series-7: var(--oki-yellow);
+  --chart-series-8: var(--oki-grey);
+  --chart-wan:      var(--oki-blue);   /* chart.wan   — WAN-class endpoint  */
+  --chart-local:    var(--oki-green);  /* chart.local — LAN/local endpoint  */
+}
+
+/* ----------------------------------------------------------------------------
+   2. CANONICAL SEMANTIC TOKENS — Light theme (porcelain daylight)
+   ---------------------------------------------------------------------------- */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces (surface.*) */
+  --surface-window:      #eef0f7;            /* desktop / window backdrop (mica tint) */
+  --surface-background:  #f8f9fc;            /* surface.background — page root under Mica */
+  --surface-layer:       #ffffff;            /* surface.layer — raised / section grouping */
+  --surface-card:        #ffffff;            /* surface.card — OPAQUE: cards carrying text/data over Mica */
+  --surface-card-alt:    rgba(255,255,255,0.70); /* surface.card.alt — translucent; ONLY where Mica show-through intended */
+  --surface-subtle:      rgba(20,24,46,0.04);    /* surface.subtle — inline hint/banner bg, hover on transparent */
+  --surface-subtle-2:    rgba(20,24,46,0.07);    /* pressed on transparent */
+  --surface-subtle-alt:  rgba(20,24,46,0.028);   /* surface.subtle.alt — DataGrid alternating row */
+  --surface-control:     rgba(255,255,255,0.85);
+  --surface-control-hover: rgba(255,255,255,0.95);
+
+  /* Acrylic — OS context/tray menus ONLY (mock approximation; WPF has no per-element
+     backdrop). The App-Detail flyout is OPAQUE surface.layer, not frosted. */
+  --acrylic-bg:    rgba(244,245,251,0.72);
+  --acrylic-blur:  24px;
+
+  /* Text (text.*) */
+  --text-primary:    #1a1c26;   /* text.primary */
+  --text-secondary:  #565d72;   /* text.secondary */
+  --text-tertiary:   #8b90a4;   /* text.tertiary */
+  --text-disabled:   #b4b8c7;   /* text.disabled */
+  --text-inverse:    #f5f6fb;   /* text.inverse — light text on dark surface */
+  --text-on-accent:  #ffffff;   /* text.on-accent */
+
+  /* Borders (border.*) */
+  --border-card:     rgba(20,24,46,0.08);   /* border.card */
+  --border-subtle:   rgba(20,24,46,0.07);   /* border.subtle — lighter divider */
+  --border-control:  rgba(20,24,46,0.14);
+  --border-elevation: rgba(20,24,46,0.06);  /* bottom highlight on controls */
+
+  /* Accent (accent.*) — violet */
+  --accent-default:   var(--violet-600);    /* accent.default */
+  --accent-secondary: var(--violet-700);    /* accent.secondary — hover/pressed */
+  --accent-tertiary:  var(--violet-800);    /* accent.tertiary — focused state */
+  --accent-fill:      var(--violet-600);    /* accent.fill — accent SURFACE that carries on-accent (white) text; violet-600 clears AA 4.5:1 with #fff. Use for filled buttons/pills. accent.default is for text/borders/focus. */
+  --accent-subtle:    rgba(109,63,209,0.10);
+  --accent-text:      var(--violet-700);
+  --accent-glow:      rgba(109,63,209,0.28);
+
+  /* Status (status.*) */
+  --status-success:    #06b6a3;  --status-success-bg: rgba(6,182,163,0.14);
+  --status-caution:    #ec9a0b;  --status-caution-bg: rgba(236,154,11,0.16);
+  --status-caution-text: #8a5a00;  /* caution.text — darker amber for TEXT on the caution tint (~5.2:1 AA); --status-caution stays bright for dots/graphics */
+  --status-critical:   #d62b62;  --status-critical-bg: rgba(214,43,98,0.12);
+  --status-neutral:    #4d5fd0;  --status-neutral-bg: rgba(77,95,208,0.13);
+  /* Service-status dot (status.connected / .warming / .disconnected) */
+  --status-connected:    #06b6a3;
+  --status-warming:      #ec9a0b;
+  --status-disconnected: #d62b62;
+
+  /* Chart up/down series (chart.upSeries / chart.downSeries) — brand, THEME-SWAPS */
+  --chart-up-series:   var(--violet-600);
+  --chart-down-series: var(--teal-500);
+  /* Chart chrome (axes/grid/labels/tooltip/legend) — THEME-SWAPS; LiveCharts2 paints none of it from the theme, so set explicitly */
+  --chart-axis:         var(--border-subtle);      /* chart.axis */
+  --chart-gridline:     rgba(20,24,46,0.045);      /* chart.gridline — border.subtle at lower alpha */
+  --chart-axis-label:   var(--text-tertiary);      /* chart.axis.label */
+  --chart-tooltip-bg:   var(--surface-card);       /* chart.tooltip.bg — opaque */
+  --chart-tooltip-text: var(--text-primary);       /* chart.tooltip.text */
+  --chart-legend-text:  var(--text-secondary);     /* chart.legend.text */
+
+  /* Elevation shadows (cool-tinted) */
+  --shadow-sm:  0 1px 2px rgba(24,27,39,0.06), 0 1px 1px rgba(24,27,39,0.04);
+  --shadow-md:  0 4px 12px rgba(24,27,39,0.08), 0 1px 3px rgba(24,27,39,0.05);
+  --shadow-lg:  0 12px 32px rgba(24,27,39,0.12), 0 2px 8px rgba(24,27,39,0.06);
+  /* status.connected ring + restrained violet glow — native: one Composition DropShadow on accent only */
+  --shadow-glow: 0 0 0 1px rgba(109,63,209,0.20), 0 6px 24px rgba(109,63,209,0.18);
+
+  /* Metallic / brushed-steel materials — STATIC gradients/strokes (never animated).
+     --metal-card is OPAQUE so text-bearing cards keep contrast over Mica. */
+  --edge-light: rgba(255,255,255,0.55);            /* thin top catch-light, not a gloss */
+  --metal-card: linear-gradient(180deg, #ffffff, #f6f8fc);              /* opaque brushed card */
+  --metal-control: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245,247,251,0.88));
+  --metal-control-hover: linear-gradient(180deg, #ffffff, rgba(248,249,253,0.95));
+  --metal-bar: linear-gradient(180deg, rgba(255,255,255,0.70), rgba(246,248,252,0.50));
+  --accent-grad: linear-gradient(180deg, var(--accent-fill), var(--violet-700));        /* primary fill — anchored at accent.fill (violet-600) so white text clears AA in both themes */
+  --accent-grad-hover: linear-gradient(180deg, var(--violet-500), var(--violet-600));    /* brightens on hover (transient) */
+  --sheen: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0) 45%); /* STATIC highlight */
+  --blur-surface: 22px;  /* used only on chrome/flyout, NOT text cards */
+
+  /* Brand-moment metallic fills (heroes only, used sparingly) */
+  --surface-chrome: linear-gradient(176deg, #fbfcfe 0%, #ced4df 34%, #f1f4f8 52%, #c5cbd7 70%, #eef0f5 100%);
+  --surface-brushed: repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, rgba(15,18,30,0.045) 1px 2px), linear-gradient(180deg, #eef0f5, #d7dbe4 52%, #e9ebf1);
+  --surface-graphite: linear-gradient(176deg, #2c303b 0%, #20242e 50%, #14171f 100%);
+  --surface-chrome-violet: linear-gradient(176deg, #f4f0fd 0%, #c2b2ee 34%, #efe9fc 52%, #b19dea 70%, #e6ddfb 100%);
+}
+
+/* ----------------------------------------------------------------------------
+   3. CANONICAL SEMANTIC TOKENS — Dark theme (cockpit / HUD)
+   ---------------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-window:      #0d0f17;
+  --surface-background:  #191c26;
+  --surface-layer:       #262a38;
+  --surface-card:        #232735;            /* OPAQUE */
+  --surface-card-alt:    rgba(34,38,52,0.66);
+  --surface-subtle:      rgba(255,255,255,0.05);
+  --surface-subtle-2:    rgba(255,255,255,0.09);
+  --surface-subtle-alt:  rgba(255,255,255,0.035);
+  --surface-control:     rgba(255,255,255,0.06);
+  --surface-control-hover: rgba(255,255,255,0.10);
+
+  --acrylic-bg:    rgba(24,27,39,0.70);
+  --acrylic-blur:  28px;
+
+  --text-primary:   #f1f2f8;
+  --text-secondary: #a7adc0;
+  --text-tertiary:  #717892;
+  --text-disabled:  #515872;
+  --text-inverse:   #181b27;
+  --text-on-accent: #ffffff;
+
+  --border-card:      rgba(255,255,255,0.08);
+  --border-subtle:    rgba(255,255,255,0.07);
+  --border-control:   rgba(255,255,255,0.12);
+  --border-elevation: rgba(255,255,255,0.05);
+
+  --accent-default:   var(--violet-500);
+  --accent-secondary: var(--violet-400);
+  --accent-tertiary:  var(--violet-600);
+  --accent-fill:      var(--violet-600);    /* accent.fill — one stop DARKER than accent.default here so on-accent white text clears AA (default stays violet-500 for text/borders/focus) */
+  --accent-subtle:    rgba(130,84,230,0.18);
+  --accent-text:      var(--violet-300);
+  --accent-glow:      rgba(130,84,230,0.45);
+
+  --status-success:    #2bd1bd;  --status-success-bg: rgba(43,209,189,0.16);
+  --status-caution:    #f1ad34;  --status-caution-bg: rgba(241,173,52,0.18);
+  --status-caution-text: var(--status-caution);  /* bright amber already clears AA on the dark tint */
+  --status-critical:   #f5547f;  --status-critical-bg: rgba(245,84,127,0.18);
+  --status-neutral:    #7e8ef7;  --status-neutral-bg: rgba(126,142,247,0.16);
+  --status-connected:    #2bd1bd;
+  --status-warming:      #f1ad34;
+  --status-disconnected: #f5547f;
+
+  --chart-up-series:   var(--violet-400);
+  --chart-down-series: var(--teal-400);
+  /* Chart chrome — THEME-SWAPS (see light block) */
+  --chart-axis:         var(--border-subtle);
+  --chart-gridline:     rgba(255,255,255,0.045);
+  --chart-axis-label:   var(--text-tertiary);
+  --chart-tooltip-bg:   var(--surface-card);
+  --chart-tooltip-text: var(--text-primary);
+  --chart-legend-text:  var(--text-secondary);
+
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.40);
+  --shadow-md:  0 6px 18px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.35);
+  --shadow-lg:  0 18px 44px rgba(0,0,0,0.55), 0 3px 10px rgba(0,0,0,0.40);
+  --shadow-glow: 0 0 0 1px rgba(130,84,230,0.40), 0 8px 30px rgba(130,84,230,0.40);
+
+  --edge-light: rgba(255,255,255,0.09);
+  --metal-card: linear-gradient(180deg, #2b3040, #232735);            /* opaque brushed card */
+  --metal-control: linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.04));
+  --metal-control-hover: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.07));
+  --metal-bar: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  --accent-grad: linear-gradient(180deg, var(--accent-fill), var(--violet-700));
+  --accent-grad-hover: linear-gradient(180deg, var(--violet-500), var(--violet-600));
+  --sheen: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0) 45%);
+  --blur-surface: 26px;
+
+  --surface-chrome: linear-gradient(176deg, #2c303b 0%, #20242e 50%, #14171f 100%);
+  --surface-brushed: repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, rgba(0,0,0,0.10) 1px 2px), linear-gradient(180deg, #2a2e3b, #1c2029 52%, #262a36);
+  --surface-graphite: linear-gradient(176deg, #2c303b 0%, #20242e 50%, #14171f 100%);
+  --surface-chrome-violet: linear-gradient(176deg, #2c2740 0%, #4a3a78 34%, #2f2a47 52%, #3f3168 70%, #2a2540 100%);
+}
+
+/* Follow OS when no explicit theme is chosen — mirrors the dark canonical set */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --surface-window:#0d0f17; --surface-background:#191c26; --surface-layer:#262a38;
+    --surface-card:#232735; --surface-card-alt:rgba(34,38,52,0.66);
+    --surface-subtle:rgba(255,255,255,0.05); --surface-subtle-2:rgba(255,255,255,0.09);
+    --surface-subtle-alt:rgba(255,255,255,0.035);
+    --surface-control:rgba(255,255,255,0.06); --surface-control-hover:rgba(255,255,255,0.10);
+    --acrylic-bg:rgba(24,27,39,0.70); --acrylic-blur:28px;
+    --text-primary:#f1f2f8; --text-secondary:#a7adc0; --text-tertiary:#717892;
+    --text-disabled:#515872; --text-inverse:#181b27; --text-on-accent:#fff;
+    --border-card:rgba(255,255,255,0.08); --border-subtle:rgba(255,255,255,0.07);
+    --border-control:rgba(255,255,255,0.12); --border-elevation:rgba(255,255,255,0.05);
+    --accent-default:var(--violet-500); --accent-secondary:var(--violet-400); --accent-tertiary:var(--violet-600); --accent-fill:var(--violet-600);
+    --accent-subtle:rgba(130,84,230,0.18); --accent-text:var(--violet-300); --accent-glow:rgba(130,84,230,0.45);
+    --status-success:#2bd1bd; --status-success-bg:rgba(43,209,189,0.16);
+    --status-caution:#f1ad34; --status-caution-bg:rgba(241,173,52,0.18); --status-caution-text:#f1ad34;
+    --status-critical:#f5547f; --status-critical-bg:rgba(245,84,127,0.18);
+    --status-neutral:#7e8ef7; --status-neutral-bg:rgba(126,142,247,0.16);
+    --status-connected:#2bd1bd; --status-warming:#f1ad34; --status-disconnected:#f5547f;
+    --chart-up-series:var(--violet-400); --chart-down-series:var(--teal-400);
+    --chart-axis:var(--border-subtle); --chart-gridline:rgba(255,255,255,0.045); --chart-axis-label:var(--text-tertiary);
+    --chart-tooltip-bg:var(--surface-card); --chart-tooltip-text:var(--text-primary); --chart-legend-text:var(--text-secondary);
+    --shadow-sm:0 1px 2px rgba(0,0,0,0.40);
+    --shadow-md:0 6px 18px rgba(0,0,0,0.45),0 1px 3px rgba(0,0,0,0.35);
+    --shadow-lg:0 18px 44px rgba(0,0,0,0.55),0 3px 10px rgba(0,0,0,0.40);
+    --shadow-glow:0 0 0 1px rgba(130,84,230,0.40),0 8px 30px rgba(130,84,230,0.40);
+    --edge-light:rgba(255,255,255,0.09);
+    --metal-card:linear-gradient(180deg, #2b3040, #232735);
+    --metal-control:linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.04));
+    --metal-control-hover:linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.07));
+    --metal-bar:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    --accent-grad:linear-gradient(180deg, var(--accent-fill), var(--violet-700));
+    --accent-grad-hover:linear-gradient(180deg, var(--violet-500), var(--violet-600));
+    --sheen:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0) 45%);
+    --blur-surface:26px;
+    --surface-chrome:linear-gradient(176deg, #2c303b 0%, #20242e 50%, #14171f 100%);
+    --surface-brushed:repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, rgba(0,0,0,0.10) 1px 2px), linear-gradient(180deg, #2a2e3b, #1c2029 52%, #262a36);
+    --surface-graphite:linear-gradient(176deg, #2c303b 0%, #20242e 50%, #14171f 100%);
+    --surface-chrome-violet:linear-gradient(176deg, #2c2740 0%, #4a3a78 34%, #2f2a47 52%, #3f3168 70%, #2a2540 100%);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   4. BACK-COMPAT ALIASES — legacy names -> canonical tokens.
+   Defined ONCE (var() pointers); they inherit whatever the canonical token
+   resolves to in the active theme. Prefer the canonical names above in new work.
+   ---------------------------------------------------------------------------- */
+:root {
+  /* backgrounds */
+  --bg-app:   var(--surface-window);
+  --bg-base:  var(--surface-background);
+  --bg-layer: var(--surface-layer);
+  /* fills */
+  --fill-card:           var(--surface-card-alt);   /* legacy --fill-card → TRANSLUCENT surface.card.alt, NOT the opaque surface.card. Do not put text/data on this over Mica (breaks the contrast-opacity rule) — use --surface-card for text-bearing cards. */
+  --fill-card-secondary: var(--surface-card-alt);
+  --fill-subtle:         var(--surface-subtle);
+  --fill-subtle-2:       var(--surface-subtle-2);
+  --fill-control:        var(--surface-control);
+  --fill-control-hover:  var(--surface-control-hover);
+  /* text */
+  --fg1: var(--text-primary);
+  --fg2: var(--text-secondary);
+  --fg3: var(--text-tertiary);
+  --fg-disabled: var(--text-disabled);
+  --fg-on-accent: var(--text-on-accent);
+  /* strokes */
+  --stroke-card:      var(--border-card);
+  --stroke-divider:   var(--border-subtle);
+  --stroke-control:   var(--border-control);
+  --stroke-elevation: var(--border-elevation);
+  /* accent */
+  --accent:       var(--accent-default);
+  --accent-hover: var(--accent-secondary);
+  --accent-press: var(--accent-tertiary);
+  /* semantic (caution/critical/neutral <- warning/danger/info) */
+  --success:   var(--status-success);   --success-bg: var(--status-success-bg);
+  --warning:   var(--status-caution);   --warning-bg: var(--status-caution-bg);   --warning-text: var(--status-caution-text);
+  --danger:    var(--status-critical);  --danger-bg:  var(--status-critical-bg);
+  --info:      var(--status-neutral);   --info-bg:    var(--status-neutral-bg);
+  /* data series */
+  --series-up:   var(--chart-up-series);
+  --series-down: var(--chart-down-series);
+  /* type: legacy --font-sans was Urbanist == font.display now */
+  --font-sans: var(--font-display);
+  /* type ramp legacy names already match (--type-*) and are defined in §1 */
+}
+
+/* ----------------------------------------------------------------------------
+   5. SEMANTIC TYPE CLASSES — drop-in helpers
+   ---------------------------------------------------------------------------- */
+.zv-display     { font: var(--type-display);     letter-spacing: var(--tracking-display); color: var(--text-primary); } /* font.brand (Nuqun) */
+.zv-title-large { font: var(--type-title-large); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.zv-title       { font: var(--type-title);       letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.zv-subtitle    { font: var(--type-subtitle);    color: var(--text-primary); }
+.zv-body-large  { font: var(--type-body-large);  color: var(--text-primary); }
+.zv-body-strong { font: var(--type-body-strong); color: var(--text-primary); }
+.zv-body        { font: var(--type-body);        color: var(--text-primary); }
+.zv-caption     { font: var(--type-caption);     color: var(--text-secondary); }
+.zv-eyebrow     {
+  font: var(--type-caption);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.zv-mono        { font-family: var(--font-mono); font-feature-settings: "tnum" 1, "zero" 1; }
+.zv-data        { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }

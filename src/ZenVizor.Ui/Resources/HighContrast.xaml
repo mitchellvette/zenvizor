@@ -1,0 +1,114 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        ZenVizor — Windows High Contrast token overrides.
+
+        WHEN MERGED: only when SystemParameters.HighContrast == true. The HC
+        ResourceDictionary is added as the LAST entry in
+        Application.Current.Resources.MergedDictionaries so its keys win over
+        DesignTokens.xaml. App startup must subscribe to
+        SystemParameters.StaticPropertyChanged (or SystemEvents.UserPreferenceChanged
+        with category=Color) and merge/unmerge this dictionary as HC flips.
+        See the verification gate in docs/design-system.md for the toggle
+        recipe (settings: Accessibility -> Contrast themes -> Aquatic, etc).
+
+        WHY THIS EXISTS: ZenVizor hard-overrides every brush. WPF normally
+        yields to SystemColors for the controls it touches — but only when
+        you DON'T override. Once you do (which DesignTokens.xaml does), HC
+        stops kicking in automatically. Per the design-system HC stance
+        (docs/design-system.md "Visual foundations -> High contrast"), we
+        ship a parallel dict that re-points every semantic token onto a
+        SystemColors brush so HC remains usable.
+
+        HOW THE OVERRIDE WORKS: every brush below uses
+            Color="{DynamicResource {x:Static SystemColors.<Name>ColorKey}}"
+        rather than aliasing a Wpf.Ui Color. The DynamicResource lookup
+        re-fires when the OS HC theme (Aquatic / Desert / Dusk / Night sky)
+        changes, so the brush instances we hand out re-paint without the
+        app having to do anything.
+
+        WHAT GETS COLLAPSED: HC defines a tiny palette
+        (Window/ControlBrush/HighlightBrush/WindowTextBrush/GrayTextBrush)
+        and that's it. The granular status colors (success/caution/critical)
+        ALL collapse to WindowText/Control because HC has no semantic
+        success/error colour — the OS palette is the contract. Charts likewise
+        collapse: series colours fall back to WindowText + GrayText for the
+        2-series case, which we hand to ChartBuilder by reading these brushes
+        at runtime (same wiring as the normal-mode chart paints).
+
+        DOT-LITERAL KEYS PRESERVED. Every x:Key here mirrors the matching key
+        in DesignTokens.xaml exactly so the merge is a value-only swap.
+    -->
+
+    <!--  Surfaces  -->
+    <SolidColorBrush x:Key="surface.background" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="surface.card"       Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="surface.card.alt"   Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="surface.layer"      Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="surface.subtle"     Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="surface.subtle.alt" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+
+    <!--  Text  -->
+    <SolidColorBrush x:Key="text.primary"   Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="text.secondary" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="text.tertiary"  Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="text.disabled"  Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="text.inverse"   Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+    <SolidColorBrush x:Key="text.on-accent" Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+
+    <!--  Accent  -->
+    <SolidColorBrush x:Key="accent.default"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="accent.secondary" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="accent.tertiary"  Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="accent.fill"      Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+
+    <!--  Status — collapse to WindowText + Control. HC has no notion of
+          success/caution/critical; the OS palette is the contract. The
+          *.text variants get WindowText so banners still read; backgrounds
+          all collapse to Control so the banner is visible against Window. -->
+    <SolidColorBrush x:Key="status.success"             Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.success.background"  Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="status.caution"             Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.caution.background"  Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="status.caution.text"        Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.critical"            Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.critical.background" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="status.neutral"             Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.neutral.background"  Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+
+    <SolidColorBrush x:Key="status.connected"    Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.warming"      Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="status.disconnected" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+
+    <!--  Borders  -->
+    <SolidColorBrush x:Key="border.card"   Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+    <SolidColorBrush x:Key="border.subtle" Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+
+    <!--  Charts — series collapse to WindowText / GrayText / Highlight for
+          line/column distinction. The categorical 8-slot palette only has
+          three meaningfully-distinct values in HC; that's a known and
+          documented limit of HC mode. -->
+    <SolidColorBrush x:Key="chart.upSeries"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="chart.downSeries" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.wan"        Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="chart.local"      Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.1"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.2"   Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.3"   Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.4"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.5"   Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.6"   Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.7"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="chart.series.8"   Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+
+    <!--  Chart chrome — axes, gridlines, labels, tooltip, legend. -->
+    <SolidColorBrush x:Key="chart.axis"         Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+    <SolidColorBrush x:Key="chart.gridline"     Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+    <SolidColorBrush x:Key="chart.axis.label"   Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.tooltip.bg"   Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="chart.tooltip.text" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="chart.legend.text"  Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+
+</ResourceDictionary>

@@ -118,6 +118,17 @@ zvctl <command> ...
 
 ---
 
+## Design system: source of truth
+
+ZenVizor has two design-token surfaces — the app and Claude Design mocks — and they must not drift:
+
+- **`src/ZenVizor.Ui/Resources/DesignTokens.xaml`** is canonical **for the app** (and `HighContrast.xaml` for the HC variant).
+- **`docs/design/colors_and_type.css`** is canonical **for Claude Design mockups**; `docs/design/SKILL.md` is a thin pointer at that CSS, not a third source.
+- The crosswalk in the `colors_and_type.css` header is the bridge: it records every value delta between the two and the migration direction. When you change a token value in either file, update the other and the crosswalk in the same commit.
+- `docs/design-system.md` is the human-readable companion to DesignTokens.xaml — keep it in sync when XAML keys change. `docs/claude-design-primer.md` is the paste-into-Claude-Design projection of `colors_and_type.css` — keep it in sync when CSS variables change.
+
+---
+
 ## Performance budget (enforce, don't drift)
 
 - Idle CPU **< 1%** on a typical desktop.
