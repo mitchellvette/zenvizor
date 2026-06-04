@@ -7,8 +7,21 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ui:ThemesDictionary Theme="Dark" />
+                <!-- ThemesDictionary is a placeholder slot — SystemThemeWatcher
+                     (wired in MainWindow.OnLoaded) swaps the underlying Source
+                     URI on every OS Light/Dark flip. Without this entry present
+                     at startup, ApplicationThemeManager.Apply silently no-ops
+                     the theme dictionary swap (it matches the slot by Source
+                     URI containing "Wpf.Ui" + "theme") and only the accent +
+                     backdrop updates run — that produced the flicker-without-
+                     re-theme symptom and the unstyled tray context menu.
+
+                     Initial Theme value is irrelevant; the first Watch() call
+                     replaces this dictionary with the current OS theme. -->
+                <ui:ThemesDictionary Theme="Light" />
                 <ui:ControlsDictionary />
+                <ResourceDictionary Source="pack://application:,,,/Resources/Fonts.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Resources/DesignTokens.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

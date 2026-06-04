@@ -3,7 +3,8 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
-      Background="{DynamicResource ApplicationBackgroundBrush}">
+      Background="{DynamicResource ApplicationBackgroundBrush}"
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -13,7 +14,9 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ui:TextBlock FontTypography="Subtitle" Text="Current Activity" />
+            <ui:TextBlock FontTypography="Subtitle"
+                          FontFamily="{DynamicResource font.display}"
+                          Text="Current Activity" />
             <Border x:Name="WarmingBanner" Visibility="Collapsed" Margin="16,0,0,0"
                     VerticalAlignment="Center"
                     Background="{DynamicResource SubtleFillColorSecondaryBrush}"
@@ -35,7 +38,9 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderThickness="1"
                 BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-            <lvc:CartesianChart x:Name="RatesChart" LegendPosition="Top" />
+            <lvc:CartesianChart x:Name="RatesChart"
+                                Background="Transparent"
+                                LegendPosition="Top" />
         </Border>
 
         <Border Grid.Row="2" Margin="0,12,0,0" CornerRadius="6"

@@ -3,7 +3,8 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
-      Background="{DynamicResource ApplicationBackgroundBrush}">
+      Background="{DynamicResource ApplicationBackgroundBrush}"
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
     <!-- DataGrid row virtualization is engaged programmatically — see
          AppDetailPage.EnforceDataGridBounds in the code-behind. Wpf.Ui's
@@ -67,6 +68,7 @@
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <Grid Grid.Row="2">
                     <lvc:CartesianChart x:Name="SeriesChart"
+                                        Background="Transparent"
                                         MinHeight="180"
                                         LegendPosition="Top" />
                     <TextBlock x:Name="NoDataOverlay"

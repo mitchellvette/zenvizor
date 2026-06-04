@@ -50,6 +50,8 @@ public partial class DashboardPage : Page
         {
             new Axis { Labeler = v => FormatRate(v) },
         };
+        ApplyChartTheme();
+        ChartTheming.Changed += () => Dispatcher.Invoke(ApplyChartTheme);
 
         TalkersList.ItemsSource = Talkers;
 
@@ -64,6 +66,8 @@ public partial class DashboardPage : Page
     {
         Dispatcher.Invoke(() => ApplyUpdate(update));
     }
+
+    private void ApplyChartTheme() => ChartTheming.Apply(RatesChart);
 
     private void ApplyUpdate(ActivitySnapshotUpdate update)
     {

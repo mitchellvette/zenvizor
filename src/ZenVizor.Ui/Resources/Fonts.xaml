@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Three font families ship in fonts/ (probed via
+         System.Windows.Media.Fonts.GetFontFamilies):
+
+           - "Urbanist"  — Corey Hu, geometric sans (Light/Regular/Bold)
+           - "NF Code"   — Steve Gigou, monospace with ligatures (Regular)
+           - "Nuqun"     — KFprod display face (Regular)
+
+         The Resource entries that back these pack URIs live in
+         ZenVizor.Ui.csproj under <ItemGroup Label="Design system fonts">,
+         linked under Fonts/ in the assembly.
+
+         Token roles:
+           font.display — primary UI / body / headers (Urbanist)
+           font.mono    — numeric, paths, hex, code-like text (NF Code)
+           font.brand   — wordmark / decorative only — NOT body text (Nuqun)
+
+         Note: Urbanist supplies multiple weights, so use FontWeight to pick
+         (Light=300, Regular=400, Bold=700). NF Code and Nuqun are
+         single-weight Regular only — setting FontWeight on them is a no-op. -->
+
+    <FontFamily x:Key="font.display">pack://application:,,,/Fonts/#Urbanist</FontFamily>
+    <FontFamily x:Key="font.mono">pack://application:,,,/Fonts/#NF Code</FontFamily>
+    <FontFamily x:Key="font.brand">pack://application:,,,/Fonts/#Nuqun</FontFamily>
+
+</ResourceDictionary>

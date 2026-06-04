@@ -34,9 +34,13 @@ public partial class HistoryPage : Page
         {
             new Axis { Labeler = v => PerAppPage.FormatBytes((long)v) + "/bucket" },
         };
+        ApplyChartTheme();
+        ChartTheming.Changed += () => Dispatcher.Invoke(ApplyChartTheme);
 
         Loaded += async (_, _) => await RefreshAsync();
     }
+
+    private void ApplyChartTheme() => ChartTheming.Apply(HistoryChart);
 
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {

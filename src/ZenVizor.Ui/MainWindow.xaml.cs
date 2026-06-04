@@ -1,8 +1,12 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ZenVizor.Ui.Services;
 using ZenVizor.Ui.Views;
+using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
 namespace ZenVizor.Ui;
@@ -14,6 +18,19 @@ public partial class MainWindow : FluentWindow
 
     public MainWindow()
     {
+        // SystemThemeWatcher.Watch MUST run before the window is Loaded.
+        // The Watch() implementation has a bug where its initial
+        // ApplySystemTheme call is guarded by `_observedWindows.Count == 0`,
+        // but when called from a window that is already Loaded the window
+        // is added to _observedWindows BEFORE that count check — so the
+        // initial theme apply is skipped and the app stays on whatever the
+        // placeholder ThemesDictionary in App.xaml specified (Light).
+        // Subsequent OS theme flips still work via the WndProc hook, which
+        // doesn't have the count guard. Calling here in the ctor takes the
+        // "deferred until Loaded" branch which works correctly; this matches
+        // the Wpf.Ui Gallery sample's call site.
+        SystemThemeWatcher.Watch(this, WindowBackdropType.Mica);
+
         InitializeComponent();
 
         _poller = new ServiceStatusPoller();
@@ -64,8 +81,14 @@ public partial class MainWindow : FluentWindow
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        SystemThemeWatcher.UnWatch(this);
         _poller.Dispose();
-        Tray.Dispose();
+        // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
+        // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
+        // disposes the tray AFTER the dispatcher fully drains. Calling
+        // Dispose here destroys the message-window HWND that the
+        // ContextMenu uses for activation tracking — if the popup is
+        // still mid-dismiss, it gets stranded on screen.
         Application.Current.Shutdown();
     }
 
@@ -83,6 +106,47 @@ public partial class MainWindow : FluentWindow
     private void OnTrayExitClicked(object sender, RoutedEventArgs e)
     {
         _exiting = true;
+
+        // The lingering tray popup is caused by ContextMenu inheriting the
+        // system menu fade animation via SetResourceReference on its inner
+        // Popup (SystemParameters.MenuPopupAnimationKey). That fade delays
+        // the Popup's _asyncDestroy DispatcherTimer, so the popup HWND
+        // stays on screen until the animation elapses — visible for "a
+        // few seconds" if Windows has slow menu animations enabled.
+        //
+        // Two fixes layered:
+        //   1. Override PopupAnimation on the inner Popup so dismissal is
+        //      HWND-immediate (local value beats SetResourceReference).
+        //      The inner Popup is the LOGICAL parent of the ContextMenu.
+        //   2. Wait for ContextMenu.Closed — which fires from the
+        //      _asyncDestroy tick AFTER DestroyWindow — before calling
+        //      Close on the main window, so the popup HWND is genuinely
+        //      gone before tearing down.
+        //
+        // Fully qualified MenuItem — Wpf.Ui.Controls also has a MenuItem
+        // type, but the tray ContextMenu uses the stock WPF one.
+        if (sender is System.Windows.Controls.MenuItem mi
+            && ContextMenuService.GetContextMenu(mi) is { } cm)
+        {
+            if (LogicalTreeHelper.GetParent(cm) is Popup popup)
+            {
+                popup.PopupAnimation = PopupAnimation.None;
+            }
+            cm.Closed += OnTrayMenuClosed;
+            cm.IsOpen = false;
+        }
+        else
+        {
+            Close();
+        }
+    }
+
+    private void OnTrayMenuClosed(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu cm)
+        {
+            cm.Closed -= OnTrayMenuClosed;
+        }
         Close();
     }
 

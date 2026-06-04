@@ -39,6 +39,8 @@ public partial class AppDetailPage : Page
         {
             new Axis { Labeler = v => PerAppPage.FormatBytes((long)v) + "/bucket" },
         };
+        ApplyChartTheme();
+        ChartTheming.Changed += () => Dispatcher.Invoke(ApplyChartTheme);
 
         ConnectionsGrid.ItemsSource = Connections;
         SessionsGrid.ItemsSource = Sessions;
@@ -67,6 +69,8 @@ public partial class AppDetailPage : Page
         ConnectionsGrid.MaxHeight = cap;
         SessionsGrid.MaxHeight = cap;
     }
+
+    private void ApplyChartTheme() => ChartTheming.Apply(SeriesChart);
 
     private void OnAppIdReceived()
     {

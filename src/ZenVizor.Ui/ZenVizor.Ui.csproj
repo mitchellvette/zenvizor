@@ -27,4 +27,16 @@
     <ProjectReference Include="..\ZenVizor.Ipc.Contracts\ZenVizor.Ipc.Contracts.csproj" />
   </ItemGroup>
 
+  <!-- Design system fonts. Linked under Fonts/ in the assembly so the pack URI
+       resolves as pack://application:,,,/Fonts/#<FamilyName>. Internal family
+       names (probed via System.Windows.Media.Fonts.GetFontFamilies): Urbanist,
+       NF Code, Nuqun. -->
+  <ItemGroup Label="Design system fonts">
+    <Resource Include="..\..\fonts\Urbanist-Light.ttf"   Link="Fonts\Urbanist-Light.ttf" />
+    <Resource Include="..\..\fonts\Urbanist-Regular.ttf" Link="Fonts\Urbanist-Regular.ttf" />
+    <Resource Include="..\..\fonts\Urbanist-Bold.ttf"    Link="Fonts\Urbanist-Bold.ttf" />
+    <Resource Include="..\..\fonts\NFCode-Regular.otf"   Link="Fonts\NFCode-Regular.otf" />
+    <Resource Include="..\..\fonts\Nuqun-Regular.otf"    Link="Fonts\Nuqun-Regular.otf" />
+  </ItemGroup>
+
 </Project>

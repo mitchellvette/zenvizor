@@ -1,0 +1,212 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        ZenVizor design tokens. The semantic-name keys (e.g. surface.card,
+        accent.default) are the contract between Claude Design mockups and
+        Claude Code XAML. Mockup annotations literally name the token; this
+        file is where that name resolves to a concrete value.
+
+        v1 strategy: every brush token aliases an existing Wpf.Ui Color
+        resource via Color="{DynamicResource <WpfUiColor>}". Result: zero
+        visual change vs. pre-tokenization, AND theme swap (Light/Dark, OS
+        accent change) still propagates because the underlying Wpf.Ui Color
+        is what gets re-resolved when the theme dictionary swaps.
+
+        WHY use DynamicResource at the Color level (not StaticResource): the
+        DynamicResource lookup re-fires on theme changes, so our aliased
+        brush picks up the new Color the moment Wpf.Ui swaps its theme
+        dictionary. StaticResource would snapshot at load and break theming.
+
+        High-contrast: this file defines NEW keys with semantic names; it
+        does NOT override any SystemColors brush or any standard WPF default
+        brush, so Windows high-contrast behavior is unchanged from baseline
+        Wpf.Ui (which is the limit of what we can offer without a dedicated
+        high-contrast token dictionary — out of scope for the polish
+        interlude).
+
+        Dotted x:Key literals (accent.default, surface.card) are preserved
+        exactly. Do NOT PascalCase them or strip the dots — the literal
+        string is the contract that lets a mockup annotation map mechanically
+        to a {DynamicResource ...} reference.
+    -->
+
+    <!--  Surfaces  ============================================================
+          Cards/data surfaces over the Mica backdrop need to be opaque enough
+          to guarantee text legibility (WCAG AA). surface.card aliases to
+          Wpf.Ui's SolidBackgroundFillColorBase, which is an opaque solid (not
+          a translucent fill), so text on top is not subject to Mica showing
+          through. surface.background is the page background — Mica's job to
+          handle, so it aliases the application background color. -->
+
+    <SolidColorBrush x:Key="surface.background" Color="{DynamicResource ApplicationBackgroundColor}" />
+    <SolidColorBrush x:Key="surface.card"       Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    <SolidColorBrush x:Key="surface.card.alt"   Color="{DynamicResource CardBackgroundFillColorDefault}" />
+    <SolidColorBrush x:Key="surface.layer"      Color="{DynamicResource LayerFillColorDefault}" />
+    <SolidColorBrush x:Key="surface.subtle"     Color="{DynamicResource SubtleFillColorSecondary}" />
+    <SolidColorBrush x:Key="surface.subtle.alt" Color="{DynamicResource SubtleFillColorTertiary}" />
+
+    <!--  Text  ================================================================
+          Wpf.Ui's TextFillColor* keys are auto-tinted per theme. -->
+
+    <SolidColorBrush x:Key="text.primary"    Color="{DynamicResource TextFillColorPrimary}" />
+    <SolidColorBrush x:Key="text.secondary"  Color="{DynamicResource TextFillColorSecondary}" />
+    <SolidColorBrush x:Key="text.tertiary"   Color="{DynamicResource TextFillColorTertiary}" />
+    <SolidColorBrush x:Key="text.disabled"   Color="{DynamicResource TextFillColorDisabled}" />
+    <SolidColorBrush x:Key="text.inverse"    Color="{DynamicResource TextFillColorInverse}" />
+    <SolidColorBrush x:Key="text.on-accent"  Color="{DynamicResource TextOnAccentFillColorPrimary}" />
+
+    <!--  Accent  ==============================================================
+          OS accent color, surfaced via Wpf.Ui's SystemAccentColor* aliases. -->
+
+    <SolidColorBrush x:Key="accent.default"   Color="{DynamicResource SystemAccentColorPrimary}" />
+    <SolidColorBrush x:Key="accent.secondary" Color="{DynamicResource SystemAccentColorSecondary}" />
+    <SolidColorBrush x:Key="accent.tertiary"  Color="{DynamicResource SystemAccentColorTertiary}" />
+
+    <!--  Status  ==============================================================
+          Generic status semantics (success/caution/critical/neutral) plus
+          ZenVizor-specific connection-state tokens. The service-status dot in
+          MainWindow is hardcoded Brushes.DarkOrange / Brushes.MediumSeaGreen
+          today; status.connected / .warming / .disconnected are the tokens
+          that should replace those during the polish pass. -->
+
+    <SolidColorBrush x:Key="status.success"            Color="{DynamicResource SystemFillColorSuccess}" />
+    <SolidColorBrush x:Key="status.success.background" Color="{DynamicResource SystemFillColorSuccessBackground}" />
+    <SolidColorBrush x:Key="status.caution"            Color="{DynamicResource SystemFillColorCaution}" />
+    <SolidColorBrush x:Key="status.caution.background" Color="{DynamicResource SystemFillColorCautionBackground}" />
+    <SolidColorBrush x:Key="status.critical"           Color="{DynamicResource SystemFillColorCritical}" />
+    <SolidColorBrush x:Key="status.critical.background" Color="{DynamicResource SystemFillColorCriticalBackground}" />
+    <SolidColorBrush x:Key="status.neutral"            Color="{DynamicResource SystemFillColorNeutral}" />
+    <SolidColorBrush x:Key="status.neutral.background" Color="{DynamicResource SystemFillColorNeutralBackground}" />
+
+    <SolidColorBrush x:Key="status.connected"    Color="{DynamicResource SystemFillColorSuccess}" />
+    <SolidColorBrush x:Key="status.warming"      Color="{DynamicResource SystemFillColorCaution}" />
+    <SolidColorBrush x:Key="status.disconnected" Color="{DynamicResource SystemFillColorCritical}" />
+
+    <!--  Borders  =============================================================
+          Wpf.Ui ships ControlElevationBorderBrush as a LinearGradientBrush
+          with NO Color counterpart, so we can't alias it via the Color={...}
+          pattern. For card/section strokes we use CardStrokeColorDefault
+          (which IS a Color resource). Callers that need the gradient-style
+          control border continue to reference Wpf.Ui's
+          {DynamicResource ControlElevationBorderBrush} directly. -->
+
+    <SolidColorBrush x:Key="border.card"   Color="{DynamicResource CardStrokeColorDefault}" />
+    <SolidColorBrush x:Key="border.subtle" Color="{DynamicResource CardStrokeColorDefaultSolid}" />
+
+    <!--  Data-viz palette  ====================================================
+          SkiaSharp paints used by LiveCharts2 do NOT inherit DynamicResource;
+          chart series colors must be applied in code (ChartBuilder) by reading
+          these resources via Application.Current.Resources[<key>] and feeding
+          them into SKPaints. That wiring is a follow-up; these tokens are the
+          contract that wiring code targets.
+
+          Colors picked from the Okabe-Ito colorblind-safe palette
+          (deuteranopia + protanopia friendly), AA-legible against both
+          Light and Dark Mica backdrops. Two role pairs (up/down, wan/local)
+          plus an 8-step categorical ramp for stacked-column segments.
+
+          NOTE: these values do NOT theme-swap. They are the same in light and
+          dark — they are bright on dark, slightly darker but still legible on
+          light. If a later iteration wants per-theme chart palettes, swap the
+          chart.* keys via a theme-specific merged dictionary. -->
+
+    <SolidColorBrush x:Key="chart.upSeries"   Color="#56B4E9" />
+    <SolidColorBrush x:Key="chart.downSeries" Color="#E69F00" />
+    <SolidColorBrush x:Key="chart.wan"        Color="#0072B2" />
+    <SolidColorBrush x:Key="chart.local"      Color="#009E73" />
+
+    <SolidColorBrush x:Key="chart.series.1" Color="#0072B2" />
+    <SolidColorBrush x:Key="chart.series.2" Color="#E69F00" />
+    <SolidColorBrush x:Key="chart.series.3" Color="#009E73" />
+    <SolidColorBrush x:Key="chart.series.4" Color="#CC79A7" />
+    <SolidColorBrush x:Key="chart.series.5" Color="#56B4E9" />
+    <SolidColorBrush x:Key="chart.series.6" Color="#D55E00" />
+    <SolidColorBrush x:Key="chart.series.7" Color="#F0E442" />
+    <SolidColorBrush x:Key="chart.series.8" Color="#999999" />
+
+    <!--  Spacing scale  =======================================================
+          Used directly as Margin/Padding values. The scale is 4-based; use
+          space.12 (not space.10) for medium spacing — keeps rhythm. -->
+
+    <sys:Double x:Key="space.4">4</sys:Double>
+    <sys:Double x:Key="space.8">8</sys:Double>
+    <sys:Double x:Key="space.12">12</sys:Double>
+    <sys:Double x:Key="space.16">16</sys:Double>
+    <sys:Double x:Key="space.24">24</sys:Double>
+    <sys:Double x:Key="space.32">32</sys:Double>
+    <sys:Double x:Key="space.48">48</sys:Double>
+
+    <!--  Corner radius  =======================================================
+          radius.md (6) matches today's card CornerRadius — keep using it for
+          existing cards so the swap is invisible. radius.sm for banners and
+          radius.lg for larger surfaces (Reports cards, dialogs). -->
+
+    <CornerRadius x:Key="radius.sm">4</CornerRadius>
+    <CornerRadius x:Key="radius.md">6</CornerRadius>
+    <CornerRadius x:Key="radius.lg">8</CornerRadius>
+
+    <!--  Typography scale  ====================================================
+          Sizes mirror Wpf.Ui's FontTypography enum (Caption=12, Body=14,
+          Subtitle=16, Title=20, TitleLarge=24, Display=32) so swapping
+          ui:TextBlock FontTypography="…" for explicit FontSize/FontFamily is
+          1:1 in size. -->
+
+    <sys:Double x:Key="font.size.caption">12</sys:Double>
+    <sys:Double x:Key="font.size.body">14</sys:Double>
+    <sys:Double x:Key="font.size.subtitle">16</sys:Double>
+    <sys:Double x:Key="font.size.title">20</sys:Double>
+    <sys:Double x:Key="font.size.title.large">24</sys:Double>
+    <sys:Double x:Key="font.size.display">32</sys:Double>
+
+    <FontWeight x:Key="font.weight.regular">Normal</FontWeight>
+    <FontWeight x:Key="font.weight.semibold">SemiBold</FontWeight>
+    <FontWeight x:Key="font.weight.bold">Bold</FontWeight>
+
+    <!--  Density  =============================================================
+          Default Fluent grid spacing is too airy for ZenVizor's data-dense
+          surfaces (per-app list, sessions, connections). The compact variant
+          is the one to apply on those DataGrids. Apply via:
+
+              <DataGrid Style="{StaticResource style.datagrid.compact}" ... />
+
+          density.row.default / .compact are exposed as raw Doubles for cases
+          where a custom row template needs to read the row height directly. -->
+
+    <sys:Double x:Key="density.row.default">28</sys:Double>
+    <sys:Double x:Key="density.row.compact">22</sys:Double>
+
+    <Style x:Key="style.datagrid.compact" TargetType="DataGrid">
+        <Setter Property="RowHeight" Value="{StaticResource density.row.compact}" />
+        <Setter Property="MinRowHeight" Value="{StaticResource density.row.compact}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+        <Setter Property="CellStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="6,2" />
+                    <Setter Property="BorderThickness" Value="0" />
+                </Style>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--  Implicit base-TextBlock style  ===========================================
+          WPF's plain <TextBlock>.Foreground defaults to literal Brushes.Black
+          (NOT a DynamicResource), so any TextBlock without an explicit
+          Foreground renders black regardless of theme. Wpf.Ui's <ui:TextBlock>
+          themes itself via its own implicit style, but plain WPF TextBlocks
+          do not — that's what made the Dashboard column headers ("App",
+          "Publisher", ...) render dark-on-dark in dark mode.
+
+          An implicit style targeting WPF's TextBlock fixes this app-wide
+          without touching every call-site. Implicit styles only apply to the
+          EXACT type, so this does NOT shadow <ui:TextBlock>'s style. Any
+          TextBlock that sets Foreground locally also wins via WPF property
+          precedence (local value > setter). -->
+
+    <Style TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+</ResourceDictionary>
