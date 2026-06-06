@@ -757,6 +757,36 @@ mockup-driven follow-up. Track here so they don't drop on the floor.
 > added to `HighContrast.xaml`; the full token list is HC-complete,
 > only the runtime merge wiring (§11 item 9) remains for HC mode to
 > activate end-to-end.
+>
+> **Brand assets landed (June 2026):** `src/ZenVizor.Ui/Assets/favicon.ico`
+> powers the `.exe` icon (`<ApplicationIcon>` in csproj), the FluentWindow
+> chrome icon, and the TaskbarIcon. The TitleBar gets a brand lockup in
+> `TitleBar.Header` — `Title` is string-only despite its `object` C# type
+> (the control template binds it as `TextBlock.Text` and throws
+> `ArgumentException` if given a UIElement); `Header` is the documented
+> rich-content slot for left-side custom content. Header hosts a
+> horizontal `StackPanel`: 16×16 `Image` rendering the `.ico` with
+> `RenderOptions.BitmapScalingMode="HighQuality"`, then a `Viewbox`-scaled
+> wordmark reconstructed inline in XAML. The wordmark reproduces the
+> Illustrator source (`Assets/zv_wordmark_v1.svg`) using the embedded
+> Nuqun font with the SVG's exact per-letter `Canvas.Left` positioning —
+> the SVG fixed Nuqun's default letter-spacing issues via manual kerning,
+> and replicating those positions is the whole point of building the
+> wordmark from positioned `TextBlock`s rather than a single TextBlock.
+> The "v" sits at `Canvas.Top="-21"` (FontSize 130 against the others'
+> 102.21, with a 2 px baseline drop matching the SVG), and the "i" gets
+> `ScaleTransform ScaleY="0.82"` (with `RenderTransformOrigin="0,1"` so
+> it compresses from the baseline) to preserve the SVG's vertical
+> compression. Foreground binds to `text.primary` so the wordmark
+> theme-swaps with the chrome. The logomark `Image` gets
+> `Margin="0,-8,0,0"` — the wordmark Canvas's declared 116.89 height
+> doesn't reflect the v's `Canvas.Top="-21"` overflow, so visual content
+> biases toward the top of the Viewbox and a `VerticalAlignment="Center"`
+> logomark would otherwise sit visibly low. `Window.Title="ZenVizor"` on
+> FluentWindow still serves alt-tab / accessibility. SVG sources for the
+> logomark (light + dark variants) live at top-level `assets/` for future
+> use (crisper chrome rendering at non-standard sizes, splash screen,
+> About dialog). Resolves §11 backlog item 8.
 
 1. **Hardcoded ellipse colors in MainWindow.xaml.cs** — replace with
    `status.connected` / `.disconnected` tokens (also

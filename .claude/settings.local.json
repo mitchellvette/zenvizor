@@ -15,7 +15,10 @@
       "Bash(gh issue *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "PowerShell($items = Get-ChildItem C:\\\\dev\\\\zenvizor\\\\docs\\\\design -Recurse -Force; Write-Output \\(\"Count: \" + $items.Count\\); $items | ForEach-Object { Write-Output $_.FullName })"
+      "PowerShell($items = Get-ChildItem C:\\\\dev\\\\zenvizor\\\\docs\\\\design -Recurse -Force; Write-Output \\(\"Count: \" + $items.Count\\); $items | ForEach-Object { Write-Output $_.FullName })",
+      "Bash(where pdftoppm *)",
+      "Bash(where pdftocairo *)",
+      "Bash(where pdfinfo *)"
     ]
   }
 }

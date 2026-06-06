@@ -102,6 +102,20 @@ Locked decisions to carry into every state spec:
 - **Warming applies to Dashboard only** (live surface). History
   surfaces do not have a warming state — they query SQLite, not the
   in-memory aggregate.
+- **Live surfaces need an uptime sub-state.** Screens whose data fills
+  a trailing time window from a live in-memory aggregate (Dashboard's
+  chart is the canonical example) must specify what the surface looks
+  like during the *initial fill window* — when the buffer holds less
+  than its full duration. The brief specifies visible behavior at:
+  `t=0` (no data), `t=midway` through fill (partial buffer), and
+  `t=steady-state` (buffer full). Catches the class of issue where a
+  fixed-width chart with auto-fitting axes misrepresents data positions
+  during the initial 1-2 minutes of uptime — the Dashboard polish
+  round added a fixed-window scrolling X-axis so the static `-2m / ... /
+  now` overlay labels stay positionally accurate during initial fill
+  (data accumulates right-to-left rather than stretching to fill).
+  History surfaces query SQLite and don't have a fill window — n/a
+  there.
 - **Disconnected vs query-failed — SPLIT BY DEFAULT.** Most screens
   render two distinct copies — one for pipe down
   (`status.critical.background`, "Service disconnected — last refresh
@@ -151,6 +165,17 @@ The semantic-token surface area for this screen. Pull from
   margin is always `space.24`.
 - `radius.*` — **role tokens** (`radius.card`, `radius.control`,
   `radius.overlay`), not raw scale tokens.
+- **Material / effect tokens** — when the screen has metallic /
+  brushed surfaces, drop shadows, or catch-light highlights, enumerate
+  them explicitly alongside the `surface.*` row: `metal.card` (gradient
+  brushed-card surface, `LinearGradientBrush`), `edge.light` (inset top
+  catch-light per CSS `box-shadow inset 0 1px 0`), `shadow.card`
+  (`DropShadowEffect`). These are XAML types other than
+  `SolidColorBrush` so the mock annotations carry the distinction
+  between flat `surface.card` and gradient `metal.card`, and the
+  implementation knows to wire effects vs background brushes. The
+  Dashboard polish round 2 introduced these — every subsequent
+  data-bearing card uses `metal.card` + `shadow.card` for consistency.
 
 ### 6. Chart-chrome — tokens AND behavior spec (C — required wherever a chart appears)
 
@@ -198,6 +223,27 @@ wiring is implementation. Cover each that applies:
   Content format (single-row vs. multi-row; relative + absolute time
   pairing; rate formatting). Tooltip background is OPAQUE via
   `chart.tooltip.bg` — never translucent over Mica.
+  - **Tooltip layout reality.** LiveCharts2 v2's default tooltip is
+    **header + per-series rows** (vertical layout). Per-series
+    formatters (`XToolTipLabelFormatter` / `YToolTipLabelFormatter`)
+    customize each row's text but not the overall structure. A strict
+    single-row format (e.g. `"-90s · 23:34:10 · Up X · Dn Y"`) requires
+    implementing a custom `IChartTooltip<SkiaSharpDrawingContext>` end
+    to end — substantial work. The brief specifies which layout the
+    screen targets and marks the strict single-row form as a deferred
+    follow-up when only achievable via custom tooltip.
+  - **Tooltip hover sensitivity is driven by `LineSeries.GeometrySize`.**
+    With `GeometrySize=0` (used to hide visible point markers), the
+    hit area is effectively zero. For "hover anywhere" behavior, set
+    `GeometrySize` to roughly the per-tick unit width (~20px on a
+    2-second-cadence series) AND set `GeometryFill = GeometryStroke = null`
+    so the markers remain invisible. The brief calls this out for any
+    line-series chart that wants forgiving hover.
+  - **Tooltip drop shadow** for backdrop separation when the tooltip
+    background tone is similar to the card backdrop. Wire via
+    `LiveChartsCore.SkiaSharpView.Painting.ImageFilters.DropShadow` on
+    the `TooltipBackgroundPaint`. Low-alpha black (~38%), 4px offset,
+    8px sigma blur gives clear separation without heaviness.
 - **Legend behavior.** Position (`Top` is current convention) and Name
   strings. Do NOT duplicate axis units in Name strings (e.g. `"Up"` /
   `"Down"`, not `"Up B/s"` — the axis owns the units).
@@ -322,6 +368,33 @@ Required entries:
   series colors and chrome are applied in C# (`ChartBuilder` +
   `ChartTheming`) and re-applied on `ApplicationThemeManager.Changed`.
   The brief annotates token names; wiring is in code.
+- **`Wpf.Ui.NavigationView` paints `NavigationViewContentBackground`
+  over the Page content area.** Default is ~30% gray, occluding Mica
+  showthrough on the page side (the pane and chrome are outside this
+  Border). For Mica showthrough on the page side, override the
+  resource key to `Transparent` in `App.xaml.cs ApplyDirectLevelOverrides()`.
+  The Dashboard polish round 2 hit this — it was the missing piece
+  for page-area Mica visibility after all other transparency overrides
+  were in place.
+- **`Grid.RowDefinition.MinHeight` is needed** for `Height="*"` rows
+  with `MinHeight` children to enforce row minimums. A `Height="*"`
+  row will gladly shrink below its child's `Border.MinHeight` and the
+  Border overflows downward into the next row, causing visual clipping
+  (e.g. Dashboard's chart card under the talkers card at small window
+  sizes). Set `MinHeight` on the `RowDefinition` itself (value = child
+  `Border.MinHeight + Margin.Top`) so the Grid enforces the minimum
+  at the row level. `Border.MinHeight` alone is insufficient.
+- **`LiveCharts2.Axis.MinLimit/MaxLimit` can be updated per tick** to
+  anchor a fixed-window scrolling axis (e.g. always
+  `[newestPoint − 120s, newestPoint]`). Useful for time-series during
+  initial buffer fill so static overlay labels stay positionally
+  accurate even when the data buffer hasn't filled the full trailing
+  window yet (Dashboard's right-to-left fill behavior).
+- **`RateFormatter` is binary (1024-aligned).** Nice round axis
+  values must be `{1, 2, 5} × 10ⁿ × 1024ᵏ` (binary-aware), not pure
+  decimal `{1, 2, 5} × 10ⁿ`, or labels format as `"19.5 KB/s"` when
+  the underlying axis value is decimal 20000. The brief's rate-axis
+  spec calls out binary alignment when nice rounding is requested.
 - Screen-specific entries (carry these where they apply):
   - **App Detail** carries the most: two side-by-side grids + the
     chart card + a flyout (when added). The two grids must each cap

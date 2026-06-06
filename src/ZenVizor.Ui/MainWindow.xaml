@@ -12,6 +12,7 @@
                  WindowBackdropType="Mica"
                  ExtendsContentIntoTitleBar="True"
                  WindowStartupLocation="CenterScreen"
+                 Icon="pack://application:,,,/Assets/favicon.ico"
                  Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
     <!-- Outer Grid carries the brand tint via surface.background (50% alpha
@@ -30,9 +31,82 @@
         </Grid.RowDefinitions>
 
         <ui:TitleBar Grid.Row="0"
-                     Title="ZenVizor"
                      ShowMaximize="True"
-                     CloseClicked="OnTitleBarCloseClicked" />
+                     CloseClicked="OnTitleBarCloseClicked">
+            <!-- Brand lockup in TitleBar.Header: [logomark] [wordmark]
+                 composed as a horizontal StackPanel. Header (NOT Title) is
+                 the rich-content slot — Title is string-only despite its
+                 `object` C# type because the template binds it as
+                 TextBlock.Text. StackPanel.Margin sets left chrome padding;
+                 the inner Viewbox.Margin sets the gap between logomark
+                 and wordmark.
+
+                 Logomark — Image rendered from Assets/favicon.ico via pack
+                 URI. WPF's IconBitmapDecoder picks the closest matching
+                 frame from the multi-res .ico for display at 20×20; if it
+                 looks soft, embed a 16/20px variant in the .ico (or ship a
+                 dedicated SVG/PNG mark for chrome use). The .ico is also
+                 referenced by <ApplicationIcon> in the csproj (for the
+                 .exe-shell icon Windows uses in Explorer/alt-tab) and by
+                 the TaskbarIcon below.
+
+                 Wordmark — reconstructs the Illustrator source
+                 (Assets/zv_wordmark_v1.svg) inline using the embedded Nuqun
+                 font and the SVG's exact per-letter positioning. The SVG
+                 fixed Nuqun's default letter-spacing issues via manual
+                 kerning; preserving those positions is the whole point of
+                 replicating it in XAML rather than using a plain TextBlock.
+                 Foreground binds to text.primary so the wordmark
+                 theme-swaps with the chrome. Viewbox handles scaling —
+                 Height controls render size; aspect ratio (~3:1) is
+                 preserved from the SVG viewBox (353.84 × 116.89).
+
+                 Window.Title="ZenVizor" on FluentWindow above still serves
+                 alt-tab / accessibility. -->
+            <ui:TitleBar.Header>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <Image Source="pack://application:,,,/Assets/favicon.ico"
+                           Width="16" Height="16"
+                           VerticalAlignment="Center"
+                           Margin="0,-8,0,0"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <Viewbox Stretch="Uniform" Height="20" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <Canvas Width="353.84" Height="116.89" Background="Transparent">
+                        <TextBlock Canvas.Left="0" Canvas.Top="0"
+                                   FontFamily="{StaticResource font.brand}"
+                                   FontSize="102.21"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="ze" />
+                        <TextBlock Canvas.Left="97.1" Canvas.Top="0"
+                                   FontFamily="{StaticResource font.brand}"
+                                   FontSize="102.21"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="n" />
+                        <TextBlock Canvas.Left="137.16" Canvas.Top="-21"
+                                   FontFamily="{StaticResource font.brand}"
+                                   FontSize="130"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="v" />
+                        <TextBlock Canvas.Left="197.87" Canvas.Top="0"
+                                   FontFamily="{StaticResource font.brand}"
+                                   FontSize="102.21"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="i"
+                                   RenderTransformOrigin="0,1">
+                            <TextBlock.RenderTransform>
+                                <ScaleTransform ScaleY="0.82" />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <TextBlock Canvas.Left="208.19" Canvas.Top="0"
+                                   FontFamily="{StaticResource font.brand}"
+                                   FontSize="102.21"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="zor" />
+                    </Canvas>
+                    </Viewbox>
+                </StackPanel>
+            </ui:TitleBar.Header>
+        </ui:TitleBar>
 
         <ui:NavigationView x:Name="RootNavigation"
                            Grid.Row="1"
@@ -187,6 +261,7 @@
         </Border>
 
         <tb:TaskbarIcon x:Name="Tray"
+                        IconSource="pack://application:,,,/Assets/favicon.ico"
                         ToolTipText="ZenVizor"
                         TrayLeftMouseDown="OnTrayLeftClick">
             <tb:TaskbarIcon.ContextMenu>

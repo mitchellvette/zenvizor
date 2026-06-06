@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
     <!-- NU1701: LiveChartsCore.SkiaSharpView.WPF 2.0.4 transitively depends on
          SkiaSharp.Views.WPF and OpenTK packages that still target legacy net48.
          They are runtime-compatible with net10.0-windows; the warning is noise.
@@ -37,6 +38,18 @@
        the brand's title/subtitle weight; without the SemiBold .ttf, WPF would
        fake the weight from Regular, which produces blurry strokes and
        inconsistent metrics. -->
+  <!-- Brand assets. The .ico is referenced by <ApplicationIcon> above (Windows
+       uses it for the .exe icon shown in Explorer, taskbar, alt-tab) AND
+       included as a Resource so FluentWindow.Icon / TaskbarIcon.IconSource
+       can load it via pack URI at runtime. The SVG ships as None (build-time
+       documentation only, not embedded) — it's the Illustrator source of
+       truth; the title-bar wordmark is reconstructed inline in MainWindow.xaml
+       using the same Nuqun font and per-letter positioning the SVG defines. -->
+  <ItemGroup Label="Brand assets">
+    <Resource Include="Assets\favicon.ico" />
+    <None Include="Assets\zv_wordmark_v1.svg" />
+  </ItemGroup>
+
   <ItemGroup Label="Design system fonts">
     <Resource Include="..\..\fonts\Urbanist-Light.ttf"    Link="Fonts\Urbanist-Light.ttf" />
     <Resource Include="..\..\fonts\Urbanist-Regular.ttf"  Link="Fonts\Urbanist-Regular.ttf" />
