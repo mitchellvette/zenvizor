@@ -14,7 +14,19 @@ namespace ZenVizor.Ui;
 public partial class MainWindow : FluentWindow
 {
     private readonly ServiceStatusPoller _poller;
+    private readonly ActivitySnapshotPoller _activityPoller;
     private bool _exiting;
+
+    /// <summary>
+    /// Fires on every <see cref="ActivitySnapshotPoller"/> tick (~2 s).
+    /// Subscribed by <see cref="Views.DashboardPage"/> so it can drive its
+    /// chart and talkers list off the MainWindow-scoped poller instance —
+    /// the poller now lives here so the bottom-bar rate mirror keeps
+    /// updating on every screen, not just Dashboard. Internal because
+    /// <see cref="ActivitySnapshotUpdate"/> is internal; the only intended
+    /// subscriber lives in the same assembly.
+    /// </summary>
+    internal event EventHandler<ActivitySnapshotUpdate>? ActivitySnapshotReceived;
 
     public MainWindow()
     {
@@ -36,14 +48,8 @@ public partial class MainWindow : FluentWindow
         _poller = new ServiceStatusPoller();
         _poller.StatusChanged += OnStatusChanged;
 
-        // Wire navigation targets in code so XAML doesn't need to resolve
-        // same-assembly view types via x:Type (BAML pass-1 can't see them).
-        NavDashboard.TargetPageType = typeof(DashboardPage);
-        NavPerApp.TargetPageType    = typeof(PerAppPage);
-        NavHistory.TargetPageType   = typeof(HistoryPage);
-        NavReports.TargetPageType   = typeof(ReportsPage);
-        NavAlerts.TargetPageType    = typeof(AlertsPage);
-        NavSettings.TargetPageType  = typeof(SettingsPage);
+        _activityPoller = new ActivitySnapshotPoller();
+        _activityPoller.SnapshotReceived += OnActivitySnapshot;
 
         // Cache page instances so picker state (window, grain, scroll position)
         // survives navigation away and back. Without this, each nav rail click
@@ -62,8 +68,38 @@ public partial class MainWindow : FluentWindow
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        RootNavigation.Navigate(typeof(DashboardPage));
         _poller.Start();
+        _activityPoller.Start();
+
+        // Gallery's canonical initial-selection pattern: Navigate(Type)
+        // from the window's Loaded handler. With TargetPageType set per
+        // item via OnNavItemInitialized BEFORE NavigationView's own
+        // OnInitialized populated the type->item lookup, this call
+        // resolves to the real NavDashboard and routes through
+        // NavigateInternal, which updates SelectedItem and NavigationStack
+        // so the next user click correctly deactivates Dashboard.
+        RootNavigation.Navigate(typeof(DashboardPage));
+    }
+
+    // NavigationView builds its type->item lookup inside its OnInitialized,
+    // which fires during InitializeComponent. The XAML Initialized event
+    // fires per-item BEFORE the parent's EndInit — early enough to set
+    // TargetPageType in time for that lookup, unlike the ctor body. Without
+    // this, Navigate(Type) routes to an orphan item not in the visual tree
+    // and the real menu item never visually selects on launch.
+    private void OnNavItemInitialized(object sender, EventArgs e)
+    {
+        var item = (NavigationViewItem)sender;
+        item.TargetPageType = item.Name switch
+        {
+            nameof(NavDashboard) => typeof(DashboardPage),
+            nameof(NavPerApp)    => typeof(PerAppPage),
+            nameof(NavHistory)   => typeof(HistoryPage),
+            nameof(NavReports)   => typeof(ReportsPage),
+            nameof(NavAlerts)    => typeof(AlertsPage),
+            nameof(NavSettings)  => typeof(SettingsPage),
+            _ => null,
+        };
     }
 
     // Close-to-tray: cancel the close and hide the window. Only the explicit
@@ -83,6 +119,7 @@ public partial class MainWindow : FluentWindow
     {
         SystemThemeWatcher.UnWatch(this);
         _poller.Dispose();
+        _activityPoller.Dispose();
         // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
         // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
         // disposes the tray AFTER the dispatcher fully drains. Calling
@@ -169,15 +206,59 @@ public partial class MainWindow : FluentWindow
         {
             if (update.IsConnected)
             {
-                ServiceStatusDot.Fill = Brushes.MediumSeaGreen;
+                ServiceStatusDot.Fill = (Brush)FindResource("status.connected");
                 ServiceStatusText.Text =
                     $"Service: connected ({update.ServiceVersion}, proto {update.ProtocolVersion})";
             }
             else
             {
-                ServiceStatusDot.Fill = Brushes.DarkOrange;
+                ServiceStatusDot.Fill = (Brush)FindResource("status.disconnected");
                 ServiceStatusText.Text = $"Service: {update.Message}";
             }
         });
+    }
+
+    private void OnActivitySnapshot(object? sender, ActivitySnapshotUpdate update)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            UpdateBottomBarRates(update);
+            ActivitySnapshotReceived?.Invoke(this, update);
+        });
+    }
+
+    private void UpdateBottomBarRates(ActivitySnapshotUpdate update)
+    {
+        // Disconnected: em-dash placeholders, everything tinted text.tertiary
+        // (arrows AND values) so the bar reads as "no signal" at a glance.
+        if (!update.IsConnected || update.Envelope is null)
+        {
+            var dim = (Brush)FindResource("text.tertiary");
+            BottomBarUpArrow.Foreground = dim;
+            BottomBarDownArrow.Foreground = dim;
+            BottomBarUpRate.Foreground = dim;
+            BottomBarDownRate.Foreground = dim;
+            BottomBarUpRate.Text = "—";
+            BottomBarDownRate.Text = "—";
+            return;
+        }
+
+        var snap = update.Envelope.Payload;
+        double totalUp = 0, totalDown = 0;
+        if (snap.WindowSeconds > 0 && snap.Apps.Count > 0)
+        {
+            totalUp = snap.Apps.Sum(a => a.BytesUpPerSec);
+            totalDown = snap.Apps.Sum(a => a.BytesDownPerSec);
+        }
+        // Connected (warming or steady): arrows recover their brand colors,
+        // values render in text.primary. RateFormatter returns "0 B/s" for
+        // zero/NaN, which is the correct read during warming.
+        BottomBarUpArrow.Foreground = (Brush)FindResource("chart.upSeries");
+        BottomBarDownArrow.Foreground = (Brush)FindResource("chart.downSeries");
+        var primary = (Brush)FindResource("text.primary");
+        BottomBarUpRate.Foreground = primary;
+        BottomBarDownRate.Foreground = primary;
+        BottomBarUpRate.Text = RateFormatter.FormatRate(totalUp);
+        BottomBarDownRate.Text = RateFormatter.FormatRate(totalDown);
     }
 }

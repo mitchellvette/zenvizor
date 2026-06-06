@@ -10,8 +10,18 @@ namespace ZenVizor.Service;
 /// </summary>
 internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 {
-    /// <summary>Schema version of the <see cref="ActivitySnapshot"/> payload. Bump on incompatible changes.</summary>
-    private const int ActivitySnapshotSchemaVersion = 1;
+    /// <summary>
+    /// Schema version of the <see cref="ActivitySnapshot"/> payload. Bump on
+    /// incompatible changes.
+    /// <para>
+    /// v2 (this revision): adds <see cref="ActivitySnapshot.WanLocalBreakdown"/>
+    /// as a required field. Positional ctor means an old client can't
+    /// deserialize a v2 payload, hence the bump. Service+UI ship together
+    /// so there is no real version skew window — the bump is a discipline
+    /// marker, not a deprecation hook.
+    /// </para>
+    /// </summary>
+    private const int ActivitySnapshotSchemaVersion = 2;
 
     /// <summary>Schema version of the <see cref="CaptureStats"/> payload.</summary>
     private const int CaptureStatsSchemaVersion = 1;
@@ -62,7 +72,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private static ActivitySnapshot EmptySnapshot() => new(
         CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         WindowSeconds: 0.0,
-        Apps: Array.Empty<AppActivity>());
+        Apps: Array.Empty<AppActivity>(),
+        WanLocalBreakdown: ClassBreakdown.Empty);
 
     private static CaptureStats EmptyStats() => new(
         CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),

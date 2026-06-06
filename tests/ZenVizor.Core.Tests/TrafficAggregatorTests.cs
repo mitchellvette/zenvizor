@@ -4,6 +4,7 @@ using ZenVizor.Core.Aggregation;
 using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Observations;
 using ZenVizor.Core.Tests.Fakes;
+using ZenVizor.Ipc.Contracts.Dto;
 
 namespace ZenVizor.Core.Tests;
 
@@ -247,6 +248,64 @@ public sealed class TrafficAggregatorTests
 
         snap.WindowSeconds.Should().Be(5.0);
         snap.Apps.Single().BytesUpTotal.Should().Be(50);
+    }
+
+    [Fact]
+    public void TakeActivitySnapshot_SplitsBytesByRemoteClass()
+    {
+        // End-to-end: observations against WAN and LAN peers contribute to the
+        // ClassBreakdown on the snapshot. Bucket bytes + partial bytes both
+        // flow through, and the breakdown sum matches the per-app totals.
+        var h = new Harness(initialNowUnixMs: 0);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 0));
+
+        var local   = new IPEndPoint(IPAddress.Parse("10.0.0.5"),  12345);
+        var lanPeer = new IPEndPoint(IPAddress.Parse("10.0.0.10"), 445);
+        var wanPeer = new IPEndPoint(IPAddress.Parse("8.8.8.8"),   443);
+
+        // Bucket [0, 5_000]: 800 up to WAN, 200 down from LAN.
+        h.Aggregator.Observe(Obs(1_000, 100, local, wanPeer, Direction.Up,   800));
+        h.Aggregator.Observe(Obs(2_000, 100, local, lanPeer, Direction.Down, 200));
+        h.FakeNowUnixMs = 5_000;
+        h.Aggregator.Flush(5_000);
+
+        // Partial [5_000, 7_000]: 100 down from WAN, 50 up to LAN.
+        h.Aggregator.Observe(Obs(6_000, 100, local, wanPeer, Direction.Down, 100));
+        h.Aggregator.Observe(Obs(6_500, 100, local, lanPeer, Direction.Up,    50));
+
+        h.FakeNowUnixMs = 7_000;
+        var snap = h.Aggregator.TakeActivitySnapshot();
+
+        snap.WanLocalBreakdown.WanBytesUp.Should().Be(800);
+        snap.WanLocalBreakdown.WanBytesDown.Should().Be(100);
+        snap.WanLocalBreakdown.LocalBytesUp.Should().Be(50);
+        snap.WanLocalBreakdown.LocalBytesDown.Should().Be(200);
+
+        // Sum across the breakdown equals the per-app totals — the rollup
+        // doesn't lose or double-count bytes.
+        var app = snap.Apps.Single();
+        var totalUp = snap.WanLocalBreakdown.WanBytesUp + snap.WanLocalBreakdown.LocalBytesUp;
+        var totalDown = snap.WanLocalBreakdown.WanBytesDown + snap.WanLocalBreakdown.LocalBytesDown;
+        totalUp.Should().Be(app.BytesUpTotal);
+        totalDown.Should().Be(app.BytesDownTotal);
+    }
+
+    [Fact]
+    public void TakeActivitySnapshot_BeforeFirstFlush_BreakdownIsEmpty()
+    {
+        var h = new Harness(initialNowUnixMs: 0);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 0));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 12345);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"),  443);
+        h.Aggregator.Observe(Obs(1_000, 100, local, remote, Direction.Up, 5_000));
+
+        h.FakeNowUnixMs = 2_000;
+        var snap = h.Aggregator.TakeActivitySnapshot();
+
+        // Cold-start: even though the partial accumulator has bytes, the
+        // ClassBreakdown stays empty (matches Apps.Should().BeEmpty()).
+        snap.WanLocalBreakdown.Should().Be(ClassBreakdown.Empty);
     }
 
     [Fact]

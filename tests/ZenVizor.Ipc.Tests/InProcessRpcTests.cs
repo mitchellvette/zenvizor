@@ -94,7 +94,12 @@ public sealed class InProcessRpcTests
                     BytesDownTotal: 1_500,
                     BytesUpPerSec: 100.0,
                     BytesDownPerSec: 200.0),
-            });
+            },
+            WanLocalBreakdown: new ClassBreakdown(
+                WanBytesUp: 8_000,
+                WanBytesDown: 90_500,
+                LocalBytesUp: 250,
+                LocalBytesDown: 1_000));
         handler.SetSnapshot(scripted);
 
         await using var session = TestRpcSession.Create(handler);
@@ -116,6 +121,12 @@ public sealed class InProcessRpcTests
         var svchost = envelope.Payload.Apps.Single(a => a.ImageName == "svchost.exe");
         svchost.HostedServices.Should().Be("Dnscache,DiagTrack");
         svchost.BytesUpTotal.Should().Be(750);
+
+        envelope.Payload.WanLocalBreakdown.Should().NotBeNull();
+        envelope.Payload.WanLocalBreakdown.WanBytesUp.Should().Be(8_000);
+        envelope.Payload.WanLocalBreakdown.WanBytesDown.Should().Be(90_500);
+        envelope.Payload.WanLocalBreakdown.LocalBytesUp.Should().Be(250);
+        envelope.Payload.WanLocalBreakdown.LocalBytesDown.Should().Be(1_000);
 
         handler.ActivitySnapshotCount.Should().Be(1);
     }

@@ -14,7 +14,15 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// Per-app rows for every app with non-zero bytes in the window. Unordered;
 /// callers (UI / CLI) take their own top-N for display.
 /// </param>
+/// <param name="WanLocalBreakdown">
+/// Aggregate byte totals split by remote-address classification (WAN vs
+/// LAN/loopback) over the same window. Sum equals the sum of per-app
+/// <see cref="AppActivity.BytesUpTotal"/> / <see cref="AppActivity.BytesDownTotal"/>
+/// across the snapshot. Always present; an empty snapshot returns
+/// <see cref="ClassBreakdown.Empty"/>.
+/// </param>
 public sealed record ActivitySnapshot(
     long CapturedAtUnixMs,
     double WindowSeconds,
-    IReadOnlyList<AppActivity> Apps);
+    IReadOnlyList<AppActivity> Apps,
+    ClassBreakdown WanLocalBreakdown);

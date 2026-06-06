@@ -21,6 +21,7 @@ namespace ZenVizor.Core.Aggregation;
 public sealed class RollingActivityWindow
 {
     private IReadOnlyDictionary<ActivityKey, ActivityBytes>? _lastBucket;
+    private ClassBreakdown _lastBucketBreakdown = ClassBreakdown.Empty;
     private long _lastBucketStartUnixMs;
     private long _lastBucketEndUnixMs;
 
@@ -31,14 +32,21 @@ public sealed class RollingActivityWindow
     /// Seal a completed flush bucket. <paramref name="bucketStartUnixMs"/> is when
     /// accumulation into that bucket began (the previous flush timestamp, or the
     /// aggregator's construction time for the very first bucket).
+    /// <paramref name="bucketBreakdown"/> carries the WAN/Local byte totals
+    /// for the same bucket — kept alongside the per-app rollup so the
+    /// next snapshot can merge it with the partial without re-walking the
+    /// per-app rows.
     /// </summary>
     public void OnFlush(
         IReadOnlyDictionary<ActivityKey, ActivityBytes> bucketPerApp,
+        ClassBreakdown bucketBreakdown,
         long bucketStartUnixMs,
         long bucketEndUnixMs)
     {
         ArgumentNullException.ThrowIfNull(bucketPerApp);
+        ArgumentNullException.ThrowIfNull(bucketBreakdown);
         _lastBucket = bucketPerApp;
+        _lastBucketBreakdown = bucketBreakdown;
         _lastBucketStartUnixMs = bucketStartUnixMs;
         _lastBucketEndUnixMs = bucketEndUnixMs;
     }
@@ -48,19 +56,24 @@ public sealed class RollingActivityWindow
     /// (rolled up to the same per-app key) and return the snapshot. Rates are
     /// computed as <c>(bucket_bytes + partial_bytes) / windowSeconds</c> where
     /// <c>windowSeconds = (now − bucketStart)</c>.
+    /// <paramref name="currentPartialBreakdown"/> is summed with the sealed
+    /// bucket's breakdown to populate <see cref="ActivitySnapshot.WanLocalBreakdown"/>.
     /// </summary>
     public ActivitySnapshot TakeSnapshot(
         IReadOnlyDictionary<ActivityKey, ActivityBytes> currentPartial,
+        ClassBreakdown currentPartialBreakdown,
         long nowUnixMs)
     {
         ArgumentNullException.ThrowIfNull(currentPartial);
+        ArgumentNullException.ThrowIfNull(currentPartialBreakdown);
 
         if (_lastBucket is null)
         {
             return new ActivitySnapshot(
                 CapturedAtUnixMs: nowUnixMs,
                 WindowSeconds: 0.0,
-                Apps: Array.Empty<AppActivity>());
+                Apps: Array.Empty<AppActivity>(),
+                WanLocalBreakdown: ClassBreakdown.Empty);
         }
 
         var windowMs = nowUnixMs - _lastBucketStartUnixMs;
@@ -113,10 +126,17 @@ public sealed class RollingActivityWindow
                 BytesDownPerSec: bytes.BytesDown / windowSeconds));
         }
 
+        var breakdown = new ClassBreakdown(
+            WanBytesUp: _lastBucketBreakdown.WanBytesUp + currentPartialBreakdown.WanBytesUp,
+            WanBytesDown: _lastBucketBreakdown.WanBytesDown + currentPartialBreakdown.WanBytesDown,
+            LocalBytesUp: _lastBucketBreakdown.LocalBytesUp + currentPartialBreakdown.LocalBytesUp,
+            LocalBytesDown: _lastBucketBreakdown.LocalBytesDown + currentPartialBreakdown.LocalBytesDown);
+
         return new ActivitySnapshot(
             CapturedAtUnixMs: nowUnixMs,
             WindowSeconds: windowSeconds,
-            Apps: apps);
+            Apps: apps,
+            WanLocalBreakdown: breakdown);
     }
 }
 

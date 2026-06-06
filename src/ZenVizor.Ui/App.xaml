@@ -22,6 +22,19 @@
                 <ui:ControlsDictionary />
                 <ResourceDictionary Source="pack://application:,,,/Resources/Fonts.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/Resources/DesignTokens.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Resources/Strings.Tooltips.xaml" />
+                <!-- Brand-accent overrides. Merged LAST so its keys win
+                     against Wpf.Ui's stock SystemAccentColor* and the
+                     status / chart-series defaults in DesignTokens.xaml.
+                     The Source URI placeholder here is replaced at startup
+                     by App.xaml.cs to match the OS theme, and swapped again
+                     on every runtime Light↔Dark flip. -->
+                <ResourceDictionary Source="pack://application:,,,/Resources/BrandAccent.Light.xaml" />
+                <!-- Theme-invariant brand overrides for ui:NavigationView
+                     (selected-state FontWeight trigger, potential icon
+                     size knobs). Merged after BrandAccent so any colour
+                     refs flow through the brand-accent layer. -->
+                <ResourceDictionary Source="pack://application:,,,/Resources/NavigationViewBrand.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

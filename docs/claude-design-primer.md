@@ -81,9 +81,11 @@ Every brush theme-swaps with the OS Light/Dark theme.
 | `text.disabled`                | Disabled state |
 | `text.inverse`                 | Light text on dark surface |
 | `text.on-accent`               | Text painted on an accent fill |
-| `accent.default`               | Primary interactive accent (matches OS accent) |
-| `accent.secondary`             | Secondary accent (hover/pressed) |
-| `accent.tertiary`              | Tertiary accent (focused state) |
+| `accent.default`               | Primary interactive accent — brand violet (violet-600 light / violet-500 dark) |
+| `accent.secondary`             | Secondary accent (hover/pressed) — brand violet |
+| `accent.tertiary`              | Tertiary accent (focused state) — brand violet |
+| `accent.text`                  | Foreground accent text on neutral surface.card (eyebrows, small accent labels) — violet-700 light / violet-300 dark for AA contrast |
+| `accent.subtle`                | Soft brand-violet tint for selected/hovered accent surfaces (e.g. NavigationView selected-item background) — 10% alpha light / 18% alpha dark |
 | `status.success`               | Success foreground |
 | `status.success.background`    | Success banner background |
 | `status.caution`               | Caution foreground |
@@ -94,6 +96,7 @@ Every brush theme-swaps with the OS Light/Dark theme.
 | `status.neutral.background`    | Neutral banner background |
 | `status.connected`             | Service-status dot when pipe is up |
 | `status.warming`               | Dot/banner while warming |
+| `status.warming.background`    | Warming-banner background (paint matches `status.caution.background`; distinct key so warming can be repointed independently) |
 | `status.disconnected`          | Dot/banner when pipe is down |
 | `border.card`                  | Card stroke |
 | `border.subtle`                | Lighter divider stroke |
@@ -150,17 +153,20 @@ Size scale (mirrors Wpf.Ui FontTypography):
 |------------------------|----|
 | `font.size.caption`    | 12 |
 | `font.size.body`       | 14 |
-| `font.size.subtitle`   | 16 |
-| `font.size.title`      | 20 |
-| `font.size.title.large`| 24 |
-| `font.size.display`    | 32 |
+| `font.size.subtitle`   | 20 |
+| `font.size.metric`     | 24 |
+| `font.size.title`      | 28 |
+| `font.size.title.large`| 40 |
+| `font.size.display`    | 68 |
 
 Weights: `font.weight.regular`, `font.weight.semibold`, `font.weight.bold`.
 
 Usage rules:
 
 - Body: `font.display` Regular 14.
-- Card titles / page subtitles: `font.display` SemiBold 16/20.
+- Card titles / page subtitles: `font.display` SemiBold 20 (`text.subtitle`).
+- Headline metric values (status / KPI cards): `font.display` SemiBold 24
+  (`text.metric`). Override `FontFamily` to `font.mono` for numeric values.
 - Numeric / paths / IPs: `font.mono` Regular 14.
 - Wordmark/splash: `font.brand`. **Nowhere else.**
 

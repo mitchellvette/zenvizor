@@ -78,6 +78,21 @@
    only; (2) animated sheen sweeps — --sheen is a STATIC highlight, never
    animated.
 
+   MICA SHOWTHROUGH NOTE (WPF runtime): --surface-background is OPAQUE here
+   (#f8f9fc / #191c26) so the mock viewer renders the brand-cool tone as a
+   flat color. The WPF app paints surface.background at 60% alpha
+   (#99F8F9FC / #99191C26) on the MainWindow outer Grid so DWM Mica shows
+   through the chrome and page area uniformly while the backdrop still
+   reads brand-cool. ApplicationBackgroundBrush is direct-overridden to
+   Transparent in App.xaml.cs so Pages render see-through over the
+   MainWindow tint (no double-paint). NavigationViewContentBackground (a
+   Wpf.Ui-template-painted ~30% gray Border on the page side of
+   NavigationView) is also overridden to Transparent so it doesn't
+   occlude Mica on the page area. The opaque CSS value approximates what
+   that Mica-blended result LOOKS like — that's the mock contract. Cards
+   stay fully opaque (surface.card #ffffff / #232735) so text legibility
+   is never wallpaper-dependent.
+
    Load order:
      1. this file (self-hosts Nuqun / Urbanist / NFCode via @font-face below)
    Then set theme with  <html data-theme="light">  or  data-theme="dark".
@@ -186,6 +201,7 @@
   --font-size-body:        14px;
   --font-size-body-large:  18px;   /* brand extra */
   --font-size-subtitle:    20px;   /* brand (app 16) */
+  --font-size-metric:      24px;   /* brand extra — compact display value for headline KPI cards */
   --font-size-title:       28px;   /* brand (app 20) */
   --font-size-title-large: 40px;   /* brand (app 24) */
   --font-size-display:     68px;   /* brand (app 32) */
@@ -202,6 +218,7 @@
   --type-title-large:  var(--font-weight-semibold) var(--font-size-title-large)/1.2  var(--font-display);
   --type-title:        var(--font-weight-semibold) var(--font-size-title)/1.28       var(--font-display);
   --type-subtitle:     var(--font-weight-semibold) var(--font-size-subtitle)/1.4     var(--font-display);
+  --type-metric:       var(--font-weight-semibold) var(--font-size-metric)/1.33      var(--font-display);
   --type-body-large:   var(--font-weight-regular)  var(--font-size-body-large)/1.5   var(--font-display);
   --type-body-strong:  var(--font-weight-semibold) var(--font-size-body)/1.5         var(--font-display);
   --type-body:         var(--font-weight-regular)  var(--font-size-body)/1.5         var(--font-display);
@@ -289,6 +306,7 @@
   /* Service-status dot (status.connected / .warming / .disconnected) */
   --status-connected:    #06b6a3;
   --status-warming:      #ec9a0b;
+  --status-warming-bg:   var(--status-caution-bg);  /* status.warming.background — paint identical to caution-bg; distinct token so warming banners repoint independently */
   --status-disconnected: #d62b62;
 
   /* Chart up/down series (chart.upSeries / chart.downSeries) — brand, THEME-SWAPS */
@@ -375,6 +393,7 @@
   --status-neutral:    #7e8ef7;  --status-neutral-bg: rgba(126,142,247,0.16);
   --status-connected:    #2bd1bd;
   --status-warming:      #f1ad34;
+  --status-warming-bg:   var(--status-caution-bg);  /* status.warming.background — paint identical to caution-bg; distinct token */
   --status-disconnected: #f5547f;
 
   --chart-up-series:   var(--violet-400);
@@ -428,7 +447,7 @@
     --status-caution:#f1ad34; --status-caution-bg:rgba(241,173,52,0.18); --status-caution-text:#f1ad34;
     --status-critical:#f5547f; --status-critical-bg:rgba(245,84,127,0.18);
     --status-neutral:#7e8ef7; --status-neutral-bg:rgba(126,142,247,0.16);
-    --status-connected:#2bd1bd; --status-warming:#f1ad34; --status-disconnected:#f5547f;
+    --status-connected:#2bd1bd; --status-warming:#f1ad34; --status-warming-bg:rgba(241,173,52,0.18); --status-disconnected:#f5547f;
     --chart-up-series:var(--violet-400); --chart-down-series:var(--teal-400);
     --chart-axis:var(--border-subtle); --chart-gridline:rgba(255,255,255,0.045); --chart-axis-label:var(--text-tertiary);
     --chart-tooltip-bg:var(--surface-card); --chart-tooltip-text:var(--text-primary); --chart-legend-text:var(--text-secondary);
@@ -504,6 +523,7 @@
 .zv-title-large { font: var(--type-title-large); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
 .zv-title       { font: var(--type-title);       letter-spacing: var(--tracking-tight); color: var(--text-primary); }
 .zv-subtitle    { font: var(--type-subtitle);    color: var(--text-primary); }
+.zv-metric      { font: var(--type-metric);      color: var(--text-primary); } /* headline KPI values */
 .zv-body-large  { font: var(--type-body-large);  color: var(--text-primary); }
 .zv-body-strong { font: var(--type-body-strong); color: var(--text-primary); }
 .zv-body        { font: var(--type-body);        color: var(--text-primary); }

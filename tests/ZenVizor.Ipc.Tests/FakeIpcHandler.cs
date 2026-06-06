@@ -15,7 +15,7 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
     public FakeIpcHandler(Func<string, NegotiateVersionResult>? versionPolicy = null)
     {
         _versionPolicy = versionPolicy ?? DefaultPolicy;
-        _snapshotProvider = () => new ActivitySnapshot(0, 0.0, Array.Empty<AppActivity>());
+        _snapshotProvider = () => new ActivitySnapshot(0, 0.0, Array.Empty<AppActivity>(), ClassBreakdown.Empty);
     }
 
     public int PingCount { get; private set; }

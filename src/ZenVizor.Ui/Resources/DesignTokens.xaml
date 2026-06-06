@@ -79,9 +79,12 @@
 
     <!--  Accent  ==============================================================
           accent.default / .secondary / .tertiary alias Wpf.Ui's SystemAccent*
-          for now (matches OS accent). Brand target is to override these to
-          violet always — that migration is a separate decision because it
-          affects every focus ring and primary button in the app.
+          Color resources. Those Color values are OVERRIDDEN to brand violet
+          by BrandAccent.{Light,Dark}.xaml (merged last in App.xaml), so
+          every Wpf.Ui control that paints with accent (NavigationView
+          selection, focus rings, Button accent) picks up brand violet
+          without per-control work. Theme-swap is automatic via the
+          BrandAccent dict swap in App.xaml.cs.
 
           accent.fill is the brand's answer to the dark-accent contrast issue:
           a CONSTANT brand violet (#6d3fd1 = violet-600) used for accent
@@ -97,6 +100,23 @@
     <SolidColorBrush x:Key="accent.secondary" Color="{DynamicResource SystemAccentColorSecondary}" />
     <SolidColorBrush x:Key="accent.tertiary"  Color="{DynamicResource SystemAccentColorTertiary}" />
     <SolidColorBrush x:Key="accent.fill"      Color="#6D3FD1" />
+    <!-- accent.text — foreground accent text on neutral surface.card.
+         Brand spec: violet-700 in light theme / violet-300 in dark, so a 12 px
+         body weight clears WCAG AA 4.5:1 against either surface. Used by
+         text.eyebrow Style and any other accent-coloured small text.
+         Default here aliases SystemAccentColorPrimary so the token resolves
+         even without BrandAccent.{Light,Dark}.xaml merged; the brand dict
+         overrides with its own SolidColorBrush carrying the violet-700/300
+         value. -->
+    <SolidColorBrush x:Key="accent.text"      Color="{DynamicResource SystemAccentColorPrimary}" />
+    <!-- accent.subtle — low-alpha brand violet tint, used as a soft
+         selected/hover background for accent surfaces (e.g. the
+         NavigationView selected-item background). Theme-swap via
+         BrandAccent.xaml; CSS source-of-truth is accent-subtle in
+         colors_and_type.css (10% alpha light / 18% alpha dark). Default
+         here renders as a translucent accent fallback for non-brand-dict
+         sessions. -->
+    <SolidColorBrush x:Key="accent.subtle"    Color="{DynamicResource SystemAccentColorPrimary}" Opacity="0.10" />
 
     <!--  Status  ==============================================================
           Generic status semantics (success/caution/critical/neutral) plus
@@ -127,6 +147,11 @@
 
     <SolidColorBrush x:Key="status.connected"    Color="{DynamicResource SystemFillColorSuccess}" />
     <SolidColorBrush x:Key="status.warming"      Color="{DynamicResource SystemFillColorCaution}" />
+    <!-- status.warming.background is the caution-class banner background, but
+         carries its own semantic key so the warming-banner paint can be
+         repointed without touching every caution banner in the app. Value
+         intentionally identical to status.caution.background. -->
+    <SolidColorBrush x:Key="status.warming.background" Color="{DynamicResource SystemFillColorCautionBackground}" />
     <SolidColorBrush x:Key="status.disconnected" Color="{DynamicResource SystemFillColorCritical}" />
 
     <!--  Borders  =============================================================
@@ -153,11 +178,11 @@
           NOT theme-swap — same in light and dark.
 
           chart.upSeries and chart.downSeries are the brand's deliberate
-          deviation: violet/teal that theme-swap (per docs/design/colors_and_type.css
-          and the design-system spec). v1 carries the light-theme brand values
-          as a constant; the theme-swap wiring requires a brand-dict refactor
-          and is tracked as a follow-up — see docs/design-system.md "Native
-          reconciliation". -->
+          deviation: violet/teal that THEME-SWAP. The brushes here are the
+          LIGHT-theme constants used when BrandAccent.{Light,Dark}.xaml has
+          not yet merged or has been unmerged for testing; the brand dicts
+          override these keys with theme-tuned values
+          (violet-600/teal-500 light, violet-400/teal-400 dark) at runtime. -->
 
     <SolidColorBrush x:Key="chart.upSeries"   Color="#6D3FD1" />
     <SolidColorBrush x:Key="chart.downSeries" Color="#20B6C6" />
@@ -272,6 +297,7 @@
     <sys:Double x:Key="font.size.body">14</sys:Double>
     <sys:Double x:Key="font.size.body.large">18</sys:Double>
     <sys:Double x:Key="font.size.subtitle">20</sys:Double>
+    <sys:Double x:Key="font.size.metric">24</sys:Double>
     <sys:Double x:Key="font.size.title">28</sys:Double>
     <sys:Double x:Key="font.size.title.large">40</sys:Double>
     <sys:Double x:Key="font.size.display">68</sys:Double>
@@ -329,6 +355,19 @@
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
     </Style>
+    <!-- Metric: compact display value for headline rate / count cards.
+         24 px SemiBold sits between text.subtitle (20) and text.title (28),
+         giving status cards a prominent value without the 40 px overflow
+         of text.title.large. Pair with FontFamily=font.mono override at the
+         call site for numeric values where digit alignment matters. -->
+    <Style x:Key="text.metric" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+        <Setter Property="FontSize" Value="{StaticResource font.size.metric}" />
+        <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        <Setter Property="LineHeight" Value="32" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
     <Style x:Key="text.body.large" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource font.display}" />
         <Setter Property="FontSize" Value="{StaticResource font.size.body.large}" />
@@ -362,16 +401,16 @@
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
     </Style>
     <!-- Eyebrow: uppercase, tracked, semibold caption — used for tiny
-         section labels above a title. Foreground = accent.text role (alias
-         accent.default for now; brand spec wants violet-700/violet-300 by
-         theme — deferred with the brand-dict migration). -->
+         section labels above a title. Foreground = accent.text token —
+         brand violet-700 (light) / violet-300 (dark), tuned for AA contrast
+         on surface.card at body-caption weight. Wired via BrandAccent.xaml. -->
     <Style x:Key="text.eyebrow" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource font.display}" />
         <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
         <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
         <Setter Property="LineHeight" Value="17" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
-        <Setter Property="Foreground" Value="{DynamicResource SystemAccentColorPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource accent.text}" />
         <!-- WPF has no text-transform: uppercase the source string at the
              call-site (e.g. Text="STATUS"). WPF also has no letter-spacing
              on TextBlock/TextElement — the brand's tracking-wide (0.04em)

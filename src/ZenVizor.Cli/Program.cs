@@ -275,6 +275,28 @@ static void PrintSnapshot(IpcEnvelope<ActivitySnapshot> envelope, bool all)
         Console.WriteLine();
         Console.WriteLine($"… {ordered.Count - rows.Count} more apps; pass --all to show.");
     }
+
+    // WAN vs LOCAL breakdown — same window. Bytes (not rates) so the print
+    // doesn't need to divide by WindowSeconds; total is sanity-check info.
+    var b = snap.WanLocalBreakdown;
+    var totalWan = b.WanBytesUp + b.WanBytesDown;
+    var totalLocal = b.LocalBytesUp + b.LocalBytesDown;
+    var grand = totalWan + totalLocal;
+    Console.WriteLine();
+    if (grand == 0)
+    {
+        Console.WriteLine("WAN/LOCAL: (no classified bytes in window)");
+    }
+    else
+    {
+        var wanPct = 100.0 * totalWan / grand;
+        var localPct = 100.0 * totalLocal / grand;
+        Console.WriteLine(
+            $"WAN/LOCAL: {wanPct.ToString("0.0", CultureInfo.InvariantCulture)}% WAN " +
+            $"({FormatBytes(totalWan)}) · " +
+            $"{localPct.ToString("0.0", CultureInfo.InvariantCulture)}% Local " +
+            $"({FormatBytes(totalLocal)})");
+    }
 }
 
 static string FormatRate(double bytesPerSec)

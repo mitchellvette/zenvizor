@@ -158,8 +158,8 @@ aliases a Wpf.Ui Color resource via
 
 | Token                          | Use                                                                                       | Maps to (Wpf.Ui Color)               |
 |--------------------------------|-------------------------------------------------------------------------------------------|--------------------------------------|
-| `surface.background`           | Page root background (sits under Mica)                                                    | `ApplicationBackgroundColor`         |
-| `surface.card`                 | **Opaque** card background. Use for cards that carry text/data over Mica — avoids Mica showing through behind text (WCAG AA legibility). | `SolidBackgroundFillColorBase`       |
+| `surface.background`           | Page root background. **Semi-transparent (60% alpha brand cool gray / dark slate, `#99F8F9FC` light / `#99191C26` dark)** in WPF runtime, painted ONCE on the MainWindow outer Grid (`Background="{DynamicResource surface.background}"` in `MainWindow.xaml`) so the brand tint reads uniform across the page area AND the chrome (nav pane, title bar, bottom-bar). `ApplicationBackgroundBrush` is direct-overridden to `Transparent` in `App.xaml.cs` so Pages render see-through over the MainWindow tint — no double-paint, no seam at NavigationView's column boundary. CSS keeps the opaque `#f8f9fc` / `#191c26` form since mock viewer doesn't render Mica. | `ApplicationBackgroundColor` (DesignTokens alias, but BrandAccent override + Transparent direct-override at App level take over at runtime) |
+| `surface.card`                 | **Opaque** card background — brand-aligned (`#FFFFFF` light / `#FF232735` dark). Cards carry text/data and must stay opaque so contrast is not wallpaper-dependent on Mica. | `SolidBackgroundFillColorBase` (brand-overridden) |
 | `surface.card.alt`             | Existing `CardBackgroundFillColorDefaultBrush` (slightly translucent) — only for surfaces where Mica visibility is intended | `CardBackgroundFillColorDefault`     |
 | `surface.layer`                | Section grouping above `surface.background`                                               | `LayerFillColorDefault`              |
 | `surface.subtle`               | Inline hint/banner background                                                             | `SubtleFillColorSecondary`           |
@@ -170,27 +170,47 @@ aliases a Wpf.Ui Color resource via
 | `text.disabled`                | Disabled state                                                                            | `TextFillColorDisabled`              |
 | `text.inverse`                 | Light text on dark surface                                                                | `TextFillColorInverse`               |
 | `text.on-accent`               | Text painted on an accent fill                                                            | `TextOnAccentFillColorPrimary`       |
-| `accent.default`               | Primary interactive accent — **text / borders / focus** (matches OS accent today; brand target is constant violet) | `SystemAccentColorPrimary`           |
-| `accent.secondary`             | Secondary accent (hover/pressed)                                                          | `SystemAccentColorSecondary`         |
-| `accent.tertiary`              | Tertiary accent (focused state)                                                           | `SystemAccentColorTertiary`          |
+| `accent.default`               | Primary interactive accent — **text / borders / focus**. Aliases `SystemAccentColorPrimary`, but `BrandAccent.{Light,Dark}.xaml` overrides that Color to brand violet (violet-600 light / violet-500 dark), so every Wpf.Ui control that paints accent picks up brand violet. | `SystemAccentColorPrimary` (overridden to brand violet by `BrandAccent.xaml`) |
+| `accent.secondary`             | Secondary accent (hover/pressed) — same brand-override mechanism                          | `SystemAccentColorSecondary` (brand violet-700 / violet-400) |
+| `accent.tertiary`              | Tertiary accent (focused state) — same brand-override mechanism                           | `SystemAccentColorTertiary` (brand violet-800 / violet-600) |
 | `accent.fill`                  | **Accent SURFACE** (filled buttons, pills, selection bars) carrying on-accent (white) text. Constant brand violet `#6D3FD1` in BOTH themes — one stop darker than `accent.default` in dark theme so white text clears AA 4.5:1 regardless. **Never use `accent.default` as a filled background.** | constant `#6D3FD1`                   |
-| `status.success`               | Success foreground                                                                        | `SystemFillColorSuccess`             |
-| `status.success.background`    | Success banner background                                                                 | `SystemFillColorSuccessBackground`   |
-| `status.caution`               | Caution foreground — dots / graphics / icon fills                                         | `SystemFillColorCaution`             |
+| `accent.text`                  | **Foreground accent text** on neutral surface.card (eyebrows, accent-coloured small labels). Theme-swap: violet-700 light / violet-300 dark — a darker (light) or lighter (dark) stop than `accent.default` so 12 px SemiBold clears AA 4.5:1. Used by the `text.eyebrow` Style. | constant `#561FB0` light / `#B294F6` dark via `BrandAccent.xaml` |
+| `accent.subtle`                | **Soft brand-violet tint** for selected / hovered accent surfaces (e.g. NavigationView selected-item background). Theme-swap: 10% alpha violet-600 light / 18% alpha violet-500 dark — dark theme is intentionally higher alpha so the tint stays visible against the dark backdrop. CSS source-of-truth: `--accent-subtle`. | constant `#1A6D3FD1` light / `#2E8254E6` dark via `BrandAccent.xaml` |
+| `status.success`               | Success foreground. Brand-tuned by `BrandAccent.xaml`: `#06B6A3` light / `#2BD1BD` dark.   | `SystemFillColorSuccess` (overridden) |
+| `status.success.background`    | Success banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                | `SystemFillColorSuccessBackground` (overridden) |
+| `status.caution`               | Caution foreground — dots / graphics / icon fills. Brand-tuned: `#EC9A0B` light / `#F1AD34` dark. | `SystemFillColorCaution` (overridden) |
 | `status.caution.text`          | Caution **text** on the caution-tint background. Darker amber so small body text clears AA on the light tint; bright amber already passes on the dark tint. v1 ships the light value as a constant. | constant `#8A5A00`                   |
-| `status.caution.background`    | Caution banner background                                                                 | `SystemFillColorCautionBackground`   |
-| `status.critical`              | Error foreground                                                                          | `SystemFillColorCritical`            |
-| `status.critical.background`   | Error banner background                                                                   | `SystemFillColorCriticalBackground`  |
+| `status.caution.background`    | Caution banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                | `SystemFillColorCautionBackground` (overridden) |
+| `status.critical`              | Error foreground. Brand-tuned: `#D62B62` light / `#F5547F` dark.                            | `SystemFillColorCritical` (overridden) |
+| `status.critical.background`   | Error banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                  | `SystemFillColorCriticalBackground` (overridden) |
 | `status.neutral`               | Neutral / informational                                                                   | `SystemFillColorNeutral`             |
 | `status.neutral.background`    | Neutral banner background                                                                 | `SystemFillColorNeutralBackground`   |
 | `status.connected`             | **ZenVizor-specific** — service-status dot when pipe is up                                 | `SystemFillColorSuccess`             |
 | `status.warming`               | **ZenVizor-specific** — dot/banner while warming (first flush bucket pending)             | `SystemFillColorCaution`             |
+| `status.warming.background`    | **ZenVizor-specific** — warming-banner background. Paint identical to `status.caution.background`; the separate key lets the warming banner be repointed without dragging every caution banner along. | `SystemFillColorCautionBackground`   |
 | `status.disconnected`          | **ZenVizor-specific** — dot/banner when pipe is down                                       | `SystemFillColorCritical`            |
 | `border.card`                  | Card stroke (use in place of `ControlElevationBorderBrush` for cards)                     | `CardStrokeColorDefault`             |
 | `border.subtle`                | Lighter divider stroke                                                                    | `CardStrokeColorDefaultSolid`        |
 
 ### Mica + Acrylic strategy
 
+- **Page-area Mica showthrough is on.** The brand tint paints ONCE on
+  the MainWindow outer Grid (`Background="{DynamicResource surface.background}"`
+  in `MainWindow.xaml`); cards stay opaque, pages render see-through.
+  `surface.background` is 60% alpha brand-cool at runtime (light
+  `#99F8F9FC` / dark `#99191C26`). `ApplicationBackgroundBrush` is
+  direct-overridden to `Transparent` in `App.xaml.cs ApplyDirectLevelOverrides()`
+  so Pages don't double-paint the tint on top of the Grid. The
+  split-tint-from-Page-Background design lets chrome (nav rail, title
+  bar, bottom-bar) and page area share the same backdrop with no seam
+  at NavigationView's column boundary. There's also a separate override
+  of `NavigationViewContentBackground` (and the matching
+  `*GridBorderBrush`) to `Transparent` because Wpf.Ui's
+  `LeftNavigationViewTemplate` paints a ~30% gray Border inside the
+  content area that would otherwise occlude Mica on the page side. The
+  CSS source carries the opaque form (`#f8f9fc` / `#191c26`) since the
+  mock viewer has no Mica — that's what the mockup approximates the
+  Mica-blended result *to look like*.
 - The Mica backdrop is alpha-blended over the desktop. **Anything that
   carries text or data MUST sit on `surface.card` (opaque) rather than
   `surface.card.alt` (translucent)**, or its text contrast becomes
@@ -285,8 +305,8 @@ contract that wiring code targets.
 
 | Token             | Role                                              | Value                       |
 |-------------------|---------------------------------------------------|-----------------------------|
-| `chart.upSeries`  | Upload series (line or bottom of stacked column) — **brand violet**, theme-swaps in target state | `#6D3FD1` v1; brand target `#6D3FD1` light / `#9A72F0` dark |
-| `chart.downSeries`| Download series (line or top of stacked column) — **brand teal**, theme-swaps in target state | `#20B6C6` v1; brand target `#20B6C6` light / `#34D0E0` dark |
+| `chart.upSeries`  | Upload series (line or bottom of stacked column) — **brand violet**, theme-swap via `BrandAccent.xaml` | `#6D3FD1` light (violet-600) / `#9A72F0` dark (violet-400) |
+| `chart.downSeries`| Download series (line or top of stacked column) — **brand teal**, theme-swap via `BrandAccent.xaml` | `#20B6C6` light (teal-500) / `#34D0E0` dark (teal-400) |
 | `chart.wan`       | WAN-class endpoint segment (fixed Okabe-Ito)      | `#0072B2`                   |
 | `chart.local`     | LAN/local-class endpoint segment (fixed Okabe-Ito) | `#009E73`                  |
 | `chart.series.1`  | Categorical ramp slot 1 (fixed Okabe-Ito)         | `#0072B2`                   |
@@ -304,11 +324,12 @@ friendly), AA-legible on both Light and Dark Mica without per-theme
 swapping.
 
 The **up/down** series are a deliberate **brand deviation**: violet /
-teal that theme-swap. Tradeoff documented: violet/teal is less
-colourblind-distinct than blue/orange, so the categorical palette retains
-the Okabe-Ito set for multi-series charts. v1 carries the light-theme
-brand values as constants; the theme-swap wiring requires the brand-dict
-refactor and is tracked under "Native reconciliation" below.
+teal that theme-swap via `BrandAccent.{Light,Dark}.xaml`. Tradeoff
+documented: violet/teal is less colourblind-distinct than blue/orange,
+so the categorical palette retains the Okabe-Ito set for multi-series
+charts. `DesignTokens.xaml` carries the light-theme values as a fallback
+for sessions where the brand dict is unmerged (HC mode); the brand dicts
+override with the theme-appropriate value on every Light↔Dark flip.
 
 ### How chart paints bind to these tokens (the wiring)
 
@@ -376,6 +397,7 @@ each delta; the values below are the reconciled brand targets that
 | `font.size.body`       | 14 | `font.display`    |
 | `font.size.body.large` | 18 | `font.display`    |
 | `font.size.subtitle`   | 20 | `font.display`    |
+| `font.size.metric`     | 24 | `font.display`    |
 | `font.size.title`      | 28 | `font.display`    |
 | `font.size.title.large`| 40 | `font.display`    |
 | `font.size.display`    | 68 | **`font.brand` (Nuqun)** |
@@ -404,6 +426,7 @@ LineHeight** values computed from the brand line-height ratios. Apply via
 | `text.title.large`  | `font.display`  | 40       | SemiBold   | 48         |
 | `text.title`        | `font.display`  | 28       | SemiBold   | 36         |
 | `text.subtitle`     | `font.display`  | 20       | SemiBold   | 28         |
+| `text.metric`       | `font.display`  | 24       | SemiBold   | 32         |
 | `text.body.large`   | `font.display`  | 18       | Regular    | 27         |
 | `text.body.strong`  | `font.display`  | 14       | SemiBold   | 21         |
 | `text.body`         | `font.display`  | 14       | Regular    | 21         |
@@ -419,6 +442,10 @@ pushes lines apart and the rhythm drifts page-to-page.
 
 - Use **`text.body`** for body text on all pages.
 - Use **`text.subtitle`** for card titles (SemiBold 20).
+- Use **`text.metric`** for headline metric values on dashboards / status
+  cards (SemiBold 24). Pair with `FontFamily="{StaticResource font.mono}"`
+  override at the call site when the value is numeric and digit alignment
+  matters (rates, byte counts, counts).
 - Use **`text.title`** / **`text.title.large`** for page titles.
 - Use **`text.mono`** for numeric rate values (Up B/s, Down B/s), byte
   totals, file paths, hex/IP addresses — anywhere column alignment of
@@ -658,6 +685,78 @@ token value, do not relax the threshold.
 
 Not all of these are part of the design-system tokens themselves; some are
 mockup-driven follow-up. Track here so they don't drop on the floor.
+
+> **Polish interlude landed (June 2026):** item 1 (status-dot tokenization in
+> `MainWindow.xaml.cs`), item 7 (Dashboard data-card opacity audit; cards
+> now sit on `surface.card`), and the **brand-dict migration** —
+> previously implicit in the "v1 / brand target" deferrals, now scoped as a
+> dedicated sub-phase. Brand violet replaces the OS accent for every Wpf.Ui
+> accent surface (NavigationView selection, focus rings, primary buttons);
+> status colors are brand-tuned; `chart.upSeries` / `chart.downSeries` now
+> theme-swap. Wiring: `Resources/BrandAccent.{Light,Dark}.xaml`, swapped on
+> `ApplicationThemeManager.Changed` in `App.xaml.cs`. Items 2, 3 (chart
+> paint wiring + theme re-paint) consume the brand dict and land in the
+> Phase D chart-wiring round. The rest stay pending.
+>
+> **Dashboard polish round 2 (June 2026):** full Mica showthrough across
+> page + chrome — 60% alpha `surface.background` painted ONCE on the
+> MainWindow outer Grid, with `ApplicationBackgroundBrush` +
+> `NavigationViewContentBackground` direct-overridden to `Transparent`
+> (App.xaml.cs) so chrome and page area share one backdrop with no seam.
+> Cards migrated to new `metal.card` (`LinearGradientBrush` with baked-in
+> `edge.light` catch-light per theme) plus new `shadow.card`
+> (`DropShadowEffect`). NavigationView selection: vertical violet
+> fade-out gradient (`NavigationViewItemBackgroundSelected` as
+> `LinearGradientBrush`, 18%→7% alpha per CSS spec), brand-violet
+> selected icon via `accent.text` (per-icon `DataTrigger` in
+> NavigationView.Resources — LeftCompact template intercepts plain
+> Foreground inheritance), `text.primary` selected label with SemiBold,
+> 20px icon size, 12px left indent. Talkers Up/Dn rate values colored
+> by `chart.upSeries` / `chart.downSeries`. Latent bug fix: dark
+> `text.on-accent` was black, now white per CSS spec.
+>
+> **Phase D — Dashboard chart wiring (June 2026):** chart series
+> strokes + 24% alpha area fills wired to `chart.upSeries` /
+> `chart.downSeries` via `ChartTheming.Apply` (re-applied on
+> `ChartTheming.Changed` for runtime theme flip). Y-axis: `MinLimit=0`,
+> asymmetric EWMA on the upper bound (jump up immediately on spike,
+> α=0.3 decay on the way down), binary-aware nice-value rounding
+> (`{1, 2, 5} × 10ⁿ × 1024ᵏ`) so the 1024-based `RateFormatter`
+> produces clean labels like `5 KB/s` instead of `4.9 KB/s`,
+> `MinStep = niceUpper/4`. X-axis: text labels suppressed, gridlines
+> at 10s intervals (`MinStep = TimeSpan.FromSeconds(10).Ticks`), with
+> a static positional WPF overlay painting `-2m / -90s / -1m / -30s /
+> now` at fixed offsets via an 8-column Grid with ColumnSpan-2 on the
+> middle three. Fixed-window scrolling X-axis (`MinLimit/MaxLimit`
+> anchored to newest data point's timestamp ±120s) so the static
+> overlay labels stay accurate during the first 2 minutes of uptime —
+> data accumulates right-to-left rather than stretching across the
+> full chart width. `DrawMargin(80, 10, 10, 44)` reserves the plot
+> area away from Y labels (Left=80) and gives vertical room under
+> the lowest Y label for the X overlay row (Bottom=44). Tooltip:
+> opaque `chart.tooltip.bg` background with `DropShadow(0, 4, 8, 8,
+> 38% black)` for backdrop separation, `chart.tooltip.text`,
+> `FindingStrategy.CompareOnlyXTakeClosest` for X-snap, 20px hover
+> zone via `GeometrySize` with `GeometryFill = GeometryStroke = null`
+> so the lines stay marker-free, dual-time header
+> (`-90s · 14:31:55` / `now · 14:33:25`), per-series value rows.
+> Resolves §11 backlog items 2 and 3.
+>
+> **Phase D.7 — smooth-scroll animation (June 2026, GATED OFF):**
+> implemented behind `EnableChartSmoothScroll` static readonly flag in
+> `DashboardPage.xaml.cs`. When enabled: `RatesChart.AnimationsSpeed
+> = 2200ms` (slightly over the 2s tick cadence so each tween chains
+> into the next without a stationary "done" state) +
+> `EasingFunction = EasingFunctions.Lineal`. Visual result: continuous
+> chained line motion, ~200ms imperceptible lag behind real-time.
+> Disabled by default because the animation pays ~8% idle CPU (over
+> the project's <1% budget). Flag graduates to a user-facing Settings
+> toggle when that page is built (§11 backlog item — placeholder
+> page today). HC token coverage audit completed alongside D.7 — new
+> polish round 2 tokens (`metal.card`, `edge.light`, `shadow.card`)
+> added to `HighContrast.xaml`; the full token list is HC-complete,
+> only the runtime merge wiring (§11 item 9) remains for HC mode to
+> activate end-to-end.
 
 1. **Hardcoded ellipse colors in MainWindow.xaml.cs** — replace with
    `status.connected` / `.disconnected` tokens (also

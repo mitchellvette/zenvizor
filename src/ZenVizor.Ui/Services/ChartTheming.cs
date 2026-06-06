@@ -1,6 +1,13 @@
 using System.Runtime.Versioning;
+using System.Windows;
+using System.Windows.Media;
+using LiveChartsCore;
+using LiveChartsCore.Defaults;
 using LiveChartsCore.Kernel.Sketches;
+using LiveChartsCore.Measure;
+using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
+using LiveChartsCore.SkiaSharpView.Painting.ImageFilters;
 using LiveChartsCore.SkiaSharpView.WPF;
 using SkiaSharp;
 using Wpf.Ui.Appearance;
@@ -45,6 +52,17 @@ internal static class ChartTheming
         ApplyToAxes(chart.XAxes);
         ApplyToAxes(chart.YAxes);
         chart.LegendTextPaint = AxisLabelsPaint();
+        ApplyToSeries(chart.Series);
+
+        // Tooltip chrome — opaque brand background (never translucent over
+        // Mica so text contrast isn't wallpaper-dependent) and brand text.
+        // FindingStrategy = X-snap: hovering anywhere in the plot area
+        // highlights the nearest X position and shows BOTH Up and Down
+        // series simultaneously, rather than requiring the cursor to land
+        // exactly on one of the lines.
+        chart.TooltipBackgroundPaint = TooltipBackgroundPaint();
+        chart.TooltipTextPaint = TooltipTextPaint();
+        chart.FindingStrategy = FindingStrategy.CompareOnlyXTakeClosest;
     }
 
     private static void ApplyToAxes(IEnumerable<ICartesianAxis>? axes)
@@ -55,6 +73,65 @@ internal static class ChartTheming
             axis.LabelsPaint = AxisLabelsPaint();
             axis.SeparatorsPaint = SeparatorsPaint();
         }
+    }
+
+    /// <summary>
+    /// Repaint Up/Down line series with their brand token colors
+    /// (chart.upSeries / chart.downSeries) so a theme flip rebuilds the
+    /// strokes and area fills off the violet/teal stops in
+    /// BrandAccent.{Light,Dark}.xaml. Stroke thickness 2; Fill at alpha=60
+    /// (~24%) of the same hue for the area-under-line. Series are
+    /// matched by Name ("Up"/"Down"); anything else is skipped, so
+    /// chart-state placeholders or future series stay unaffected.
+    /// </summary>
+    private static void ApplyToSeries(IEnumerable<ISeries>? series)
+    {
+        if (series is null) return;
+        foreach (var s in series)
+        {
+            if (s is not LineSeries<DateTimePoint> ls) continue;
+            var key = ls.Name switch
+            {
+                "Up" => "chart.upSeries",
+                "Down" => "chart.downSeries",
+                _ => null,
+            };
+            if (key is null) continue;
+            if (!TryGetBrandColor(key, out var c)) continue;
+            ls.Stroke = new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A)) { StrokeThickness = 2 };
+            ls.Fill   = new SolidColorPaint(new SKColor(c.R, c.G, c.B, 60));
+        }
+    }
+
+    private static bool TryGetBrandColor(string key, out Color color)
+    {
+        if (Application.Current?.Resources[key] is SolidColorBrush brush)
+        {
+            color = brush.Color;
+            return true;
+        }
+        color = default;
+        return false;
+    }
+
+    private static SolidColorPaint? TooltipBackgroundPaint()
+    {
+        if (!TryGetBrandColor("chart.tooltip.bg", out var c)) return null;
+        // Drop shadow on the tooltip background paint: at low alpha black,
+        // offset 4px down with 8px sigma blur — enough to lift the tooltip
+        // visually off similar-toned card / Mica backdrops without making
+        // it feel heavy. Applied via SKImageFilter on the paint so the
+        // shadow renders inside SkiaSharp without any WPF layering.
+        return new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A))
+        {
+            ImageFilter = new DropShadow(0, 4, 8, 8, new SKColor(0, 0, 0, 96)),
+        };
+    }
+
+    private static SolidColorPaint? TooltipTextPaint()
+    {
+        if (!TryGetBrandColor("chart.tooltip.text", out var c)) return null;
+        return new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A));
     }
 
     private static SolidColorPaint AxisLabelsPaint() =>

@@ -26,7 +26,7 @@ public sealed class RollingActivityWindowTests
     {
         var window = new RollingActivityWindow();
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 1_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 1_000);
 
         snap.WindowSeconds.Should().Be(0.0);
         snap.Apps.Should().BeEmpty();
@@ -44,7 +44,7 @@ public sealed class RollingActivityWindowTests
             [new ActivityKey(ChromeApp, null)] = new(100, 200),
         };
 
-        var snap = window.TakeSnapshot(partial, nowUnixMs: 2_500);
+        var snap = window.TakeSnapshot(partial, ClassBreakdown.Empty, nowUnixMs: 2_500);
 
         snap.WindowSeconds.Should().Be(0.0);
         snap.Apps.Should().BeEmpty();
@@ -61,10 +61,11 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(BytesUp: 5_000, BytesDown: 50_000),
             },
+            bucketBreakdown: ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 5_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 5_000);
 
         snap.WindowSeconds.Should().Be(5.0);
         snap.Apps.Should().ContainSingle();
@@ -88,6 +89,7 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(5_000, 0),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
@@ -96,7 +98,7 @@ public sealed class RollingActivityWindowTests
             [new ActivityKey(ChromeApp, null)] = new(2_000, 0),
         };
 
-        var snap = window.TakeSnapshot(partial, nowUnixMs: 7_000);
+        var snap = window.TakeSnapshot(partial, ClassBreakdown.Empty, nowUnixMs: 7_000);
 
         snap.WindowSeconds.Should().Be(7.0);
         var chrome = snap.Apps.Single();
@@ -114,6 +116,7 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(1_000, 1_000),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
@@ -122,7 +125,7 @@ public sealed class RollingActivityWindowTests
             [new ActivityKey(Svchost, "Dnscache")] = new(0, 250),
         };
 
-        var snap = window.TakeSnapshot(partial, nowUnixMs: 10_000);
+        var snap = window.TakeSnapshot(partial, ClassBreakdown.Empty, nowUnixMs: 10_000);
 
         snap.WindowSeconds.Should().Be(10.0);
         snap.Apps.Should().HaveCount(2);
@@ -146,10 +149,11 @@ public sealed class RollingActivityWindowTests
                 [new ActivityKey(Svchost, "Dnscache")]  = new(0, 500),
                 [new ActivityKey(Svchost, "DiagTrack")] = new(100, 0),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 5_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 5_000);
 
         snap.Apps.Should().HaveCount(2);
         snap.Apps.Single(a => a.HostedServices == "Dnscache").BytesDownTotal.Should().Be(500);
@@ -167,6 +171,7 @@ public sealed class RollingActivityWindowTests
             {
                 [key] = new(BytesUp: 1_000, BytesDown: 4_000),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
@@ -175,7 +180,7 @@ public sealed class RollingActivityWindowTests
             [key] = new(BytesUp: 500, BytesDown: 6_000),
         };
 
-        var snap = window.TakeSnapshot(partial, nowUnixMs: 8_000);
+        var snap = window.TakeSnapshot(partial, ClassBreakdown.Empty, nowUnixMs: 8_000);
 
         snap.WindowSeconds.Should().Be(8.0);
         var chrome = snap.Apps.Single();
@@ -195,10 +200,11 @@ public sealed class RollingActivityWindowTests
                 [new ActivityKey(ChromeApp, null)] = new(0, 0),
                 [new ActivityKey(Svchost, "Dnscache")] = new(0, 100),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 5_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 5_000);
 
         snap.Apps.Should().ContainSingle().Which.ImageName.Should().Be("svchost.exe");
     }
@@ -215,6 +221,7 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(BytesUp: 99_999, BytesDown: 0),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 0,
             bucketEndUnixMs: 5_000);
 
@@ -223,10 +230,11 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(BytesUp: 100, BytesDown: 0),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 5_000,
             bucketEndUnixMs: 10_000);
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 10_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 10_000);
 
         snap.WindowSeconds.Should().Be(5.0);
         snap.Apps.Single().BytesUpTotal.Should().Be(100);
@@ -243,13 +251,91 @@ public sealed class RollingActivityWindowTests
             {
                 [new ActivityKey(ChromeApp, null)] = new(1, 0),
             },
+            ClassBreakdown.Empty,
             bucketStartUnixMs: 5_000,
             bucketEndUnixMs: 5_000);
 
-        var snap = window.TakeSnapshot(EmptyPartial(), nowUnixMs: 5_000);
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 5_000);
 
         snap.WindowSeconds.Should().Be(0.001);
         snap.Apps.Single().BytesUpPerSec.Should().Be(1_000.0);
+    }
+
+    [Fact]
+    public void TakeSnapshot_BeforeFirstFlush_BreakdownIsEmpty()
+    {
+        var window = new RollingActivityWindow();
+
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 1_000);
+
+        snap.WanLocalBreakdown.Should().Be(ClassBreakdown.Empty);
+    }
+
+    [Fact]
+    public void TakeSnapshot_BeforeFirstFlush_IgnoresPartialBreakdown()
+    {
+        // Cold-start invariant: even if the partial accumulator carries WAN/Local
+        // bytes, the snapshot reports zero breakdown until the first bucket seals.
+        // Mirrors the per-app cold-start invariant in TakeSnapshot_BeforeFirstFlush_IgnoresPartialBytes.
+        var window = new RollingActivityWindow();
+        var partialBreakdown = new ClassBreakdown(100, 200, 300, 400);
+
+        var snap = window.TakeSnapshot(EmptyPartial(), partialBreakdown, nowUnixMs: 2_500);
+
+        snap.WanLocalBreakdown.Should().Be(ClassBreakdown.Empty);
+    }
+
+    [Fact]
+    public void TakeSnapshot_AfterFlush_BreakdownReflectsBucketValues()
+    {
+        var window = new RollingActivityWindow();
+        var bucketBreakdown = new ClassBreakdown(
+            WanBytesUp: 1_000, WanBytesDown: 5_000,
+            LocalBytesUp: 200, LocalBytesDown: 400);
+
+        window.OnFlush(
+            new Dictionary<ActivityKey, ActivityBytes>
+            {
+                [new ActivityKey(ChromeApp, null)] = new(1_200, 5_400),
+            },
+            bucketBreakdown,
+            bucketStartUnixMs: 0,
+            bucketEndUnixMs: 5_000);
+
+        var snap = window.TakeSnapshot(EmptyPartial(), ClassBreakdown.Empty, nowUnixMs: 5_000);
+
+        snap.WanLocalBreakdown.Should().Be(bucketBreakdown);
+    }
+
+    [Fact]
+    public void TakeSnapshot_AddsBucketAndPartialBreakdowns()
+    {
+        // Bucket WAN 1000 + partial WAN 300 = snapshot WAN 1300, etc.
+        // Mirrors the per-app additive behaviour TakeSnapshot_SameAppKeyInBucketAndPartial_CombinesTotals.
+        var window = new RollingActivityWindow();
+        var bucketBreakdown = new ClassBreakdown(1_000, 4_000, 200, 800);
+        var partialBreakdown = new ClassBreakdown(300, 1_500, 50, 100);
+
+        window.OnFlush(
+            new Dictionary<ActivityKey, ActivityBytes>
+            {
+                [new ActivityKey(ChromeApp, null)] = new(1_200, 4_800),
+            },
+            bucketBreakdown,
+            bucketStartUnixMs: 0,
+            bucketEndUnixMs: 5_000);
+
+        var partial = new Dictionary<ActivityKey, ActivityBytes>
+        {
+            [new ActivityKey(ChromeApp, null)] = new(350, 1_600),
+        };
+
+        var snap = window.TakeSnapshot(partial, partialBreakdown, nowUnixMs: 8_000);
+
+        snap.WanLocalBreakdown.WanBytesUp.Should().Be(1_300);
+        snap.WanLocalBreakdown.WanBytesDown.Should().Be(5_500);
+        snap.WanLocalBreakdown.LocalBytesUp.Should().Be(250);
+        snap.WanLocalBreakdown.LocalBytesDown.Should().Be(900);
     }
 
     private static IReadOnlyDictionary<ActivityKey, ActivityBytes> EmptyPartial() =>

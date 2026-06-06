@@ -6,101 +6,455 @@
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
+    <!--
+        Dashboard layout:
+          Row 0  header — page title
+          Row 1  banner — one collapsed-by-default Border whose Background /
+                          Foreground / copy are driven by ApplyUpdate
+          Row 2  content — wrapped in a single Grid (DimmableContent) so the
+                            disconnect state can flip Opacity=0.6 across status
+                            cards + chart + talkers in one place.
+
+        Inside DimmableContent:
+          Row 0  status cards row (4-up)
+          Row 1  chart card (residual height)
+          Row 2  talkers card (residual height, MinHeight=140 MaxHeight=320,
+                                  internal scroll — Dashboard page itself
+                                  never scrolls).
+    -->
+
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="2*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ui:TextBlock FontTypography="Subtitle"
-                          FontFamily="{DynamicResource font.display}"
-                          Text="Current Activity" />
-            <Border x:Name="WarmingBanner" Visibility="Collapsed" Margin="16,0,0,0"
-                    VerticalAlignment="Center"
-                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
-                    Padding="8,4" CornerRadius="4">
-                <TextBlock Text="warming up — first flush bucket lands within ~5 s"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-            </Border>
-            <Border x:Name="DisconnectedBanner" Visibility="Collapsed" Margin="16,0,0,0"
-                    VerticalAlignment="Center"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    Padding="8,4" CornerRadius="4">
-                <TextBlock x:Name="DisconnectedText"
-                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
-                           Text="service disconnected" />
-            </Border>
-        </StackPanel>
+        <!--  Row 0 — page title  -->
+        <ui:TextBlock Grid.Row="0"
+                      Style="{StaticResource text.subtitle}"
+                      Text="Current activity" />
 
-        <Border Grid.Row="1" Padding="8" CornerRadius="6"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-            <lvc:CartesianChart x:Name="RatesChart"
-                                Background="Transparent"
-                                LegendPosition="Top" />
+        <!--  Row 1 — state-driven banner. Single element; ApplyUpdate
+              swaps Background/Foreground/copy across warming, transient
+              disconnect (caution), and steady disconnect (critical).
+              Collapsed when none apply.  -->
+        <Border x:Name="StatusBanner"
+                Grid.Row="1"
+                Visibility="Collapsed"
+                Margin="0,12,0,0"
+                Padding="8"
+                CornerRadius="{StaticResource radius.control}">
+            <TextBlock x:Name="StatusBannerText"
+                       Text=""
+                       TextWrapping="Wrap" />
         </Border>
 
-        <Border Grid.Row="2" Margin="0,12,0,0" CornerRadius="6"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+        <!--  Row 2 — content. DimmableContent.Opacity flips to 0.6 during
+              disconnect; the banner itself stays at full opacity so the
+              copy stays legible.  -->
+        <Grid x:Name="DimmableContent" Grid.Row="2" Margin="0,12,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <!-- RowDefinition.MinHeight enforces the chart and talkers
+                     row minimums. Border.MinHeight on the cards alone
+                     isn't enough — a Height="*" row will shrink below
+                     its child's MinHeight and the Border overflows into
+                     the next row, clipping the chart card's X-axis +
+                     rounded corners under the talkers card at small
+                     window sizes. Values = Border.MinHeight + Margin.Top
+                     so the full card incl. its gap fits inside the row. -->
+                <RowDefinition Height="*" MinHeight="316" />
+                <RowDefinition Height="*" MinHeight="112" />
+            </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Padding="12,8" BorderThickness="0,0,0,1"
-                        BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="200" />
-                            <ColumnDefinition Width="90" />
-                            <ColumnDefinition Width="110" />
-                            <ColumnDefinition Width="110" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="App" FontWeight="SemiBold" />
-                        <TextBlock Grid.Column="1" Text="Publisher" FontWeight="SemiBold" />
-                        <TextBlock Grid.Column="2" Text="Signature" FontWeight="SemiBold" />
-                        <TextBlock Grid.Column="3" Text="Up/s" FontWeight="SemiBold" TextAlignment="Right" />
-                        <TextBlock Grid.Column="4" Text="Dn/s" FontWeight="SemiBold" TextAlignment="Right" />
-                    </Grid>
+            <!--  Status cards (4-up). 12px gap between cards via per-card
+                  Margin; outer card has 0 outer Margin so the row aligns to
+                  the page outer margin.  -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!--  Card 1 — UPLOAD  -->
+                <Border Grid.Column="0"
+                        Margin="0,0,6,0"
+                        Padding="16"
+                        Background="{DynamicResource metal.card}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.card}"
+                        Effect="{DynamicResource shadow.card}">
+                    <StackPanel>
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="UPLOAD" />
+                        <TextBlock x:Name="StatusCardUpValue"
+                                   Style="{StaticResource text.metric}"
+                                   FontFamily="{StaticResource font.mono}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                        <TextBlock x:Name="StatusCardUpSubline"
+                                   Style="{StaticResource text.caption}"
+                                   Text="trailing 2-second average"
+                                   Visibility="Collapsed"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
                 </Border>
 
-                <ListView Grid.Row="1" x:Name="TalkersList"
-                          Background="Transparent" BorderThickness="0"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="8,4" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="200" />
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition Width="110" />
-                                    <ColumnDefinition Width="110" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding AppLabel}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="1" Text="{Binding Publisher}" TextTrimming="CharacterEllipsis"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                <TextBlock Grid.Column="2" Text="{Binding SignatureStatus}" />
-                                <TextBlock Grid.Column="3" Text="{Binding UpRateText}" TextAlignment="Right" />
-                                <TextBlock Grid.Column="4" Text="{Binding DownRateText}" TextAlignment="Right" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
+                <!--  Card 2 — DOWNLOAD  -->
+                <Border Grid.Column="1"
+                        Margin="6,0,6,0"
+                        Padding="16"
+                        Background="{DynamicResource metal.card}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.card}"
+                        Effect="{DynamicResource shadow.card}">
+                    <StackPanel>
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="DOWNLOAD" />
+                        <TextBlock x:Name="StatusCardDownValue"
+                                   Style="{StaticResource text.metric}"
+                                   FontFamily="{StaticResource font.mono}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                        <TextBlock x:Name="StatusCardDownSubline"
+                                   Style="{StaticResource text.caption}"
+                                   Text="trailing 2-second average"
+                                   Visibility="Collapsed"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!--  Card 3 — ACTIVE PROCESSES  -->
+                <Border Grid.Column="2"
+                        Margin="6,0,6,0"
+                        Padding="16"
+                        Background="{DynamicResource metal.card}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.card}"
+                        Effect="{DynamicResource shadow.card}">
+                    <StackPanel>
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="ACTIVE PROCESSES" />
+                        <TextBlock x:Name="StatusCardActiveValue"
+                                   Style="{StaticResource text.metric}"
+                                   FontFamily="{StaticResource font.mono}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                        <TextBlock x:Name="StatusCardActiveSubline"
+                                   Style="{StaticResource text.caption}"
+                                   Text="talking right now"
+                                   Visibility="Collapsed"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!--  Card 4 — WAN vs LOCAL. Value slot is a horizontal stacked
+                      bar instead of a number; column widths flip per
+                      breakdown ratios in UpdateStatusCards. Hidden when no
+                      bytes have been classified yet.  -->
+                <Border Grid.Column="3"
+                        Margin="6,0,0,0"
+                        Padding="16"
+                        Background="{DynamicResource metal.card}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.card}"
+                        Effect="{DynamicResource shadow.card}">
+                    <StackPanel>
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="WAN VS LOCAL" />
+                        <Grid x:Name="WanLocalBar"
+                              Height="8"
+                              Margin="0,18,0,18"
+                              Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1*" />
+                                <ColumnDefinition Width="1*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0"
+                                    Background="{DynamicResource chart.wan}"
+                                    CornerRadius="2,0,0,2" />
+                            <Border Grid.Column="1"
+                                    Background="{DynamicResource chart.local}"
+                                    CornerRadius="0,2,2,0" />
+                        </Grid>
+                        <!-- Legend: colored swatch + label per segment.
+                             Two adjacent segments (WAN / Local) with their
+                             chart-palette swatch so the bar's mapping is
+                             unambiguous without referencing back to the
+                             card's value slot. -->
+                        <StackPanel x:Name="StatusCardWanLegend"
+                                    Orientation="Horizontal"
+                                    Visibility="Collapsed">
+                            <Border Width="8" Height="8"
+                                    Background="{DynamicResource chart.wan}"
+                                    CornerRadius="1"
+                                    VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusCardWanLegendWan"
+                                       Style="{StaticResource text.caption}"
+                                       Text="WAN —"
+                                       Margin="6,0,12,0"
+                                       VerticalAlignment="Center" />
+                            <Border Width="8" Height="8"
+                                    Background="{DynamicResource chart.local}"
+                                    CornerRadius="1"
+                                    VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusCardWanLegendLocal"
+                                       Style="{StaticResource text.caption}"
+                                       Text="Local —"
+                                       Margin="6,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <!-- Shown when no traffic has been classified yet.
+                             Replaces the WAN/Local split text so the slot
+                             still reads as the bottom of the card. -->
+                        <TextBlock x:Name="StatusCardWanQuietText"
+                                   Style="{StaticResource text.caption}"
+                                   Text="No active traffic"
+                                   Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
             </Grid>
-        </Border>
+
+            <!--  Chart card. Outer Border + inner Grid:
+                  Row 0 = header ("Live rates"), Row 1 = chart body with a
+                  Z-stacked ProgressRing overlay for the empty/warming/
+                  loading states.  -->
+            <Border Grid.Row="1"
+                    MinHeight="300"
+                    Margin="0,16,0,0"
+                    Padding="16"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Style="{StaticResource text.subtitle}"
+                                  Text="Live rates" />
+                    <Grid Grid.Row="1" Margin="0,12,0,0">
+                        <lvc:CartesianChart x:Name="RatesChart"
+                                            Background="Transparent"
+                                            LegendPosition="Top" />
+
+                        <!-- Positional X-axis labels overlay. Aligned to the
+                             chart's DrawMargin (Left=40, Right=10) so the
+                             five static time markers (-2m, -90s, -1m, -30s,
+                             now) sit at 0/25/50/75/100% of the plot width.
+                             8-column Grid with ColumnSpan=2 on the middle
+                             three puts each label's center exactly on a
+                             column boundary. IsHitTestVisible=False so the
+                             overlay never steals tooltip hits from the
+                             chart. Visibility flips with chart data state
+                             — Collapsed while no data, Visible once the
+                             chart has points (default state OR dimmed
+                             stale-on-disconnect). -->
+                        <Grid x:Name="ChartXAxisOverlay"
+                              Visibility="Collapsed"
+                              VerticalAlignment="Bottom"
+                              Margin="88,0,10,8"
+                              Height="20"
+                              IsHitTestVisible="False">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="-2m"
+                                       HorizontalAlignment="Left" />
+                            <TextBlock Grid.Column="1" Grid.ColumnSpan="2"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="-90s"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Grid.ColumnSpan="2"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="-1m"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Grid.Column="5" Grid.ColumnSpan="2"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="-30s"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Grid.Column="7"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="now"
+                                       HorizontalAlignment="Right" />
+                        </Grid>
+
+                        <StackPanel x:Name="ChartLoadingOverlay"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <ui:ProgressRing IsIndeterminate="True"
+                                             HorizontalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Text="Waiting for first sample…"
+                                       Margin="0,12,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!--  Talkers card. Padding=0 because the inner header strip and
+                  list rows carry their own padding. MinHeight=140 (~4 rows)
+                  / MaxHeight=320 (~10 visible rows): below max, internal
+                  scroll absorbs overflow; the Dashboard page itself never
+                  scrolls (so chart and status row stay visible).  -->
+            <Border Grid.Row="2"
+                    Margin="0,12,0,0"
+                    MinHeight="100"
+                    MaxHeight="320"
+                    Padding="0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!--  Header strip — column titles with WPF ToolTips
+                          sourced from Strings.Tooltips.xaml. The bottom 1px
+                          border separates the header from the list rows.  -->
+                    <Border Grid.Row="0"
+                            Padding="12,8"
+                            BorderThickness="0,0,0,1"
+                            BorderBrush="{DynamicResource border.subtle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="110" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Style="{StaticResource text.body.strong}"
+                                       Text="App" />
+                            <TextBlock Grid.Column="1"
+                                       Style="{StaticResource text.body.strong}"
+                                       Text="Publisher"
+                                       ToolTip="{StaticResource tooltip.dashboard.publisher}" />
+                            <TextBlock Grid.Column="2"
+                                       Style="{StaticResource text.body.strong}"
+                                       Text="Signature"
+                                       ToolTip="{StaticResource tooltip.dashboard.signature}" />
+                            <TextBlock Grid.Column="3"
+                                       Style="{StaticResource text.body.strong}"
+                                       Text="Up/s"
+                                       TextAlignment="Right"
+                                       ToolTip="{StaticResource tooltip.dashboard.uprate}" />
+                            <TextBlock Grid.Column="4"
+                                       Style="{StaticResource text.body.strong}"
+                                       Text="Dn/s"
+                                       TextAlignment="Right"
+                                       ToolTip="{StaticResource tooltip.dashboard.downrate}" />
+                        </Grid>
+                    </Border>
+
+                    <!--  List body. Three layers, mutually exclusive in
+                          practice: the ListView (always present), the
+                          loading overlay (state: empty/initial), and the
+                          empty text (state: warming or post-warming quiet).  -->
+                    <Grid Grid.Row="1">
+                        <ListView x:Name="TalkersList"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="8,4" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <!--  Opacity bound to TalkerRowViewModel.Opacity —
+                                          1.0 for active rows, 0.5 for the ~30s
+                                          dimmed-row persistence window.  -->
+                                    <Grid Opacity="{Binding Opacity}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="200" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="110" />
+                                            <ColumnDefinition Width="110" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Style="{StaticResource text.body}"
+                                                   Text="{Binding AppLabel}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1"
+                                                   Style="{StaticResource text.body}"
+                                                   Text="{Binding Publisher}"
+                                                   Foreground="{DynamicResource text.secondary}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2"
+                                                   Style="{StaticResource text.body}"
+                                                   Text="{Binding SignatureStatus}" />
+                                        <TextBlock Grid.Column="3"
+                                                   Style="{StaticResource text.mono}"
+                                                   Text="{Binding UpRateText}"
+                                                   Foreground="{DynamicResource chart.upSeries}"
+                                                   TextAlignment="Right" />
+                                        <TextBlock Grid.Column="4"
+                                                   Style="{StaticResource text.mono}"
+                                                   Text="{Binding DownRateText}"
+                                                   Foreground="{DynamicResource chart.downSeries}"
+                                                   TextAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <StackPanel x:Name="TalkersLoadingOverlay"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <ui:ProgressRing IsIndeterminate="True"
+                                             HorizontalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Text="Waiting for first sample…"
+                                       Margin="0,12,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock x:Name="TalkersEmptyText"
+                                   Visibility="Collapsed"
+                                   Style="{StaticResource text.body}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Text="No active talkers in this window."
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Page>

@@ -153,7 +153,7 @@ public sealed class TrafficAggregator
             _partialBucketStartUnixMs = nowUnixMs;
 
             var rollup = BuildPerAppRollup(samplesSnapshot, pidToAppSnapshot);
-            _activityWindow.OnFlush(rollup, bucketStartUnixMs, nowUnixMs);
+            _activityWindow.OnFlush(rollup.Apps, rollup.Breakdown, bucketStartUnixMs, nowUnixMs);
         }
 
         var sampleRows = new List<PendingTrafficSample>(samplesSnapshot.Count);
@@ -230,42 +230,67 @@ public sealed class TrafficAggregator
         {
             var pidToApp = _sessions.SnapshotPidToApp();
             var partial = BuildPerAppRollup(_samples, pidToApp);
-            return _activityWindow.TakeSnapshot(partial, nowUnixMs);
+            return _activityWindow.TakeSnapshot(partial.Apps, partial.Breakdown, nowUnixMs);
         }
     }
 
     /// <summary>
-    /// Per-app byte rollup keyed by (AppIdentity, HostedServices). Multiple PIDs
-    /// of the same app collapse; distinct svchost PIDs hosting different service
-    /// sets stay separate (CLAUDE.md invariant #5). Skips samples whose PID is
-    /// no longer in the tracker (rare; happens if a session was reaped between
-    /// the Observe that recorded the sample and this rollup).
+    /// Per-app byte rollup keyed by (AppIdentity, HostedServices) PLUS the
+    /// aggregate WAN/Local byte breakdown over the same input samples.
+    /// Both are computed in one pass because the source dictionary keys
+    /// (<see cref="SampleKey"/>) already carry <see cref="RemoteClass"/>.
+    /// Multiple PIDs of the same app collapse; distinct svchost PIDs
+    /// hosting different service sets stay separate (CLAUDE.md invariant
+    /// #5). Skips samples whose PID is no longer in the tracker (rare;
+    /// happens if a session was reaped between the Observe that recorded
+    /// the sample and this rollup).
     /// </summary>
-    private static Dictionary<ActivityKey, ActivityBytes> BuildPerAppRollup(
+    private static PerAppRollup BuildPerAppRollup(
         IReadOnlyDictionary<SampleKey, SampleAcc> samples,
         IReadOnlyDictionary<int, SessionTracker.PidAppInfo> pidToApp)
     {
-        var rollup = new Dictionary<ActivityKey, ActivityBytes>(pidToApp.Count);
+        var apps = new Dictionary<ActivityKey, ActivityBytes>(pidToApp.Count);
+        long wanUp = 0, wanDown = 0, localUp = 0, localDown = 0;
+
         foreach (var (sampleKey, acc) in samples)
         {
             if (!pidToApp.TryGetValue(sampleKey.Pid, out var info))
             {
                 continue;
             }
+
             var key = new ActivityKey(info.AppIdentity, info.HostedServices);
-            if (rollup.TryGetValue(key, out var existing))
+            if (apps.TryGetValue(key, out var existing))
             {
-                rollup[key] = new ActivityBytes(
+                apps[key] = new ActivityBytes(
                     existing.BytesUp + acc.BytesUp,
                     existing.BytesDown + acc.BytesDown);
             }
             else
             {
-                rollup[key] = new ActivityBytes(acc.BytesUp, acc.BytesDown);
+                apps[key] = new ActivityBytes(acc.BytesUp, acc.BytesDown);
+            }
+
+            if (sampleKey.RemoteClass == RemoteClass.Wan)
+            {
+                wanUp += acc.BytesUp;
+                wanDown += acc.BytesDown;
+            }
+            else
+            {
+                localUp += acc.BytesUp;
+                localDown += acc.BytesDown;
             }
         }
-        return rollup;
+
+        return new PerAppRollup(
+            Apps: apps,
+            Breakdown: new ClassBreakdown(wanUp, wanDown, localUp, localDown));
     }
+
+    private readonly record struct PerAppRollup(
+        Dictionary<ActivityKey, ActivityBytes> Apps,
+        ClassBreakdown Breakdown);
 
     public sealed record FlushSummary(int SampleRowsWritten, int ConnectionUpserts, int SessionsClosed);
 

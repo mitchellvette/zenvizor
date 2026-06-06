@@ -1,0 +1,56 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+    <!--
+        Brand control-level overrides for ui:NavigationView, theme-invariant.
+
+        Lives in its own dictionary (not BrandAccent.xaml) because the
+        values here don't theme-swap. Merged once in App.xaml AFTER the
+        brand-accent dict so any color refs flow through theme.
+
+        Two adjustments today:
+          1. Icon size bumped from Wpf.Ui's 24 default. Filled selected
+             icons (see #2) read chunky enough at 24; we leave the
+             default for now and revisit if the mockup pass on
+             other screens shows them as too small.
+          2. Implicit Style for ui:NavigationViewItem adds an
+             IsActive=True trigger that bumps FontWeight to SemiBold on
+             the selected label. Wpf.Ui's default template leaves
+             FontWeight at Regular regardless of state — the mockup
+             specs a heavier selected label.
+    -->
+
+    <Style TargetType="{x:Type ui:NavigationViewItem}"
+           BasedOn="{StaticResource {x:Type ui:NavigationViewItem}}">
+        <!-- Left margin shifts the whole nav item rightward to match the
+             mockup's indent. Margin (not Padding) because LeftCompact's
+             template doesn't TemplateBind Padding — content positions are
+             hardcoded inside the template via Margin on the icon/label
+             ContentPresenters. Margin works because it's applied OUTSIDE
+             the item, in the PaneGrid stack. Uniform shift: pill, icon,
+             and label all move by the same amount; 12 lands icon at the
+             mockup target (30px) and label within 3px (~57 vs 60). Pill
+             ends up at ~16 (vs mockup 10) — the only way to differentially
+             shift pill vs. content is a full template override on
+             LeftCompactNavigationViewItemTemplate (Column 0 width). -->
+        <Setter Property="Margin" Value="12,0,0,0" />
+        <Style.Triggers>
+            <Trigger Property="IsActive" Value="True">
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <!-- Foreground sets the selected LABEL colour (text.primary
+                     per the mockup CSS, which calls for color: text-primary
+                     on the selected nav item). The icon's brand colour is
+                     set separately via the ui:SymbolIcon DataTrigger Style
+                     scoped to NavigationView.Resources in MainWindow.xaml —
+                     the icon binding has to live there because LeftCompact's
+                     item template TemplateBinds the icon's Foreground to its
+                     own brush keys and intercepts plain Foreground
+                     inheritance from the parent NavigationViewItem. -->
+                <Setter Property="Foreground" Value="{DynamicResource text.primary}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+</ResourceDictionary>

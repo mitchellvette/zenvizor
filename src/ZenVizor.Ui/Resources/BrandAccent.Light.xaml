@@ -1,0 +1,201 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        ZenVizor — brand accent overrides, LIGHT theme.
+
+        Loaded LAST in App.xaml's MergedDictionaries so that the Wpf.Ui
+        accent and status colors are overridden by brand values. Wpf.Ui's
+        own brushes (e.g. SystemAccentColorPrimaryBrush) define their Color
+        via DynamicResource against these keys, so overriding the Color
+        value here propagates through every consumer — NavigationView
+        selection pills, focus rings, Button accents — without touching any
+        control template.
+
+        On runtime theme flip, App.xaml.cs swaps this dictionary's Source
+        URI to BrandAccent.Dark.xaml and back. Same swap pattern Wpf.Ui's
+        SystemThemeWatcher uses on its ThemesDictionary slot.
+
+        Source of truth for the values: docs/design/colors_and_type.css
+        (light-theme block, §2 "CANONICAL SEMANTIC TOKENS"). Updating a
+        value here requires updating the CSS in the same commit.
+    -->
+
+    <!--  ACCENT  ============================================================
+          Wpf.Ui SystemAccentColor* override. accent.default / .secondary /
+          .tertiary brushes in DesignTokens.xaml alias these via Color
+          DynamicResource, so this override propagates without further
+          plumbing. -->
+    <Color x:Key="SystemAccentColorPrimary">#6D3FD1</Color>     <!-- violet-600 -->
+    <Color x:Key="SystemAccentColorSecondary">#561FB0</Color>   <!-- violet-700 -->
+    <Color x:Key="SystemAccentColorTertiary">#461D7C</Color>    <!-- violet-800 -->
+
+    <!--  accent.text — foreground accent text on neutral surface.card.
+          The brand spec uses a DARKER violet (violet-700) than accent.default
+          (violet-600) so 12 px SemiBold body weight clears WCAG AA 4.5:1 on
+          light surface.card. Used by text.eyebrow Style and any other
+          accent-coloured small text run. -->
+    <SolidColorBrush x:Key="accent.text" Color="#561FB0" />
+
+    <!--  accent.subtle — low-alpha brand violet, used as a soft
+          selected/hover background for accent surfaces. CSS source:
+          accent-subtle = rgba(109,63,209,0.10). -->
+    <SolidColorBrush x:Key="accent.subtle" Color="#1A6D3FD1" />
+
+    <!--  STATUS  ============================================================
+          Brand-tuned values overriding Wpf.Ui's SystemFillColor* and the
+          *Background tint companions. status.success / .caution / .critical
+          and their *.background siblings in DesignTokens.xaml alias these
+          Colors and pick up the override automatically.
+
+          Backgrounds are alpha-tinted versions of the foreground (CSS
+          rgba(...,0.14) etc.). ARGB hex puts alpha in the first two chars:
+            0.12 ≈ 0x1F   0.14 ≈ 0x24   0.16 ≈ 0x29   0.18 ≈ 0x2E -->
+    <Color x:Key="SystemFillColorSuccess">#06B6A3</Color>
+    <Color x:Key="SystemFillColorCaution">#EC9A0B</Color>
+    <Color x:Key="SystemFillColorCritical">#D62B62</Color>
+    <Color x:Key="SystemFillColorSuccessBackground">#2406B6A3</Color>   <!-- 14% alpha -->
+    <Color x:Key="SystemFillColorCautionBackground">#29EC9A0B</Color>   <!-- 16% alpha -->
+    <Color x:Key="SystemFillColorCriticalBackground">#1FD62B62</Color>  <!-- 12% alpha -->
+
+    <!--  CHART up/down series — brand violet/teal. Theme-swap because the
+          chart series sit on theme-swapped surface.card, and the brand
+          spec tunes each series to its theme's surface for legibility.
+          These override the constant values DesignTokens.xaml carries as
+          v1 placeholders. -->
+    <SolidColorBrush x:Key="chart.upSeries" Color="#6D3FD1" />      <!-- violet-600 -->
+    <SolidColorBrush x:Key="chart.downSeries" Color="#20B6C6" />    <!-- teal-500 -->
+
+    <!--  NAVIGATIONVIEW SELECTION  ===========================================
+          Wpf.Ui v4's NavigationView left-fluent template binds visible
+          selection chrome to these specific keys — NOT to SystemAccentColor*.
+          Without overriding them here the selection indicator is invisible
+          (Wpf.Ui ships it as #00FFFFFF transparent), the selected
+          background is a translucent white tint (#B3FFFFFF), and the
+          selected label is text.primary black. To get the brand-violet
+          selection treatment the mockup specifies, override each key
+          directly. -->
+    <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#6D3FD1" />        <!-- accent.default (pill) -->
+    <!-- Icon foreground on selected items: accent.default (violet-600) to
+         match the selection-indicator pill. Was accent.text (violet-700),
+         which read darker than the pill and broke the visual link. -->
+    <SolidColorBrush x:Key="NavigationViewItemForegroundLeftFluent" Color="#6D3FD1" />            <!-- accent.default (icon) -->
+    <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOverLeftFluent" Color="#6D3FD1" /> <!-- accent.default (icon hover) -->
+
+    <!-- Selected item background — vertical violet fade-out gradient
+         per the mockup CSS: linear-gradient(180deg,
+         color-mix(accent.default 18%, transparent),
+         color-mix(accent.default 7%, transparent)). Same hue at both
+         stops (only alpha varies) so the ramp is a clean single-color
+         fade — 18% (#2E) top, 7% (#12) bottom. Same gradient on both
+         keys — NavigationViewItemBackgroundSelected (non-LeftFluent)
+         and the LeftFluent variant. -->
+    <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelected" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#2E6D3FD1" />
+        <GradientStop Offset="1" Color="#126D3FD1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelectedLeftFluent" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#2E6D3FD1" />
+        <GradientStop Offset="1" Color="#126D3FD1" />
+    </LinearGradientBrush>
+
+    <!--  ACCENT FILL (Wpf.Ui buttons + accent controls)  ====================
+          Wpf.Ui's primary button template binds to AccentFillColorDefault*
+          which are NOT in Light.baml / Dark.baml — they're normally
+          populated at runtime by ApplySystemAccent. We disable that
+          (updateAccent: false in App.xaml.cs) so it doesn't overwrite the
+          SystemAccentColor* brand overrides above, which means we must
+          provide these keys ourselves. Values mirror the accent stops
+          (default/secondary/tertiary = violet-600/700/800 in light theme,
+          flipped lighter in dark). -->
+    <Color x:Key="AccentFillColorDefault">#6D3FD1</Color>
+    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#6D3FD1" />
+    <Color x:Key="AccentFillColorSecondary">#561FB0</Color>
+    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#561FB0" />
+    <Color x:Key="AccentFillColorTertiary">#461D7C</Color>
+    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#461D7C" />
+
+    <!--  SURFACES + TEXT + BORDERS (theme-aware brushes)  ===================
+          These keys live in DesignTokens.xaml as DynamicResource aliases of
+          Wpf.Ui's theme-aware Color resources (e.g. surface.card aliases
+          SolidBackgroundFillColorBase). On a runtime OS theme flip,
+          Wpf.Ui's ThemesDictionary swaps its Source URI and the underlying
+          Color values change — BUT the DynamicResource invalidation does
+          NOT cascade through the alias to refresh the brush instance in
+          the aliased entry. Visual elements with Background="{DynamicResource surface.card}"
+          keep painting with the cold-start brush.
+
+          Fix: provide explicit brush instances per theme HERE. When the
+          brand-accent dictionary's Source URI is swapped on theme change,
+          the brush instances are replaced wholesale, the key's value
+          changes, and Background bindings re-fire correctly.
+
+          Values are brand-aligned per docs/design/colors_and_type.css §2
+          (NOT Wpf.Ui's Light.baml defaults). surface.background is
+          intentionally semi-transparent (60% alpha brand cool gray) and
+          painted ONCE on the MainWindow outer Grid (MainWindow.xaml) so
+          the brand tint reads uniformly across the page area AND the
+          surrounding chrome (nav pane, title bar, bottom-bar). DWM Mica
+          shows through the 60% alpha layer. ApplicationBackgroundBrush
+          is direct-overridden to Transparent in App.xaml.cs so Pages
+          render see-through over the MainWindow tint (no double-paint,
+          no seam at NavigationView's column boundary). Cards stay fully
+          opaque so text legibility is not wallpaper-dependent. -->
+    <SolidColorBrush x:Key="surface.background"    Color="#99F8F9FC" />
+    <SolidColorBrush x:Key="surface.card"          Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="surface.card.alt"      Color="#B3FFFFFF" />
+    <SolidColorBrush x:Key="surface.layer"         Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="surface.subtle"        Color="#0A14182E" />
+    <SolidColorBrush x:Key="surface.subtle.alt"    Color="#0714182E" />
+
+    <SolidColorBrush x:Key="text.primary"          Color="#FF1A1C26" />
+    <SolidColorBrush x:Key="text.secondary"        Color="#FF565D72" />
+    <SolidColorBrush x:Key="text.tertiary"         Color="#FF8B90A4" />
+    <SolidColorBrush x:Key="text.disabled"         Color="#FFB4B8C7" />
+    <SolidColorBrush x:Key="text.inverse"          Color="#FFF5F6FB" />
+    <SolidColorBrush x:Key="text.on-accent"        Color="#FFFFFFFF" />
+
+    <SolidColorBrush x:Key="border.card"           Color="#1414182E" />
+    <SolidColorBrush x:Key="border.subtle"         Color="#1214182E" />
+
+    <!--  METALLIC SURFACES  ==================================================
+          Brushed-card gradient (CSS metal.card) and the matching top-edge
+          catch-light (CSS edge.light, inset box-shadow). In light theme,
+          edge.light over the white top stop renders as white-on-white (no
+          visible change), so metal.card is a clean 2-stop gradient and
+          the edge.light token is defined for future use (control rims,
+          accent button highlights). In dark theme, the same edge.light is
+          baked into metal.card as a third stop at offset 0.015 (~1-3px
+          depending on card height) so the visual catch-light is achieved
+          without per-card Rectangle layering. -->
+    <SolidColorBrush x:Key="edge.light" Color="#8CFFFFFF" />
+    <LinearGradientBrush x:Key="metal.card" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#FFFFFFFF" />
+        <GradientStop Offset="1" Color="#FFF6F8FC" />
+    </LinearGradientBrush>
+
+    <!--  SHADOWS  ===========================================================
+          Card drop shadow approximating the mockup CSS shadow.md token.
+          WPF supports a single Effect per element; the CSS uses a stacked
+          two-shadow pattern (sharp short + soft long) — we approximate
+          with the softer long-distance shadow only. Direction=270 is
+          straight down. Hardware-composited in modern .NET; static cards
+          don't redraw on idle so the <1% idle CPU budget is unaffected. -->
+    <DropShadowEffect x:Key="shadow.card"
+                      ShadowDepth="4"
+                      BlurRadius="12"
+                      Direction="270"
+                      Color="#181B27"
+                      Opacity="0.08" />
+
+    <!--  CHART CHROME — brand-aligned. Match the updated surface + text
+          values above so axis/grid/label/tooltip/legend chrome reads
+          consistent with the rest of the page. -->
+    <SolidColorBrush x:Key="chart.axis"            Color="#1214182E" />
+    <SolidColorBrush x:Key="chart.gridline"        Color="#0B14182E" />
+    <SolidColorBrush x:Key="chart.axis.label"      Color="#FF8B90A4" />
+    <SolidColorBrush x:Key="chart.tooltip.bg"      Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="chart.tooltip.text"    Color="#FF1A1C26" />
+    <SolidColorBrush x:Key="chart.legend.text"     Color="#FF565D72" />
+
+</ResourceDictionary>

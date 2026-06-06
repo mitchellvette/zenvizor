@@ -1,0 +1,22 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        Centralized tooltip copy. Column headers and other UI affordances
+        whose meaning isn't obvious to a casual user point at these strings
+        so future localization is a single-file swap instead of a hunt
+        through call sites.
+
+        Naming: tooltip.<surface>.<column-or-affordance>.
+    -->
+
+    <sys:String x:Key="tooltip.dashboard.signature">Signed = publisher verified offline (no revocation check). Unsigned = no signature present. Invalid = signature failed verification. Unchecked = verification skipped.</sys:String>
+
+    <sys:String x:Key="tooltip.dashboard.publisher">'(unknown)' means no Authenticode signer is present.</sys:String>
+
+    <sys:String x:Key="tooltip.dashboard.uprate">Average B/s over the last 2-second polling cycle.</sys:String>
+
+    <sys:String x:Key="tooltip.dashboard.downrate">Average B/s over the last 2-second polling cycle.</sys:String>
+
+</ResourceDictionary>

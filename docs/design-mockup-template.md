@@ -54,6 +54,7 @@ Wpf.Ui / WPF controls already in the codebase):
 | Simple list (Dashboard talkers) | `ListView`        |
 | Series chart           | `lvc:CartesianChart`       |
 | Status dot             | `Ellipse`                  |
+| Loading spinner        | `ui:ProgressRing`          |
 | Tray context menu      | `ContextMenu`              |
 
 If a component in a mockup doesn't fit any of these, propose the closest

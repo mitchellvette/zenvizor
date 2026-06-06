@@ -171,6 +171,28 @@ IPC, duplicate-scan removal). 212 / 212 tests passing.
 
 ---
 
+## Interlude — UI design polish (between Phase 4 and Phase 5)
+
+Non-phase polish pass before Phase 5 adds new feature surface. Tightens the
+visual language and resolves accumulated drift via a per-screen design loop
+(findings doc → brief → Claude Design mock → XAML implementation →
+per-screen verification). Lives outside the phased acceptance criteria; the
+per-screen briefs in `docs/design-briefs/` and the design system in
+`docs/design-system.md` (with verification gate at §10) are the contracts.
+
+**Documentation follow-ups uncovered during this pass:**
+
+- **No `ZenVizor.sln` exists.** Phase 0's "Solution + project layout per
+  PRD §5.5" was only partially delivered — the repo builds via per-`.csproj`
+  invocations and CI builds each project directly. `CLAUDE.md` references
+  `dotnet build ZenVizor.sln` which fails today. Resolve either by adding a
+  top-level `.sln` (preferred: makes IDE multi-project navigation work and
+  matches the documented build command) or by updating `CLAUDE.md` to
+  reflect per-project invocation. Deferred for a housekeeping pass —
+  flagged here so it doesn't drop.
+
+---
+
 ## Phase 5 — Daily report + CSV/HTML export
 
 **Goal:** The headline deliverable — a daily overview report, viewable in-app and exportable.

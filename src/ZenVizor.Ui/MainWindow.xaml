@@ -8,13 +8,21 @@
                  mc:Ignorable="d"
                  Title="ZenVizor"
                  Height="720" Width="1200"
-                 MinHeight="500" MinWidth="800"
+                 MinHeight="720" MinWidth="1000"
                  WindowBackdropType="Mica"
                  ExtendsContentIntoTitleBar="True"
                  WindowStartupLocation="CenterScreen"
                  Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
-    <Grid>
+    <!-- Outer Grid carries the brand tint via surface.background (50% alpha
+         brand cool / dark slate). Every chrome layer above (TitleBar,
+         NavigationView pane + content, bottom-bar) is transparent so they
+         all sit on top of THIS tint — uniform brand-cool reading across
+         page area AND chrome, no seam between Grid.Column 0 and 1 of
+         NavigationView. Mica still shows through the 50% alpha.
+         ApplicationBackgroundBrush stays Transparent (App.xaml.cs override)
+         so Pages don't double-paint the tint on top of the Grid. -->
+    <Grid Background="{DynamicResource surface.background}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -31,41 +39,92 @@
                            PaneDisplayMode="Left"
                            IsBackButtonVisible="Collapsed"
                            OpenPaneLength="220">
-            <!-- TargetPageType is wired programmatically in MainWindow.xaml.cs
-                 to avoid the same-assembly XAML type-reference issue (WPF's
-                 BAML pass-1 can't resolve x:Type to types defined in other
-                 XAML files in the same assembly). -->
+            <!-- Brand violet on the selected item's icon. WPF Foreground
+                 inheritance from NavigationViewItem doesn't reach the icon
+                 because Wpf.Ui's LeftCompact item template TemplateBinds
+                 the icon's Foreground to its own brush keys. The DataTrigger
+                 below watches the ancestor NavigationViewItem.IsActive and
+                 sets a local Foreground on the SymbolIcon that wins over
+                 the template binding. Scoped to NavigationView.Resources
+                 so only the 6 nav icons pick it up (the bottom-bar arrows
+                 are siblings of the NavigationView, not children). -->
+            <ui:NavigationView.Resources>
+                <Style TargetType="ui:SymbolIcon">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}"
+                                     Value="True">
+                            <!-- accent.text (NOT accent.default) per the mockup CSS:
+                                 the brand's "more readable" stop. Darker in light
+                                 (violet-700) for contrast against the near-white
+                                 selected pill; lighter in dark (violet-300) for
+                                 contrast against the dark slate selected pill. -->
+                            <Setter Property="Foreground" Value="{DynamicResource accent.text}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ui:NavigationView.Resources>
+            <!-- Initialized handler on each item sets TargetPageType before
+                 NavigationView.OnInitialized builds its type->item lookup.
+                 See OnNavItemInitialized in MainWindow.xaml.cs. -->
+            <!-- SymbolIcon.Filled bound to parent NavigationViewItem.IsActive
+                 so selected items get the chunkier filled glyph variant; the
+                 unselected items keep the regular line-art variant. Wpf.Ui's
+                 SymbolIcon swaps glyph internally on the Filled property. -->
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem x:Name="NavDashboard" Content="Dashboard">
+                <ui:NavigationViewItem x:Name="NavDashboard"
+                                       Content="Dashboard"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="DataPie24" />
+                        <ui:SymbolIcon Symbol="DataPie24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavPerApp" Content="Per-App">
+                <ui:NavigationViewItem x:Name="NavPerApp"
+                                       Content="Per-App"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Apps24" />
+                        <ui:SymbolIcon Symbol="Apps24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavHistory" Content="History">
+                <ui:NavigationViewItem x:Name="NavHistory"
+                                       Content="History"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="History24" />
+                        <ui:SymbolIcon Symbol="History24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavReports" Content="Reports">
+                <ui:NavigationViewItem x:Name="NavReports"
+                                       Content="Reports"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="DocumentText24" />
+                        <ui:SymbolIcon Symbol="DocumentText24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavAlerts" Content="Alerts">
+                <ui:NavigationViewItem x:Name="NavAlerts"
+                                       Content="Alerts"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Alert24" />
+                        <ui:SymbolIcon Symbol="Alert24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem x:Name="NavSettings" Content="Settings">
+                <ui:NavigationViewItem x:Name="NavSettings"
+                                       Content="Settings"
+                                       Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Settings24" />
+                        <ui:SymbolIcon Symbol="Settings24"
+                                       FontSize="20"
+                                       Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.FooterMenuItems>
@@ -73,18 +132,58 @@
 
         <Border Grid.Row="2"
                 BorderThickness="0,1,0,0"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                Padding="12,6">
-            <StackPanel Orientation="Horizontal">
-                <Ellipse x:Name="ServiceStatusDot"
-                         Width="10" Height="10"
-                         Fill="DarkOrange"
-                         VerticalAlignment="Center" />
-                <TextBlock x:Name="ServiceStatusText"
-                           Margin="8,0,0,0"
-                           Text="Service: connecting…"
-                           VerticalAlignment="Center" />
-            </StackPanel>
+                BorderBrush="{DynamicResource border.subtle}"
+                Padding="12,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: service connection indicator (status dot + text).
+                     Fill is set in code (status.connected / .disconnected)
+                     so the initial "connecting…" frame doesn't paint with a
+                     literal placeholder colour. -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="ServiceStatusDot"
+                             Width="10" Height="10"
+                             VerticalAlignment="Center" />
+                    <TextBlock x:Name="ServiceStatusText"
+                               Margin="8,0,0,0"
+                               Text="Service: connecting…"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Right: bottom-bar rate mirror. Visible on every screen
+                     so totals are reachable when the user is on Per-App /
+                     History / Settings. Arrow Foregrounds and rate Text are
+                     refreshed in UpdateBottomBarRates on every snapshot
+                     tick (~2 s); when disconnected they all tint to
+                     text.tertiary and rates render as "—". -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:SymbolIcon x:Name="BottomBarUpArrow"
+                                   Symbol="ArrowUp16"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock x:Name="BottomBarUpRate"
+                               Style="{StaticResource text.mono}"
+                               Margin="4,0,0,0"
+                               Text="—"
+                               Foreground="{DynamicResource text.tertiary}"
+                               VerticalAlignment="Center" />
+                    <ui:SymbolIcon x:Name="BottomBarDownArrow"
+                                   Symbol="ArrowDown16"
+                                   Margin="12,0,0,0"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock x:Name="BottomBarDownRate"
+                               Style="{StaticResource text.mono}"
+                               Margin="4,0,0,0"
+                               Text="—"
+                               Foreground="{DynamicResource text.tertiary}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
         </Border>
 
         <tb:TaskbarIcon x:Name="Tray"

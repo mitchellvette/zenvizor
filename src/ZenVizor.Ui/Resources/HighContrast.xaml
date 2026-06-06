@@ -63,6 +63,13 @@
     <SolidColorBrush x:Key="accent.secondary" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
     <SolidColorBrush x:Key="accent.tertiary"  Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
     <SolidColorBrush x:Key="accent.fill"      Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <!-- accent.text collapses to WindowText: HC has no concept of "accent
+         foreground text", and eyebrow / small accent labels need to read
+         as body text on Control background. -->
+    <SolidColorBrush x:Key="accent.text"      Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <!-- accent.subtle collapses to HighlightBrush at low alpha — HC has
+         no soft-tint accent; fall back to the OS Highlight colour. -->
+    <SolidColorBrush x:Key="accent.subtle"    Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" Opacity="0.20" />
 
     <!--  Status — collapse to WindowText + Control. HC has no notion of
           success/caution/critical; the OS palette is the contract. The
@@ -80,11 +87,27 @@
 
     <SolidColorBrush x:Key="status.connected"    Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
     <SolidColorBrush x:Key="status.warming"      Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <!-- Mirror status.caution.background collapse: ControlColorKey so the
+         warming banner is visible against the Window-colored page. -->
+    <SolidColorBrush x:Key="status.warming.background" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
     <SolidColorBrush x:Key="status.disconnected" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
 
     <!--  Borders  -->
     <SolidColorBrush x:Key="border.card"   Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
     <SolidColorBrush x:Key="border.subtle" Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+
+    <!--  Polish round 2 additions (June 2026).  metal.card is a gradient
+          brushed-card surface; in HC it collapses to a solid Control
+          colour since HC has no concept of metallic gradients. edge.light
+          is the inset top catch-light on cards; collapses to WindowFrame
+          (the same key as borders) so it reads as a thin top stroke if
+          visible at all, rather than vanishing entirely. shadow.card is
+          a DropShadowEffect; in HC it's replaced with an inert effect
+          (Opacity=0) so cards don't render shadows — HC users typically
+          want flat high-contrast surfaces, not decorative depth. -->
+    <SolidColorBrush x:Key="metal.card"   Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="edge.light"   Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+    <DropShadowEffect x:Key="shadow.card" Opacity="0" />
 
     <!--  Charts — series collapse to WindowText / GrayText / Highlight for
           line/column distinction. The categorical 8-slot palette only has
