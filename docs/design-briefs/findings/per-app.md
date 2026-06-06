@@ -102,8 +102,14 @@ Root: `<Grid Margin="24">` with 3 rows (`Auto / Auto / *`).
   (`:105-117`). `B → KB → MB → GB → TB`, one decimal until value >= 100
   then no decimal. Right-aligned. Proportional digits (NOT mono).
 - **Server-side sort:** server returns `AppListResult.Apps` sorted by
-  total bytes descending (per `AppListResult.cs` doc comment). No
-  client-side sort UI; column headers are not sortable.
+  total bytes descending (per `AppListResult.cs` doc comment).
+- **Client-side sort is enabled (`DataGrid.CanUserSortColumns`
+  defaults to `true`) but broken for the byte columns.** Header clicks
+  already trigger a sort. App / Publisher / Signature sort correctly
+  on their bound string values. Up / Down bind to `UpText` / `DownText`
+  — pre-formatted strings (`"900 KB"`, `"400 MB"`) — so default WPF
+  lexical comparison ranks `"900 KB"` above `"400 MB"`. See friction
+  item 16.
 - **Row content NOT shown:** `ImagePath` (drill to App Detail to see),
   `IsUserWritablePath` (drill to App Detail summary), `FirstSeenUnixMs`,
   `LastSeenUnixMs`. Most of these are intentional (drill-down's job).
@@ -185,7 +191,11 @@ Root: `<Grid Margin="24">` with 3 rows (`Auto / Auto / *`).
     highlight; no chevron telegraphing drill.
     → Add a trailing `ui:SymbolIcon Symbol="ChevronRight12"` (or
     similar) on the right edge of each row when the row is hovered.
-    Presentation-only — drill behavior unchanged.
+    Presentation-only — drill behavior unchanged. **No precedent for
+    this exists in the app today** — Per-App becomes the canonical
+    hover-drill affordance, and future grid-based drill rows (History,
+    App Detail recent sessions, any future drill surfaces) should
+    adopt the same pattern.
 12. **Signature column is plain text.** "Unsigned" / "Invalid" are
     the security-relevant rows and render identically to "Signed"
     visually.
@@ -205,38 +215,111 @@ Root: `<Grid Margin="24">` with 3 rows (`Auto / Auto / *`).
     → Add caption beneath: `text.caption` `text.secondary` "Apps
     ranked by total bytes over the selected window."
 15. **No total/summary strip.** The page tells you each app's bytes
-    but never the window total. History has a summary row; Per-App
-    doesn't.
+    but never the window total. History has a flat summary line
+    today (`"{count} buckets   |   Up: {bytes}   |   Down: {bytes}"`)
+    that's being restructured in its own polish (History findings
+    items 2 & 12); Per-App has nothing.
     → Add a `space.8`-padded summary row above the DataGrid (or in
     the picker row, right-aligned): `text.caption` labels above
-    `text.mono` values for `apps`, `Up`, `Down`. Mirror History's
-    summary pattern so the two screens read similarly.
+    `text.mono` values for `apps`, `Up`, `Down`. **Per-App
+    establishes the canonical summary-strip pattern in this round —
+    History's polish should adopt the same shape so the two screens
+    read identically.**
+
+16. **Column-click sort is enabled but broken on the byte columns.**
+    `DataGrid.CanUserSortColumns` defaults to `true`, so header clicks
+    already sort. App / Publisher / Signature columns sort correctly
+    on their bound string values. Up / Down columns bind to `UpText` /
+    `DownText` (formatted strings — `"900 KB"`, `"400 MB"`), so default
+    WPF lexical comparison ranks `"900 KB"` above `"400 MB"`. Verified
+    against `AppRowViewModel` (`PerAppPage.xaml.cs:120-137`): the row
+    record carries `TotalBytes` but not `BytesUp` / `BytesDown`
+    individually.
+    → Add `BytesUp` and `BytesDown` (raw `long`) to `AppRowViewModel`
+    and plumb them through `From(AppListEntry e)`. Set
+    `SortMemberPath="BytesUp"` on the Up column and
+    `SortMemberPath="BytesDown"` on the Down column while keeping
+    `Binding="{Binding UpText}"` / `"{Binding DownText}"` for display.
+    XAML + tiny VM delta; no contract change, no behavior change to
+    server-side default ordering.
+
+17. **No inline filter / search.** Result lists can run into the
+    low-hundreds of apps over a 7d / 30d / 90d window, and there's
+    no way to narrow the grid to a name fragment without scrolling.
+    The contract comment in
+    `IZenVizorIpc.cs:48` (`"Empty filter; filters land in the UI
+    polish phase"`) anticipated this round, but the *parameter* was
+    never added — `GetAppListAsync(QueryWindow window)` takes window
+    only.
+    → Client-side filter: wrap `Rows` in a `CollectionViewSource`,
+    add a `ui:AutoSuggestBox` (or plain `TextBox` with
+    `PlaceholderText="Filter apps…"`) next to the Refresh button,
+    debounce `TextChanged` by ~150 ms via `DispatcherTimer`, and
+    apply a case-insensitive `Contains` predicate against
+    `ImageName` and `PublisherDisplay`. Bounded result sets make
+    client-side fine; if it ever proves inadequate, server-side
+    filter is the deferred fallback (feature F2 below), not the
+    default direction.
+
+18. **`AppListEntry.ImagePath` is available but never surfaced.**
+    Today's `AppRowViewModel.From` discards `ImagePath` (verified —
+    the record has no path field). Users have to double-click into
+    App Detail to learn whether `chrome.exe` is the legit
+    `C:\Program Files\Google\Chrome\…` or something pretending from
+    `%LOCALAPPDATA%\Temp\…`. Friction item 12 (Signature coloring)
+    flags *signing* state but not *path* state; combining the two
+    in a quick hover-glance materially improves the at-a-glance
+    trust assessment.
+    → Add `ImagePath` to `AppRowViewModel`, plumb it through
+    `From(AppListEntry e)`, and bind a `ToolTip` on the App
+    column's cell template that shows the full `ImagePath`. No
+    new column (preserves grid width and reading rhythm). Per
+    feature F6 below: an explicit Path column remains out of
+    scope.
 
 ### Scope sort — MANDATORY
 
 **Polish (this round):** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-15.
+15, 16, 17, 18.
 
 **Feature (flagged for later — explicitly out of brief):**
 
-- F1. **Column-click sort.** DataGrid supports header-sort; not
-  enabled today. Adds new interaction capability.
-- F2. **Inline filter/search box.** `IZenVizorIpc.GetAppList(window,
-  filter)` already has a filter parameter at the contract layer but the
-  UI doesn't expose it. Adding a search box = new capability.
-- F3. **Custom window picker (free-form date range).** Today is 5
+- F1. **Custom window picker (free-form date range).** Today is 5
   presets. Custom range = feature.
-- F4. **Persist picker selection across launches.** Settings concern
+- F2. **Server-side filter for `GetAppListAsync`.** Deferred fallback
+  for item 17 only — the polish round ships a client-side filter
+  against a bounded result set (low hundreds at most). Promoting it
+  to server-side requires a contract revision
+  (`GetAppListAsync(QueryWindow window, string filter)`), which
+  touches `ZenVizor.Ipc.Contracts`, the service implementation, and
+  version-envelope handling. **Not planned** — flagged only so a
+  future iteration knows the contract-shaped escape hatch exists if
+  client-side filter ever proves inadequate. Most likely never
+  needed.
+- F3. **Persist picker selection across launches.** Settings concern
   (Phase 6).
-- F5. **svchost service decoration on Per-App rows.** Verified above:
+- F4. **svchost service decoration on Per-App rows.** Verified above:
   `AppListEntry` does NOT carry `HostedServices`. Adding it requires a
   contract change → feature, not polish.
-- F6. **Path column.** `AppListEntry.ImagePath` is available; showing
-  it on Per-App rows would be presentation polish (no contract
-  change) — but it's a new visible field and pushes the grid wider.
-  Marked as feature so the polish round doesn't add columns
-  silently. Drill to App Detail to see path.
-- F7. **Active-action affordances (kill / block buttons).** HARD NO
+- F5. **Active-action affordances (kill / block buttons).** HARD NO
   per the passive-only invariant. Not even in the feature backlog —
   out of scope for the product, period. Noted so the brief can
   explicitly forbid them in a mock.
+
+**Removed from features (now polish — see items above):**
+
+- ~~F1. Column-click sort.~~ The doc's original "not enabled today"
+  reading was wrong: `DataGrid.CanUserSortColumns` defaults to `true`
+  and sort *is* live. The actual issue is a bug on the byte columns
+  (lexical string sort over formatted `"900 KB"` vs `"400 MB"`).
+  Reclassified as polish item 16.
+- ~~F2. Inline filter/search box.~~ Reclassified as polish item 17
+  (client-side form). The original claim that the contract already
+  carried a `filter` parameter was wrong — see the corrected
+  finding in item 17. Server-side variant retained above as the
+  deferred fallback only.
+- ~~F6. Path column.~~ The need (path visibility) is real but the
+  cost (extra column → wider grid → broken reading rhythm) isn't
+  warranted. Reclassified as polish item 18 in tooltip form, which
+  delivers the insight without paying the column cost. An explicit
+  Path column remains out of scope.
