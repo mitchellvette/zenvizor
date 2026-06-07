@@ -5,9 +5,132 @@
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
-    <!-- AppsGrid row virtualization is engaged programmatically — see
-         PerAppPage.EnforceAppsGridBound. See AppDetailPage.xaml for the
-         full rationale. -->
+    <Page.Resources>
+        <!--  BooleanToVisibilityConverter — used by the hover-chevron column
+              to flip the chevron Path Visible when the row is hovered. WPF
+              ships the converter in System.Windows.Controls; we just need to
+              instantiate it as a resource.  -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!--  Cell text styles. App keeps text.primary (text.body's default);
+              Publisher overrides Foreground to text.secondary via the derived
+              style below. Both carry ellipsis trimming.
+
+              LineStackingStrategy=MaxHeight overrides text.body's
+              BlockLineHeight setting. BlockLineHeight treats LineHeight (21)
+              as the exact line-box height and aligns the font's declared
+              descender metric to the bottom of that box — but Urbanist's
+              actual ink for g/p/y/q extends a couple px past the declared
+              descender, so the bottom of those glyphs gets clipped inside
+              the TextBlock itself (independent of cell padding or row
+              height). MaxHeight uses the font's natural baseline math,
+              which leaves the ink fully within the line box. Overridden
+              per-style here (not on text.body globally) so the rhythm
+              guarantee elsewhere — Dashboard talkers, status cards, page
+              titles — is unchanged.  -->
+        <Style x:Key="cell.body.trim" TargetType="TextBlock" BasedOn="{StaticResource text.body}">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
+            <!--  Asymmetric Padding (top 5, bottom 1) compensates for the
+                  visual offset MaxHeight strategy introduces: the line box
+                  is top-anchored inside the TextBlock (baseline at natural
+                  ascent measured from line-box top), so symmetric padding
+                  would leave the visible ink sitting ~2 px above the
+                  TextBlock's center. Top=5 / bottom=1 nudges the line box
+                  down so the visible text reads centered in the cell. Top
+                  still gives 5 px above for ascender ink overshoot; 5 px
+                  slack inside the line box + 1 px below covers descender
+                  overshoot.  -->
+            <Setter Property="Padding" Value="0,5,0,1" />
+        </Style>
+        <Style x:Key="cell.body.secondary.trim" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
+            <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+        </Style>
+        <!--  Up/Down cells: monospaced digit alignment, right-aligned within
+              the column. text.mono sets FontFamily only; size comes from the
+              compact DataGrid style. MaxHeight strategy: see cell.body.trim.  -->
+        <Style x:Key="cell.mono.right" TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
+            <Setter Property="Padding" Value="0,5,0,1" />
+        </Style>
+        <!--  Column header — BasedOn Wpf.Ui's default so the sort-direction
+              indicator (the brand-violet arrow that flips Asc/Desc) is
+              preserved. Body weight SemiBold + display font; numeric
+              headers (Up / Down) reference the .right derivative below so
+              the header text agrees with the right-aligned values beneath.  -->
+        <Style x:Key="grid.header" TargetType="DataGridColumnHeader" BasedOn="{StaticResource DefaultUiDataGridColumnHeaderStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource text.primary}" />
+            <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+        <Style x:Key="grid.header.right" TargetType="DataGridColumnHeader" BasedOn="{StaticResource grid.header}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+        </Style>
+
+        <!--  Signature cell — conditional Foreground per signing status.
+              DataTrigger binding on SignatureStatus paints status.caution for
+              the security-relevant states (Unsigned / Invalid) and text.tertiary
+              for Unchecked. Signed falls through to cell.body.trim's default
+              text.primary. Foreground-only treatment — never pills, never
+              backgrounds (brief §8.2 lock).  -->
+        <Style x:Key="cell.signature" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
+                    <Setter Property="Foreground" Value="{DynamicResource text.tertiary}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  ImagePath tooltip — translucent contrasting scrim per mockup
+              hand-off note. Background = surface.tooltip.scrim (text.primary
+              at 84% alpha → light-on-dark scrim in light theme, dark-on-light
+              in dark). Foreground = text.inverse to clear AA on the scrim.
+              Mono font for the path. shadow.sm gives the soft 4px-blur halo
+              the mockup specifies. HasDropShadow=False suppresses WPF's
+              default popup drop shadow (would double up with shadow.sm).  -->
+        <Style x:Key="tooltip.scrim" TargetType="ToolTip">
+            <Setter Property="Background" Value="{DynamicResource surface.tooltip.scrim}" />
+            <Setter Property="Foreground" Value="{DynamicResource text.inverse}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontFamily" Value="{StaticResource font.mono}" />
+            <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
+            <Setter Property="HasDropShadow" Value="False" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="{StaticResource radius.control}"
+                                SnapsToDevicePixels="True"
+                                Effect="{DynamicResource shadow.sm}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Page.Resources>
+
+    <!--  AppsGrid row virtualization is engaged programmatically — see
+          PerAppPage.EnforceAppsGridBound. The Wpf.Ui NavigationView wraps
+          hosted pages in a DynamicScrollViewer (infinite vertical extent);
+          without an explicit MaxHeight the DataGrid would materialize every
+          row instead of virtualizing.  -->
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -15,30 +138,195 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ui:TextBlock FontTypography="Subtitle" Text="Per-App" />
-            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
-                    VerticalAlignment="Center"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    Padding="8,4" CornerRadius="4">
-                <TextBlock x:Name="StatusBannerText"
-                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+        <!--  Row 0 — header cluster (left) + summary strip (right).  -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!--  Title cluster: title row (with inline StatusBanner pill) +
+                  caption beneath. The banner stays Collapsed by default; the
+                  state-coverage Phase wires the Visible paths.  -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                  FontFamily="{StaticResource font.display}"
+                                  FontSize="24"
+                                  Text="Per-App" />
+                    <Border x:Name="StatusBanner"
+                            Visibility="Collapsed"
+                            Margin="16,0,0,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource status.caution.background}"
+                            Padding="8"
+                            CornerRadius="{StaticResource radius.control}">
+                        <TextBlock x:Name="StatusBannerText"
+                                   Foreground="{DynamicResource status.caution.text}" />
+                    </Border>
+                </StackPanel>
+                <ui:TextBlock Style="{StaticResource text.caption}"
+                              Text="Apps ranked by total bytes over the selected window."
+                              Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!--  Summary strip — Dashboard info-card family (metal.card +
+                  border.card + shadow.sm + radius.md, with edge.light baked
+                  into the metal.card gradient on dark). Eyebrows use
+                  text.eyebrow (brand violet via accent.text, uppercased);
+                  values use text.mono. Per-App establishes this 3-cell
+                  shape as the canonical summary-strip pattern — History's
+                  polish should adopt the same shape (brief §16.1).
+
+                  Layout: 5-column inner Grid where columns 1 and 3 are
+                  1px dividers in border.subtle, with vertical margin so
+                  they read as ~70%-height hairlines rather than full-height
+                  rules. Cells (columns 0/2/4) are equal-* width with a
+                  MinWidth so the strip stays wide enough to legibly host
+                  the longest realistic value (~7 chars including unit). -->
+            <Border x:Name="SummaryStrip"
+                    Grid.Column="1"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.md}"
+                    Effect="{DynamicResource shadow.sm}"
+                    Padding="20,14"
+                    MinWidth="360">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="80" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="80" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="80" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="APPS" />
+                        <TextBlock x:Name="SummaryAppsValue"
+                                   Style="{StaticResource text.mono}"
+                                   Margin="0,4,0,0"
+                                   Text="—" />
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            Width="1"
+                            Margin="0,4"
+                            Background="{DynamicResource border.subtle}" />
+                    <StackPanel Grid.Column="2" Margin="16,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="UP" />
+                        <TextBlock x:Name="SummaryUpValue"
+                                   Style="{StaticResource text.mono}"
+                                   Margin="0,4,0,0"
+                                   Text="—" />
+                    </StackPanel>
+                    <Border Grid.Column="3"
+                            Width="1"
+                            Margin="0,4"
+                            Background="{DynamicResource border.subtle}" />
+                    <StackPanel Grid.Column="4" Margin="16,0,0,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="DOWN" />
+                        <TextBlock x:Name="SummaryDownValue"
+                                   Style="{StaticResource text.mono}"
+                                   Margin="0,4,0,0"
+                                   Text="—" />
+                    </StackPanel>
+                </Grid>
             </Border>
-        </StackPanel>
+        </Grid>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
-            <ComboBox x:Name="WindowCombo" Width="200"
-                      SelectionChanged="OnWindowSelectionChanged" />
-            <ui:Button x:Name="RefreshButton" Margin="12,0,0,0"
-                       Content="Refresh" Click="OnRefreshClick" />
-        </StackPanel>
+        <!--  Row 1 — picker. Caption label, ComboBox (shorthand + per-item
+              ToolTip with the long form), Refresh button (ArrowSync24 +
+              text, space.4 gap), and right-aligned Filter input. The filter
+              predicate wiring lands in a later phase; this round just
+              builds the chrome.  -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="2" CornerRadius="6"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            <TextBlock Grid.Column="0"
+                       Style="{StaticResource text.body}"
+                       Foreground="{DynamicResource text.secondary}"
+                       Text="Window:"
+                       VerticalAlignment="Center"
+                       Margin="0,0,12,0" />
+            <ComboBox Grid.Column="1"
+                      x:Name="WindowCombo"
+                      Width="120"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnWindowSelectionChanged">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Short}"
+                                   ToolTip="{Binding Label}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <ui:Button Grid.Column="2"
+                       x:Name="RefreshButton"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Center"
+                       Background="{DynamicResource metal.control}"
+                       BorderBrush="{DynamicResource border.card}"
+                       Click="OnRefreshClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" VerticalAlignment="Center" />
+                    <TextBlock Text="Refresh" Margin="4,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </ui:Button>
+            <ui:TextBox Grid.Column="4"
+                        x:Name="FilterInput"
+                        Width="240"
+                        PlaceholderText="Filter apps…"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource metal.control}"
+                        BorderBrush="{DynamicResource border.card}"
+                        TextChanged="OnFilterInputChanged">
+                <ui:TextBox.Icon>
+                    <ui:SymbolIcon Symbol="Search24" />
+                </ui:TextBox.Icon>
+            </ui:TextBox>
+        </Grid>
+
+        <!--  Row 2 — DataGrid card. Opaque surface.card so text legibility
+              on Mica isn't wallpaper-dependent. The DataGrid carries the
+              compact density style (row 32, padding 12,8). Alternating rows
+              pick up surface.subtle.alt (token rename — was the raw
+              SubtleFillColorTertiaryBrush key).
+
+              Bottom Padding=4 gives a small buffer so the last row's text
+              doesn't visually clip the rounded bottom corner. WPF's Border
+              CornerRadius clips the border stroke but not its content; a
+              true content-clip would need an OpacityMask + VisualBrush
+              (perf cost). The buffer is visually equivalent and free.  -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource surface.card}"
+                BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-            <DataGrid x:Name="AppsGrid"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="0,0,0,4">
+            <!--  Three-layer Z-stack inside the card:
+                   1. AppsGrid — always present (rows visible in default,
+                      empty, disconnected, error; dimmed during disconnected
+                      + error via Opacity=0.6 set in code-behind).
+                   2. EmptyText — centered "No applications observed…" when
+                      a successful query returns zero rows. Mutually
+                      exclusive with LoadingOverlay.
+                   3. LoadingOverlay — centered ProgressRing + caption.
+                      Caption flips Visible after 1 s via DispatcherTimer
+                      so quick refreshes don't flash the "Loading…" text
+                      (brief §8.1 lock).  -->
+            <Grid>
+                <DataGrid x:Name="AppsGrid"
+                      Style="{StaticResource style.datagrid.compact}"
                       AutoGenerateColumns="False"
                       IsReadOnly="True"
                       HeadersVisibility="Column"
@@ -46,8 +334,10 @@
                       Background="Transparent"
                       BorderThickness="0"
                       RowBackground="Transparent"
-                      AlternatingRowBackground="{DynamicResource SubtleFillColorTertiaryBrush}"
-                      MouseDoubleClick="OnRowDoubleClick"
+                      AlternatingRowBackground="{DynamicResource surface.subtle.alt}"
+                      ColumnHeaderStyle="{StaticResource grid.header}"
+                      PreviewMouseLeftButtonUp="OnGridLeftButtonUp"
+                      PreviewKeyDown="OnGridKeyDown"
                       SelectionMode="Single"
                       SelectionUnit="FullRow"
                       EnableRowVirtualization="True"
@@ -58,13 +348,131 @@
                       ScrollViewer.CanContentScroll="True"
                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="App"         Binding="{Binding ImageName}"        Width="2*" />
-                    <DataGridTextColumn Header="Publisher"   Binding="{Binding PublisherDisplay}" Width="2*" />
-                    <DataGridTextColumn Header="Signature"   Binding="{Binding SignatureStatus}"  Width="100" />
-                    <DataGridTextColumn Header="Up"          Binding="{Binding UpText}"           Width="110" />
-                    <DataGridTextColumn Header="Down"        Binding="{Binding DownText}"         Width="110" />
+                    <!--  App — DataGridTemplateColumn so the cell can host a
+                          per-cell ToolTip carrying the full ImagePath. ToolTip
+                          binds via PlacementTarget.DataContext (the row VM)
+                          because ToolTips are popups in their own visual tree
+                          and don't auto-inherit DataContext from the cell.  -->
+                    <DataGridTemplateColumn Header="App" Width="2*" SortMemberPath="ImageName">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ImageName}" Style="{StaticResource cell.body.trim}">
+                                    <TextBlock.ToolTip>
+                                        <ToolTip Style="{StaticResource tooltip.scrim}">
+                                            <!--  Explicit Foreground + VerticalAlignment on the
+                                                  inner TextBlock — the implicit TextBlock Style
+                                                  in DesignTokens.xaml hard-sets Foreground to
+                                                  TextFillColorPrimaryBrush on every plain
+                                                  TextBlock, which would otherwise win over the
+                                                  ToolTip Style's inherited Foreground and render
+                                                  dark-on-dark in light theme.  -->
+                                            <TextBlock Text="{Binding PlacementTarget.DataContext.ImagePath, RelativeSource={RelativeSource AncestorType=ToolTip}}"
+                                                       Foreground="{DynamicResource text.inverse}"
+                                                       VerticalAlignment="Center" />
+                                        </ToolTip>
+                                    </TextBlock.ToolTip>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTextColumn Header="Publisher"
+                                        Binding="{Binding PublisherDisplay}"
+                                        Width="2*"
+                                        ElementStyle="{StaticResource cell.body.secondary.trim}" />
+
+                    <!--  Signature — DataGridTemplateColumn so the TextBlock
+                          can carry the SignatureStatus DataTriggers (see
+                          cell.signature). SortMemberPath preserved so
+                          header-click sort still groups by signing state.  -->
+                    <DataGridTemplateColumn Header="Signature" Width="100" SortMemberPath="SignatureStatus">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding SignatureStatus}" Style="{StaticResource cell.signature}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!--  Up / Down — bind the display to the formatted text but
+                          SortMemberPath to the raw byte fields, so header-click
+                          sort orders numerically rather than lexically (the
+                          original bug where "900 KB" ranked above "400 MB").  -->
+                    <DataGridTextColumn Header="Up"
+                                        Binding="{Binding UpText}"
+                                        SortMemberPath="BytesUp"
+                                        Width="110"
+                                        HeaderStyle="{StaticResource grid.header.right}"
+                                        ElementStyle="{StaticResource cell.mono.right}" />
+                    <DataGridTextColumn Header="Down"
+                                        Binding="{Binding DownText}"
+                                        SortMemberPath="BytesDown"
+                                        Width="110"
+                                        HeaderStyle="{StaticResource grid.header.right}"
+                                        ElementStyle="{StaticResource cell.mono.right}" />
+
+                    <!--  Hover chevron — Path stroked in brand teal
+                          (chart.downSeries) at the mockup-spec 2.75 stroke,
+                          flipped Visible when the row is hovered via a
+                          RelativeSource binding to DataGridRow.IsMouseOver.
+                          CanUserSort=False so clicking the empty header doesn't
+                          trigger a sort. Presentational only — the drill
+                          itself is the row's single-click handler (see
+                          OnGridLeftButtonUp).  -->
+                    <DataGridTemplateColumn Width="28" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Path Data="M 0,0 L 6,6 L 0,12"
+                                      Stroke="{DynamicResource chart.downSeries}"
+                                      StrokeThickness="2.75"
+                                      StrokeLineJoin="Round"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Width="10"
+                                      Height="16"
+                                      Stretch="None"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Center"
+                                      Visibility="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=IsMouseOver, Converter={StaticResource BoolToVisibility}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
-            </DataGrid>
+                </DataGrid>
+
+                <TextBlock x:Name="EmptyText"
+                           Style="{StaticResource text.body}"
+                           Foreground="{DynamicResource text.secondary}"
+                           Text="No applications observed in this window."
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed" />
+
+                <!--  EmptyFilteredText — paints when the user's filter text
+                      excludes every loaded row. Text interpolates the typed
+                      filter; copy set programmatically. Mutually exclusive
+                      with EmptyText: this overlay paints only when there ARE
+                      rows on the server but the filter narrows to zero.  -->
+                <TextBlock x:Name="EmptyFilteredText"
+                           Style="{StaticResource text.body}"
+                           Foreground="{DynamicResource text.secondary}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed" />
+
+                <StackPanel x:Name="LoadingOverlay"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                    <ui:ProgressRing IsIndeterminate="True"
+                                     HorizontalAlignment="Center" />
+                    <TextBlock x:Name="LoadingCaption"
+                               Style="{StaticResource text.caption}"
+                               Text="Loading…"
+                               Margin="0,12,0,0"
+                               HorizontalAlignment="Center"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Page>

@@ -99,7 +99,7 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
         }
     }
 
-    private static bool IsConnectionLost(Exception ex) =>
+    internal static bool IsConnectionLost(Exception ex) =>
         ex is ConnectionLostException
         || ex is System.IO.IOException
         || ex is ObjectDisposedException;
@@ -108,18 +108,21 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
 }
 
 /// <summary>
-/// Window-picker preset (Phase 4 Q9). The UI displays <see cref="Label"/>; the
-/// rolling window is computed against current wall-clock when <see cref="ToWindow"/> runs.
+/// Window-picker preset (Phase 4 Q9). <see cref="Label"/> is the long form
+/// (History / App Detail surfaces display it directly); <see cref="Short"/>
+/// is the shorthand (Per-App displays it inline with <see cref="Label"/> in
+/// a per-item ToolTip). The rolling window is computed against current
+/// wall-clock when <see cref="ToWindow"/> runs.
 /// </summary>
-internal sealed record WindowPreset(string Label, TimeSpan Span)
+internal sealed record WindowPreset(string Label, string Short, TimeSpan Span)
 {
     public static readonly IReadOnlyList<WindowPreset> All = new[]
     {
-        new WindowPreset("Last 1 hour",  TimeSpan.FromHours(1)),
-        new WindowPreset("Last 24 hours", TimeSpan.FromHours(24)),
-        new WindowPreset("Last 7 days",   TimeSpan.FromDays(7)),
-        new WindowPreset("Last 30 days",  TimeSpan.FromDays(30)),
-        new WindowPreset("Last 90 days",  TimeSpan.FromDays(90)),
+        new WindowPreset("Last 1 hour",   "1h",  TimeSpan.FromHours(1)),
+        new WindowPreset("Last 24 hours", "24h", TimeSpan.FromHours(24)),
+        new WindowPreset("Last 7 days",   "7d",  TimeSpan.FromDays(7)),
+        new WindowPreset("Last 30 days",  "30d", TimeSpan.FromDays(30)),
+        new WindowPreset("Last 90 days",  "90d", TimeSpan.FromDays(90)),
     };
 
     public QueryWindow ToWindow()

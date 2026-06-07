@@ -147,6 +147,12 @@
     <SolidColorBrush x:Key="surface.layer"         Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="surface.subtle"        Color="#0A14182E" />
     <SolidColorBrush x:Key="surface.subtle.alt"    Color="#0714182E" />
+    <!--  surface.tooltip.scrim — translucent contrasting scrim for popovers
+          (e.g. Per-App ImagePath tooltip). Value = text.primary at 84% alpha
+          (alpha 0xD6). Foreground text on this scrim = text.inverse so it
+          reads light-on-dark in light theme. Replaces the opaque-surface
+          tooltip treatment so the hovered cell stays visible beneath. -->
+    <SolidColorBrush x:Key="surface.tooltip.scrim" Color="#D61A1C26" />
 
     <SolidColorBrush x:Key="text.primary"          Color="#FF1A1C26" />
     <SolidColorBrush x:Key="text.secondary"        Color="#FF565D72" />
@@ -173,6 +179,24 @@
         <GradientStop Offset="0" Color="#FFFFFFFF" />
         <GradientStop Offset="1" Color="#FFF6F8FC" />
     </LinearGradientBrush>
+    <!--  metal.control — same baked-catch-light pattern as metal.card, but
+          tuned for SHORT surfaces (controls, ~30-40px tall) where
+          metal.card's 0.005 dark-theme stop offset would render the
+          catch-light at sub-pixel widths. The control variant uses a
+          higher offset so the catch-light reads at control heights.
+          Light theme: white top + slightly deeper bottom than metal.card
+          so the gradient stays visible on short surfaces. edge.light
+          composite over white is still invisible in light (white-on-white)
+          — no catch-light in light theme, matching the brand convention.
+          Reconciliation vs CSS source-of-truth: docs/design/colors_and_type.css
+          ships metal-control as a translucent overlay (rgba alphas). The
+          XAML version is opaque, matching metal.card's opaque-card
+          convention so the control material reads cleanly over Mica
+          without depending on what's beneath. -->
+    <LinearGradientBrush x:Key="metal.control" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#FFFFFFFF" />
+        <GradientStop Offset="1" Color="#FFF0F2F8" />
+    </LinearGradientBrush>
 
     <!--  SHADOWS  ===========================================================
           Card drop shadow approximating the mockup CSS shadow.md token.
@@ -180,7 +204,19 @@
           two-shadow pattern (sharp short + soft long) — we approximate
           with the softer long-distance shadow only. Direction=270 is
           straight down. Hardware-composited in modern .NET; static cards
-          don't redraw on idle so the <1% idle CPU budget is unaffected. -->
+          don't redraw on idle so the <1% idle CPU budget is unaffected.
+
+          shadow.sm is the softer/smaller sibling — understated elevation
+          for the Per-App summary strip and similar info-card surfaces
+          that sit alongside (not above) a primary data card. CSS spec
+          light: 0 1px 2px rgba(24,27,39,0.06) + 0 1px 1px rgba(24,27,39,0.04);
+          we pick the softer stop. -->
+    <DropShadowEffect x:Key="shadow.sm"
+                      ShadowDepth="1"
+                      BlurRadius="4"
+                      Direction="270"
+                      Color="#181B27"
+                      Opacity="0.06" />
     <DropShadowEffect x:Key="shadow.card"
                       ShadowDepth="4"
                       BlurRadius="12"

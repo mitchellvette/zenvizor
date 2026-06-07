@@ -268,6 +268,7 @@
   --surface-subtle-alt:  rgba(20,24,46,0.028);   /* surface.subtle.alt — DataGrid alternating row */
   --surface-control:     rgba(255,255,255,0.85);
   --surface-control-hover: rgba(255,255,255,0.95);
+  --surface-tooltip-scrim: rgba(26,28,38,0.84);   /* surface.tooltip.scrim — translucent contrasting scrim for popovers (Per-App ImagePath tooltip); text.primary @ 84% — foreground text on it = text.inverse */
 
   /* Acrylic — OS context/tray menus ONLY (mock approximation; WPF has no per-element
      backdrop). The App-Detail flyout is OPAQUE surface.layer, not frosted. */
@@ -362,6 +363,7 @@
   --surface-subtle-alt:  rgba(255,255,255,0.035);
   --surface-control:     rgba(255,255,255,0.06);
   --surface-control-hover: rgba(255,255,255,0.10);
+  --surface-tooltip-scrim: rgba(241,242,248,0.84);   /* surface.tooltip.scrim — translucent contrasting scrim for popovers; text.primary @ 84% — foreground text on it = text.inverse */
 
   --acrylic-bg:    rgba(24,27,39,0.70);
   --acrylic-blur:  28px;
@@ -436,6 +438,7 @@
     --surface-subtle:rgba(255,255,255,0.05); --surface-subtle-2:rgba(255,255,255,0.09);
     --surface-subtle-alt:rgba(255,255,255,0.035);
     --surface-control:rgba(255,255,255,0.06); --surface-control-hover:rgba(255,255,255,0.10);
+    --surface-tooltip-scrim:rgba(241,242,248,0.84);
     --acrylic-bg:rgba(24,27,39,0.70); --acrylic-blur:28px;
     --text-primary:#f1f2f8; --text-secondary:#a7adc0; --text-tertiary:#717892;
     --text-disabled:#515872; --text-inverse:#181b27; --text-on-accent:#fff;

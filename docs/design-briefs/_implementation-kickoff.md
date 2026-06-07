@@ -13,7 +13,7 @@ is tracked across the design loop).
 | Screen | Findings | Brief | Mockup | Implementation | Notes |
 |---|---|---|---|---|---|
 | **Dashboard** | ✓ | ✓ | ✓ | ✓ COMPLETE | reference screen — `docs/dashboard-UI-phase-plan.md` |
-| **Per-App** | ✓ | ✓ | — | — | first polish target after Dashboard |
+| **Per-App** | ✓ | ✓ | ✓ | ✓ COMPLETE | Phases 1-6 run 2026-06-06; reference for drill-grid pattern |
 | **App Detail** | ✓ | — | — | — | drill from Per-App; richest layout (chart + two grids + summary) |
 | **History** | ✓ | — | — | — | chart-heavy; inherits Phase D infrastructure |
 | **Reports** (Group B) | ✓ | — | — | placeholder live | brief covers interim + eventual layout per template §18 |
@@ -151,12 +151,30 @@ One section per screen. Update each as work progresses; the table at the top of 
 
 Reference screen for what "complete" looks like. The implementation record captures lessons learned that updated this kickoff doc (the framework recon pre-task, CSS-spec extraction, locked vs starting-point distinction) and the brief template (§4 uptime axis, §5 material tokens, §6.2 tooltip reality clause, §10 framework gotchas).
 
-### Per-App
+### Per-App — COMPLETE
 
 - **Findings**: `docs/design-briefs/findings/per-app.md` (243 lines, 15 polish items + 7 feature items)
 - **Brief**: `docs/design-briefs/per-app.md`
-- **Mockup**: pending — brief is paste-ready for the next Claude Design session
-- **Implementation**: pending mockup arrival
+- **Mockup**: `docs/design/mockups/per-app-design-mockups.pdf` (12 pages)
+- **Phases run**: 1 (tokens + VM plumbing) → 2 (chrome migration) → 2.x mini-polish (density / dividers / sort arrow / selection regression / corner overflow) → 3 (column re-templating + sort fix + hover chevron + single-click drill) → 3.x mini-polish (tooltip text inversion / Enter-key drill / descender + ascender ink overshoot) → 4 (state coverage) → 5 (filter wiring + empty-filtered state) → 6 (HC sweep + metal.control + shadow.card)
+
+**Tokens introduced this run**:
+- `shadow.sm` (DropShadowEffect, both themes + HC inert) — softer info-card elevation.
+- `surface.tooltip.scrim` (SolidColorBrush, text.primary @ 84% alpha + halo) — translucent contrasting popover scrim.
+- `metal.control` (LinearGradientBrush, both themes + HC ControlColor) — extends Dashboard's baked-catch-light pattern to short surfaces (controls); dark catch-light at offset 0.05 instead of 0.005 so the lit rim reads at control heights.
+
+**Canonical patterns established here**:
+- Summary strip — 3-cell elevated info-card (metal.card + border.card + shadow.sm + radius.md) with text.eyebrow over text.mono. History brief should adopt the same shape (brief §16.1).
+- Hover-drill chevron — trailing `Path` (NOT `ui:SymbolIcon` glyph) stroked at 2.75 in `chart.downSeries`, Hidden→Visible on row IsMouseOver via RelativeSource binding. App Detail's recent-sessions grid adopts this when its polish round runs (brief §16.2).
+- Single-click row drill — `PreviewMouseLeftButtonUp` walks visual tree to `DataGridRow`, navigates on hit. `Cursor=Hand` + brand-violet selection chrome telegraph clickability. `PreviewKeyDown` for Enter parity. Memory: `feedback_drill_grid_pattern.md`.
+
+**Lessons learned (apply to next screen)**:
+- **WPF gotcha**: `Margin="{StaticResource space.16}"` doesn't work — `space.*` tokens are `sys:Double` and `ThicknessConverter` only converts from String. Use literal values in XAML; the tokens document canonical values. Memory: `project_wpf_spacing_token_thickness.md`.
+- **WPF gotcha**: `ItemTemplate` and `DisplayMemberPath` are mutually exclusive on ItemsControl — setting both throws `InvalidOperationException` at runtime. When converting a ComboBox to a custom item template, also remove any `DisplayMemberPath` setter from the code-behind.
+- **WPF gotcha**: Wpf.Ui's `DataGridCell` selection chrome (brand-violet tint + left pill) lives in its implicit style, NOT in `DefaultDataGridCellStyle` or `DefaultUiDataGridCellStyle`. Custom `CellStyle` setters wholesale-replace the implicit chrome — BasedOn the named keys does NOT recover it. The reliable path is shipping a complete custom `DataGridRow.Template` with explicit IsMouseOver / IsSelected triggers (see `style.datagrid.compact` in `DesignTokens.xaml`).
+- **WPF gotcha**: `LineStackingStrategy=MaxHeight` puts slack at the BOTTOM of the line box only — bumping LineHeight on top of that just enlarges bottom slack, never gives ascender room. For ink-overshoot on both ends, use `TextBlock.Padding="0,5,0,1"` (asymmetric — biased top to compensate for the top-anchored baseline). The cell.body.trim style in `PerAppPage.xaml` is the reference.
+- **Rule**: no em-dash in user-facing UI copy. Brief or mockup specs that ship em-dash get swapped to period/colon at the implementation layer. Memory: `feedback_no_emdash_in_ui_copy.md`.
+- **Wpf.Ui control template parity**: ui:Button and ui:TextBox honor Background TemplateBinding cleanly; ComboBox may fight back. If a follow-up screen applies `metal.control` to a ComboBox and the gradient doesn't paint, BasedOn `DefaultUiComboBoxStyle` is the documented fallback.
 
 ### App Detail
 

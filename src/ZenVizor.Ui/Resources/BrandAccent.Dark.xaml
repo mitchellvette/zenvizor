@@ -102,6 +102,12 @@
     <SolidColorBrush x:Key="surface.layer"         Color="#FF262A38" />
     <SolidColorBrush x:Key="surface.subtle"        Color="#0DFFFFFF" />
     <SolidColorBrush x:Key="surface.subtle.alt"    Color="#09FFFFFF" />
+    <!--  surface.tooltip.scrim — translucent contrasting scrim for popovers
+          (e.g. Per-App ImagePath tooltip). Value = text.primary at 84% alpha
+          (alpha 0xD6). Foreground text on this scrim = text.inverse so it
+          reads dark-on-light in dark theme. Replaces the opaque-surface
+          tooltip treatment so the hovered cell stays visible beneath. -->
+    <SolidColorBrush x:Key="surface.tooltip.scrim" Color="#D6F1F2F8" />
 
     <SolidColorBrush x:Key="text.primary"          Color="#FFF1F2F8" />
     <SolidColorBrush x:Key="text.secondary"        Color="#FFA7ADC0" />
@@ -127,12 +133,31 @@
         <GradientStop Offset="0.005" Color="#FF2B3040" />
         <GradientStop Offset="1" Color="#FF232735" />
     </LinearGradientBrush>
+    <!--  metal.control — see Light brand dict for rationale. Same color
+          stops as metal.card dark; ONLY the catch-light offset changes
+          from 0.005 to 0.05 so the lit rim is visible on ~30px controls
+          (0.05 * 32 = 1.6px, matching what 0.005 * 320 produces on a card). -->
+    <LinearGradientBrush x:Key="metal.control" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#FF3E4351" />
+        <GradientStop Offset="0.05" Color="#FF2B3040" />
+        <GradientStop Offset="1" Color="#FF232735" />
+    </LinearGradientBrush>
 
     <!--  SHADOWS  ===========================================================
           Card drop shadow approximating the mockup CSS shadow.md dark
           token — deeper black drop with higher opacity, larger blur, and
           longer offset than light. Hardware-composited; idle CPU budget
-          unaffected. -->
+          unaffected.
+
+          shadow.sm is the softer/smaller sibling — understated elevation
+          for the Per-App summary strip and similar info-card surfaces.
+          CSS spec dark: 0 1px 2px rgba(0,0,0,0.40). -->
+    <DropShadowEffect x:Key="shadow.sm"
+                      ShadowDepth="1"
+                      BlurRadius="4"
+                      Direction="270"
+                      Color="#000000"
+                      Opacity="0.40" />
     <DropShadowEffect x:Key="shadow.card"
                       ShadowDepth="6"
                       BlurRadius="18"

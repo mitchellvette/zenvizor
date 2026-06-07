@@ -225,8 +225,16 @@
     <!--  Spacing scale  =======================================================
           4-based scale, named by pixel value. App set {4,8,12,16,24,32,48} is
           a clean subset of the brand scale; brand adds {20,40,64}. Use
-          space.12 (not space.10) for medium spacing — keeps rhythm. Tokens
-          slot directly into Margin/Padding via {StaticResource space.16}. -->
+          space.12 (not space.10) for medium spacing — keeps rhythm.
+
+          USAGE NOTE: do NOT write Margin="{StaticResource space.16}" or
+          Padding="{StaticResource space.16}". ThicknessConverter only
+          converts from String — the sys:Double resource returns a boxed
+          Double which WPF can't coerce to Thickness, and the page fails
+          to load at runtime. Write the literal value instead
+          (Margin="16", Padding="16"); XAML's string TypeConverter handles
+          it. The token values here are the documentation of the canonical
+          values — match them by hand at call-sites. -->
 
     <sys:Double x:Key="space.4">4</sys:Double>
     <sys:Double x:Key="space.8">8</sys:Double>
@@ -441,25 +449,119 @@
           density.row.default / .compact are exposed as raw Doubles for cases
           where a custom row template needs to read the row height directly.
 
-          KNOWN MIGRATION ISSUE: the reconciled type sizes (subtitle 20,
-          title 28) push above the 22px compact row height. If a future grid
-          column header uses text.subtitle, that row clips. Either keep
-          column headers at text.body.strong (14, semibold — fits the 22px
-          row) or bump density.row.compact to ~30 for grids that need bigger
-          headers. Tracked in docs/design-system.md "Native reconciliation". -->
+          Row height tuning (Per-App polish, 2026-06-06): the original 22px
+          compact target was too tight at 14px body — text crowded the cell
+          edges and headers needed visible breathing room. Bumped to 32px;
+          cell Padding bumped from 6,2 to 12,8. Default stays at 28 — not
+          currently used at any call-site, kept as a reference value.
+
+          IMPORTANT: the RowStyle + CellStyle below own the hover /
+          selection / pill chrome explicitly. Earlier attempts to BasedOn
+          Wpf.Ui's named keys (DefaultDataGridCellStyle and
+          DefaultUiDataGridCellStyle) both failed empirically — the
+          IsSelected and IsMouseOver triggers never fired. Hypothesis: the
+          BasedOn chain didn't resolve to a Style that carries the brand
+          chrome at our resource scope; Wpf.Ui's implicit cell/row styles
+          may differ from their keyed siblings. Rather than chase the right
+          key, we ship our own minimal templates so the brand visuals are
+          guaranteed regardless of upstream Wpf.Ui changes. Trade-off: we
+          opt out of any future Wpf.Ui DataGrid styling refinements; we
+          accept that — a stable visual on a stable token surface is more
+          valuable than implicit inheritance from a moving target. -->
 
     <sys:Double x:Key="density.row.default">28</sys:Double>
-    <sys:Double x:Key="density.row.compact">22</sys:Double>
+    <sys:Double x:Key="density.row.compact">32</sys:Double>
 
     <Style x:Key="style.datagrid.compact" TargetType="DataGrid">
         <Setter Property="RowHeight" Value="{StaticResource density.row.compact}" />
         <Setter Property="MinRowHeight" Value="{StaticResource density.row.compact}" />
         <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+
+        <!--  CellStyle — minimal: padding + simple Border-wrapped
+              ContentPresenter. Hover / selection chrome lives on RowStyle
+              below (so the whole row paints, not just individual cells). -->
         <Setter Property="CellStyle">
             <Setter.Value>
                 <Style TargetType="DataGridCell">
-                    <Setter Property="Padding" Value="6,2" />
+                    <Setter Property="Padding" Value="12,8" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
                     <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridCell">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter VerticalAlignment="Center"
+                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
+
+        <!--  RowStyle — carries all the brand selection / hover chrome:
+              * StateOverlay sits BEHIND the cells presenter and tints on
+                IsMouseOver (surface.subtle) / IsSelected (accent.subtle).
+                Cells are transparent so the overlay shows through.
+              * SelectionPill is a 3px-wide accent.default left edge that
+                flips Visible on IsSelected. Visually a row-level "selected"
+                marker, mirroring the NavigationView selection idiom.
+              * IsHitTestVisible=False on both overlays so mouse events
+                still hit the cells beneath (selection + drill semantics
+                unchanged).
+              Background TemplateBinding is preserved so DataGrid's
+              RowBackground / AlternatingRowBackground continue to paint
+              the alt-row tint behind the StateOverlay. -->
+        <Setter Property="RowStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <!--  Hand cursor telegraphs the single-click drill affordance
+                          that style.datagrid.compact grids carry. Currently every
+                          consumer of this style is a drill surface (Per-App
+                          today); future non-drill compact grids would need to
+                          opt out by overriding RowStyle.Cursor inline. See
+                          memory: feedback_drill_grid_pattern.md. -->
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridRow">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        SnapsToDevicePixels="True">
+                                    <Grid>
+                                        <Border x:Name="StateOverlay"
+                                                Background="Transparent"
+                                                IsHitTestVisible="False" />
+                                        <DataGridCellsPresenter ItemsPanel="{TemplateBinding ItemsPanel}"
+                                                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                        <Border x:Name="SelectionPill"
+                                                Width="3"
+                                                HorizontalAlignment="Left"
+                                                Background="{DynamicResource accent.default}"
+                                                Visibility="Collapsed"
+                                                IsHitTestVisible="False" />
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="StateOverlay" Property="Background" Value="{DynamicResource surface.subtle}" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="StateOverlay" Property="Background" Value="{DynamicResource accent.subtle}" />
+                                        <Setter TargetName="SelectionPill" Property="Visibility" Value="Visible" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </Setter.Value>
         </Setter>

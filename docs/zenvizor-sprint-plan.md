@@ -191,6 +191,31 @@ per-screen briefs in `docs/design-briefs/` and the design system in
   reflect per-project invocation. Deferred for a housekeeping pass —
   flagged here so it doesn't drop.
 
+- **High Contrast runtime merge wiring not implemented.**
+  `Resources/HighContrast.xaml` ships with full token collapses for every
+  semantic surface, text, accent, status, border, chart, plus the polish
+  round 2 additions (`metal.card`, `edge.light`, `shadow.card`) AND the
+  Per-App round additions (`shadow.sm`, `surface.tooltip.scrim`,
+  `metal.control`) — but is never merged into
+  `Application.Current.Resources.MergedDictionaries` at runtime.
+  `App.xaml.cs` has no subscription to
+  `SystemParameters.StaticPropertyChanged` (or
+  `SystemEvents.UserPreferenceChanged` with category `Color`). Result:
+  when the user enables Windows HC, brand brushes from
+  `BrandAccent.{Light,Dark}.xaml` stay active and the HC dictionary never
+  wins resource lookup — brand violet, metal gradients, and shadows all
+  keep rendering, so the visual treatment is wrong end-to-end. Tracked
+  in `docs/design-system.md` §11 item 9 ("HC merge wiring") and called
+  out in `docs/dashboard-UI-phase-plan.md` (lines 130-137) during
+  Dashboard polish round 2: the static token audit was completed there,
+  only the runtime merge remains. Per-App polish round (2026-06-06/07)
+  re-validated the gap during the final HC gate. **Implementation
+  scope**: subscribe in `App.OnStartup`, gate the merge on
+  `SystemParameters.HighContrast`, and re-evaluate on the
+  StaticPropertyChanged event. Merge LAST so HC keys win over
+  `DesignTokens.xaml` + `BrandAccent.*.xaml`. Defer to a housekeeping
+  pass — flagged here so it doesn't drop again.
+
 ---
 
 ## Phase 5 — Daily report + CSV/HTML export

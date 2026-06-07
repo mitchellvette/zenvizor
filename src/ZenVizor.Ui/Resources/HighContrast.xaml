@@ -49,6 +49,10 @@
     <SolidColorBrush x:Key="surface.layer"      Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
     <SolidColorBrush x:Key="surface.subtle"     Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
     <SolidColorBrush x:Key="surface.subtle.alt" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <!-- surface.tooltip.scrim collapses to ControlColor — HC has no concept
+         of translucent scrim, but the tooltip Border still needs an opaque
+         backdrop distinct from Window so the popover reads as raised. -->
+    <SolidColorBrush x:Key="surface.tooltip.scrim" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
 
     <!--  Text  -->
     <SolidColorBrush x:Key="text.primary"   Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
@@ -105,9 +109,11 @@
           a DropShadowEffect; in HC it's replaced with an inert effect
           (Opacity=0) so cards don't render shadows — HC users typically
           want flat high-contrast surfaces, not decorative depth. -->
-    <SolidColorBrush x:Key="metal.card"   Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
-    <SolidColorBrush x:Key="edge.light"   Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
-    <DropShadowEffect x:Key="shadow.card" Opacity="0" />
+    <SolidColorBrush x:Key="metal.card"    Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="metal.control" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="edge.light"    Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+    <DropShadowEffect x:Key="shadow.sm"    Opacity="0" />
+    <DropShadowEffect x:Key="shadow.card"  Opacity="0" />
 
     <!--  Charts — series collapse to WindowText / GrayText / Highlight for
           line/column distinction. The categorical 8-slot palette only has
