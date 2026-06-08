@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
+using LiveChartsCore.Measure;
 using LiveChartsCore.SkiaSharpView;
 using Wpf.Ui.Controls;
 using ZenVizor.Ipc.Contracts.Dto;
@@ -76,10 +77,20 @@ public partial class AppDetailPage : Page
         };
         _yAxis = new Axis
         {
-            Labeler = v => PerAppPage.FormatBytes((long)v) + ChartBuilder.YUnitSuffix(TrafficGrain.Samples),
+            Labeler = v => ChartBuilder.FormatYAxisLabel(v, TrafficGrain.Samples),
         };
         SeriesChart.XAxes = new[] { _xAxis };
         SeriesChart.YAxes = new[] { _yAxis };
+        // Force the plot rectangle. Without this, LC2 auto-reserves a
+        // horizontal band at the top for the legend (since
+        // LegendPosition="Top"), pushing the plot area down by ~30-40px.
+        // With Top=10 set explicitly, the legend overlays the top of the
+        // plot instead of getting its own row — matches Dashboard's
+        // RatesChart (DashboardPage.xaml.cs:146) and reclaims the lost
+        // vertical canvas. Left=80 fits the widest realistic Y-axis label
+        // ("500 GB/day" plus padding); Bottom=30 fits the X-axis label
+        // strip (HH:mm / MM-dd HH / MM-dd are all ≤ ~20px tall).
+        SeriesChart.DrawMargin = new Margin(80, 10, 10, 30);
         ApplyChartTheme();
         ChartTheming.Changed += () => Dispatcher.Invoke(ApplyChartTheme);
 
@@ -101,12 +112,24 @@ public partial class AppDetailPage : Page
     /// which hands the page infinite vertical extent — without an explicit
     /// MaxHeight on the DataGrid the rows panel materializes every item
     /// (2000+ for chrome at 24h) instead of virtualizing.
+    ///
+    /// The 360 absolute cap above the <c>(window - 220) / 2</c> formula is
+    /// part of the chart-hero layout in AppDetailPage.xaml: Row 5 is
+    /// Auto-sized, so the grids row's measured desire equals this cap +
+    /// chrome. Without the 360 ceiling, the formula scales linearly with
+    /// window height (up to ~970 at 4K) and the grids row would outpace
+    /// the chart row's residual share, putting grids visually on top of
+    /// the chart at full screen. 360 keeps the grids visible row count at
+    /// ~12 max — DataGrids scroll internally beyond that — while leaving
+    /// the chart card to absorb all extra vertical real estate as the
+    /// hero element. (Phase 4 merges the two grids into one tabbed card;
+    /// re-tune the cap then.)
     /// </summary>
     private void EnforceDataGridBounds()
     {
         var window = Window.GetWindow(this);
         if (window is null) return;
-        var cap = Math.Max(200, (window.ActualHeight - 220) / 2);
+        var cap = Math.Max(200, Math.Min(360, (window.ActualHeight - 220) / 2));
         ConnectionsGrid.MaxHeight = cap;
         SessionsGrid.MaxHeight = cap;
     }
@@ -130,7 +153,7 @@ public partial class AppDetailPage : Page
         _xAxis.Labeler   = ticks => ChartBuilder.FormatXAxisLabel((long)ticks, grain);
         _xAxis.MinStep   = ChartBuilder.MinStepFor(grain, preset);
         _xAxis.UnitWidth = ChartBuilder.UnitWidthFor(grain, preset);
-        _yAxis.Labeler   = v => PerAppPage.FormatBytes((long)v) + ChartBuilder.YUnitSuffix(grain);
+        _yAxis.Labeler   = v => ChartBuilder.FormatYAxisLabel(v, grain);
     }
 
     private void OnAppIdReceived()
@@ -426,6 +449,12 @@ public partial class AppDetailPage : Page
         // assignment.
         UpdateAxesForGrain(detail.GrainUsed, preset);
         SeriesChart.Series = ChartBuilder.BuildSeries(detail.GrainUsed, upPoints, downPoints);
+        // Re-paint Up/Down with brand chart.upSeries / chart.downSeries.
+        // ChartTheming.Apply in the ctor ran BEFORE SeriesChart.Series was
+        // assigned, so its internal ApplyToSeries pass no-op'd on the
+        // still-null Series array; without this re-call the fresh line /
+        // bar series here would render in LC2's default palette.
+        ChartTheming.ApplyToSeries(SeriesChart.Series);
         ChartSubtitle.Text = ChartBuilder.DescribeView(detail.GrainUsed, preset);
 
         NoDataOverlay.Visibility = upPoints.Count == 0 && downPoints.Count == 0

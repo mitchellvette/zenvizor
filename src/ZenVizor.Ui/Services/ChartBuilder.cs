@@ -146,9 +146,10 @@ internal static class ChartBuilder
         };
 
     /// <summary>
-    /// Rate-unit suffix paired with the grain. The Y axis labeler in
-    /// <see cref="AppDetailPage"/> appends this; the per-series tooltip
-    /// formatter here also appends it so the legend and tooltip stay aligned.
+    /// Rate-unit suffix paired with the grain. <see cref="FormatYAxisLabel"/>
+    /// appends this to nice-rounded axis labels; the per-series tooltip
+    /// formatter here also appends it (over a precise byte value) so the
+    /// legend, axis, and tooltip stay aligned.
     /// </summary>
     public static string YUnitSuffix(TrafficGrain grain) => grain switch
     {
@@ -156,6 +157,51 @@ internal static class ChartBuilder
         TrafficGrain.Daily => "/day",
         _ => "/min",  // Samples + unknown
     };
+
+    /// <summary>
+    /// Y-axis label format — rounds the raw byte-per-unit-time value to a
+    /// human-friendly "nice" magnitude before appending the grain's unit
+    /// suffix. LC2 picks Y-axis tick positions from its own heuristic
+    /// (we don't constrain them); this labeler rounds the LABEL at each
+    /// position so ticks read as "20 MB/hr" instead of "19.6 MB/hr".
+    /// Tick POSITIONS are unchanged — the rounding is cosmetic. Tooltip
+    /// labels keep using <see cref="PerAppPage.FormatBytes"/> directly so
+    /// hover reads stay precise.
+    ///
+    /// Rounding policy within the chosen unit bracket (B/KB/MB/GB/TB):
+    /// <list type="bullet">
+    ///   <item>≥ 100: round to nearest 10 (e.g. 123 → 120, 999 → 1000)</item>
+    ///   <item>1–100: round to nearest 1 (e.g. 19.6 → 20, 4.9 → 5)</item>
+    ///   <item>&lt; 1: round to nearest 0.1 (e.g. 0.45 → 0.5)</item>
+    /// </list>
+    /// </summary>
+    public static string FormatYAxisLabel(double bytesPerUnitTime, TrafficGrain grain)
+    {
+        var suffix = YUnitSuffix(grain);
+        if (bytesPerUnitTime <= 0) return "0 B" + suffix;
+
+        var (scaled, unit) = bytesPerUnitTime switch
+        {
+            >= 1L << 40 => (bytesPerUnitTime / (double)(1L << 40), "TB"),
+            >= 1L << 30 => (bytesPerUnitTime / (double)(1L << 30), "GB"),
+            >= 1L << 20 => (bytesPerUnitTime / (double)(1L << 20), "MB"),
+            >= 1L << 10 => (bytesPerUnitTime / (double)(1L << 10), "KB"),
+            _ => (bytesPerUnitTime, "B"),
+        };
+
+        var nice = scaled switch
+        {
+            >= 100 => Math.Round(scaled / 10) * 10,
+            >= 1 => Math.Round(scaled),
+            _ => Math.Round(scaled * 10) / 10,
+        };
+
+        var formatted = nice == Math.Floor(nice)
+            ? nice.ToString("0", CultureInfo.InvariantCulture)
+            : nice.ToString("0.#", CultureInfo.InvariantCulture);
+
+        return $"{formatted} {unit}{suffix}";
+    }
 
     /// <summary>
     /// X-axis label format paired with the grain (used by

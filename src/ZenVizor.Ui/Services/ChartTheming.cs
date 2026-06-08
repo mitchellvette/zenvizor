@@ -77,10 +77,16 @@ internal static class ChartTheming
 
     /// <summary>
     /// Repaint Up/Down series with their brand token colors (chart.upSeries /
-    /// chart.downSeries) so a theme flip rebuilds the strokes and fills off
-    /// the violet/teal stops in BrandAccent.{Light,Dark}.xaml. Series are
-    /// matched by Name ("Up"/"Down"); anything else is skipped, so
-    /// chart-state placeholders or future series stay unaffected.
+    /// chart.downSeries). Public so pages can call it directly after assigning
+    /// fresh series to a chart — <see cref="Apply"/> in a page ctor runs BEFORE
+    /// <c>CartesianChart.Series</c> is set, so the initial pass through here
+    /// no-ops on the still-null Series array; without an explicit re-call after
+    /// every Series assignment, new line/bar series render in LC2's default
+    /// palette. Also fires on OS theme flip via <see cref="Apply"/> once Series
+    /// is populated, swapping to the dark / light stops in
+    /// BrandAccent.{Light,Dark}.xaml. Series are matched by Name ("Up"/"Down");
+    /// anything else is skipped, so chart-state placeholders or future series
+    /// stay unaffected.
     /// <list type="bullet">
     ///   <item><see cref="LineSeries{T}"/>: stroke thickness 2; fill at
     ///   alpha=60 (~24%) of the same hue for the area-under-line.</item>
@@ -89,7 +95,7 @@ internal static class ChartTheming
     ///   the visual separation).</item>
     /// </list>
     /// </summary>
-    private static void ApplyToSeries(IEnumerable<ISeries>? series)
+    public static void ApplyToSeries(IEnumerable<ISeries>? series)
     {
         if (series is null) return;
         foreach (var s in series)

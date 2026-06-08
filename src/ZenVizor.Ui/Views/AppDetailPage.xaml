@@ -12,15 +12,64 @@
          passes infinite vertical extent down, so XAML MaxHeight bindings up
          the visual-tree chain don't propagate a finite measure constraint.
          Setting MaxHeight directly on each DataGrid at Loaded / SizeChanged
-         is the only thing that reliably caps it. -->
-    <Grid Margin="24">
+         is the only thing that reliably caps it.
+
+         Page-level scrolling: with row 4/5 MinHeights enforced (see row
+         defs below), the page content can exceed the viewport at small
+         window sizes — and the NavigationView wrapper's scroll behaviour
+         is unreliable for that overflow, leaving the grids row inaccessible.
+         Own the scrolling here: PageScroll wraps the content; the inner
+         Border binds MinHeight to ViewportHeight so the * rows still
+         expand to fill at large window sizes (without the binding,
+         ScrollViewer would arrange content at its desired height only,
+         collapsing rows 4+5 to their MinHeight floors with empty space
+         below). Border.Padding="24" replaces the former root-Grid
+         Margin="24" so the page keeps its 24px outer inset while
+         ViewportHeight (computed inside the Padding) drives the inner
+         MinHeight exactly to the visible area. ToastBanner sits OUTSIDE
+         the ScrollViewer so it pins to the viewport bottom regardless of
+         scroll position. -->
+    <Grid>
+        <ScrollViewer x:Name="PageScroll"
+                      Background="Transparent"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Padding="24"
+                    MinHeight="{Binding ViewportHeight, ElementName=PageScroll}">
+                <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" /> <!-- Row 0: breadcrumb back + window picker -->
             <RowDefinition Height="Auto" /> <!-- Row 1: page title + AppId chip -->
             <RowDefinition Height="Auto" /> <!-- Row 2: status banner -->
             <RowDefinition Height="Auto" /> <!-- Row 3: summary card (Phase 2 will rebuild contents) -->
-            <RowDefinition Height="*" />    <!-- Row 4: chart card -->
-            <RowDefinition Height="*" />    <!-- Row 5: connections + sessions cards (Phase 4 will merge into tabbed single card) -->
+            <!--  Row 4/5 sizing — chart-hero layout.
+                  Row 4 (chart) is the only * row; it absorbs ALL residual
+                  space after the Auto rows and Row 5's content size. Row 5
+                  (grids) is Auto, sizing to its content — which is itself
+                  bounded by the DataGrid MaxHeight that
+                  EnforceDataGridBounds installs in the code-behind
+                  (capped at 360 absolute so the grids row doesn't outpace
+                  the chart at large windows).
+
+                  Initial attempt was 3*:2* weighted sharing residual. WPF
+                  Grid * arrange gives each row its measured desired first,
+                  then splits excess by weight — and the grids row's
+                  measured desire scales with the DataGrid MaxHeight
+                  formula, so at 4K the grids row started ~700px ahead of
+                  the chart row's MinHeight=260 floor and the proportional
+                  excess split couldn't bridge the gap. Auto on Row 5 pins
+                  it to its (capped) content size, leaving Row 4 the
+                  deterministic owner of all residual.
+
+                  MinHeight=260 on Row 4 is still load-bearing: in the
+                  PageScroll wrapper above, * rows can collapse below
+                  their child's MinHeight under measure pressure (the same
+                  bug Dashboard hit — see DashboardPage.xaml:67-68).
+                  MinHeight=252 on Row 5 is effectively redundant (Auto +
+                  DataGrid cap floor of 200 + chrome ≥ 252) but kept for
+                  symmetry / Phase 4 merge.  -->
+            <RowDefinition Height="*" MinHeight="260" /> <!-- Row 4: chart card — sole * row, owns all residual -->
+            <RowDefinition Height="Auto" MinHeight="252" /> <!-- Row 5: connections + sessions cards — Auto-sized via DataGrid MaxHeight cap (see EnforceDataGridBounds); Phase 4 will merge into tabbed single card -->
         </Grid.RowDefinitions>
 
         <!--  Row 0 — breadcrumb back affordance (left) + window picker (right).
@@ -449,7 +498,12 @@
 
         <!--  Row 4 — chart card. Canonical card recipe; chart contents
               unchanged in Phase 1 (Phase 3 plumbs grain-aware labelers
-              via ChartBuilder).  -->
+              via ChartBuilder).
+              MinHeight=260 carries: 16 padding (8+8) + ~30 title + ~24
+              subtitle + 180 chart canvas + ~10 axis-label breathing room.
+              Phase 3 bumped from 220 (which clipped X-axis labels at small
+              window sizes). Paired with RowDefinition.MinHeight=260 on the
+              grid above so the row can't shrink below the Border floor.  -->
         <Border Grid.Row="4"
                 Background="{DynamicResource metal.card}"
                 BorderBrush="{DynamicResource border.card}"
@@ -457,7 +511,7 @@
                 CornerRadius="{StaticResource radius.card}"
                 Effect="{DynamicResource shadow.card}"
                 Padding="8"
-                MinHeight="220">
+                MinHeight="260">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -566,17 +620,22 @@
             </Border>
         </Grid>
 
-        <!--  Copied-to-clipboard toast (Phase 2.x). RowSpan=6 so it z-orders
-              over every content row; HorizontalAlignment+VerticalAlignment
-              pin it to bottom-center. IsHitTestVisible=False so it never
-              steals mouse events from the controls beneath. Scrim styling
-              matches Per-App's tooltip (surface.tooltip.scrim background +
-              text.inverse text — readable on both light + dark themes).
-              ShowCopiedToast() in code-behind flips Visibility and resets
-              a 1.5s DispatcherTimer that flips it back.  -->
+    </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <!--  Copied-to-clipboard toast (Phase 2.x). Sibling of PageScroll
+              so it pins to the VIEWPORT bottom regardless of scroll
+              position — inside the ScrollViewer, VerticalAlignment="Bottom"
+              would track the scrolling content's bottom instead, leaving
+              the toast off-screen on a scrolled page. IsHitTestVisible=
+              False so it never steals mouse events from the controls
+              beneath. Scrim styling matches Per-App's tooltip
+              (surface.tooltip.scrim background + text.inverse text —
+              readable on both light + dark themes). ShowCopiedToast() in
+              code-behind flips Visibility and resets a 1.5s
+              DispatcherTimer that flips it back.  -->
         <Border x:Name="ToastBanner"
-                Grid.Row="0"
-                Grid.RowSpan="6"
                 Visibility="Collapsed"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Bottom"
