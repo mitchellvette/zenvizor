@@ -76,21 +76,31 @@ internal static class ChartTheming
     }
 
     /// <summary>
-    /// Repaint Up/Down line series with their brand token colors
-    /// (chart.upSeries / chart.downSeries) so a theme flip rebuilds the
-    /// strokes and area fills off the violet/teal stops in
-    /// BrandAccent.{Light,Dark}.xaml. Stroke thickness 2; Fill at alpha=60
-    /// (~24%) of the same hue for the area-under-line. Series are
+    /// Repaint Up/Down series with their brand token colors (chart.upSeries /
+    /// chart.downSeries) so a theme flip rebuilds the strokes and fills off
+    /// the violet/teal stops in BrandAccent.{Light,Dark}.xaml. Series are
     /// matched by Name ("Up"/"Down"); anything else is skipped, so
     /// chart-state placeholders or future series stay unaffected.
+    /// <list type="bullet">
+    ///   <item><see cref="LineSeries{T}"/>: stroke thickness 2; fill at
+    ///   alpha=60 (~24%) of the same hue for the area-under-line.</item>
+    ///   <item><see cref="StackedColumnSeries{T}"/>: bar fill at full alpha;
+    ///   no stroke (clean rectangles, the stacked Up/Down split carries
+    ///   the visual separation).</item>
+    /// </list>
     /// </summary>
     private static void ApplyToSeries(IEnumerable<ISeries>? series)
     {
         if (series is null) return;
         foreach (var s in series)
         {
-            if (s is not LineSeries<DateTimePoint> ls) continue;
-            var key = ls.Name switch
+            var name = s switch
+            {
+                LineSeries<DateTimePoint> ls => ls.Name,
+                StackedColumnSeries<DateTimePoint> sc => sc.Name,
+                _ => null,
+            };
+            var key = name switch
             {
                 "Up" => "chart.upSeries",
                 "Down" => "chart.downSeries",
@@ -98,8 +108,18 @@ internal static class ChartTheming
             };
             if (key is null) continue;
             if (!TryGetBrandColor(key, out var c)) continue;
-            ls.Stroke = new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A)) { StrokeThickness = 2 };
-            ls.Fill   = new SolidColorPaint(new SKColor(c.R, c.G, c.B, 60));
+
+            switch (s)
+            {
+                case LineSeries<DateTimePoint> line:
+                    line.Stroke = new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A)) { StrokeThickness = 2 };
+                    line.Fill   = new SolidColorPaint(new SKColor(c.R, c.G, c.B, 60));
+                    break;
+                case StackedColumnSeries<DateTimePoint> col:
+                    col.Fill   = new SolidColorPaint(new SKColor(c.R, c.G, c.B, c.A));
+                    col.Stroke = null;
+                    break;
+            }
         }
     }
 

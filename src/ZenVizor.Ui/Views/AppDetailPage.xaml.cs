@@ -4,9 +4,11 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
+using Wpf.Ui.Controls;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
 
@@ -16,29 +18,68 @@ namespace ZenVizor.Ui.Views;
 public partial class AppDetailPage : Page
 {
     private readonly HistoryQueryClient _client = new();
+    private readonly DispatcherTimer _toastTimer;
 
     public ObservableCollection<ConnectionRowViewModel> Connections { get; } = new();
     public ObservableCollection<SessionRowViewModel> Sessions { get; } = new();
 
     public int? AppId { get; private set; }
 
+    // Latest detail summary, retained so RefreshTrustLine can re-classify after
+    // a Connections refresh changes the has-WAN signal (the alert combination
+    // is computed from both surfaces).
+    private AppListEntry? _lastSummary;
+
+    // Chart axes — created ONCE in the ctor and mutated per refresh
+    // (UpdateAxesForGrain assigns fresh Labeler / MinStep / UnitWidth values).
+    // We deliberately do NOT reassign SeriesChart.XAxes / YAxes arrays after
+    // construction — wholesale axis-array replacement combined with same-frame
+    // Series reassignment leaves LiveCharts2's internal layout state in an
+    // inconsistent state and the chart fails to render at all.
+    // (Phase 1's pattern was axes-once-then-mutate; Phase 3's first attempt
+    // tried replacement-per-refresh and the chart pane went blank.)
+    private readonly Axis _xAxis;
+    private readonly Axis _yAxis;
+
     public AppDetailPage()
     {
         InitializeComponent();
 
+        // ItemTemplate (binds Short, ToolTip=Label) is set in XAML — do NOT
+        // also assign DisplayMemberPath here. ItemTemplate and DisplayMemberPath
+        // are mutually exclusive on ItemsControl; setting both throws
+        // InvalidOperationException at runtime.
         WindowCombo.ItemsSource = WindowPreset.All;
-        WindowCombo.DisplayMemberPath = nameof(WindowPreset.Label);
         WindowCombo.SelectedIndex = 1;
 
-        // Axes set once; Series reassigned wholesale on each refresh below.
-        SeriesChart.XAxes = new[]
+        // Toast auto-dismiss timer: ~1.5s after ShowCopiedToast() flips the
+        // banner Visible, the Tick callback flips it back. Restarting the
+        // timer on subsequent copies extends the visible window rather than
+        // queueing additional toasts.
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+        _toastTimer.Tick += (_, _) =>
         {
-            new Axis { Labeler = ticks => new DateTime((long)ticks).ToString("HH:mm", CultureInfo.InvariantCulture) },
+            _toastTimer.Stop();
+            ToastBanner.Visibility = Visibility.Collapsed;
         };
-        SeriesChart.YAxes = new[]
+
+        // Axes created ONCE here and mutated per refresh below in
+        // UpdateAxesForGrain. Initial labelers / step / unit-width default to
+        // Samples grain so the chart isn't blank between ctor and the first
+        // ApplyDetail. The axis INSTANCES persist for the page's lifetime —
+        // SeriesChart.XAxes / YAxes are assigned exactly once, here.
+        _xAxis = new Axis
         {
-            new Axis { Labeler = v => PerAppPage.FormatBytes((long)v) + "/bucket" },
+            Labeler = ticks => ChartBuilder.FormatXAxisLabel((long)ticks, TrafficGrain.Samples),
+            MinStep = ChartBuilder.MinStepFor(TrafficGrain.Samples, preset: null),
+            UnitWidth = ChartBuilder.UnitWidthFor(TrafficGrain.Samples, preset: null),
         };
+        _yAxis = new Axis
+        {
+            Labeler = v => PerAppPage.FormatBytes((long)v) + ChartBuilder.YUnitSuffix(TrafficGrain.Samples),
+        };
+        SeriesChart.XAxes = new[] { _xAxis };
+        SeriesChart.YAxes = new[] { _yAxis };
         ApplyChartTheme();
         ChartTheming.Changed += () => Dispatcher.Invoke(ApplyChartTheme);
 
@@ -72,6 +113,26 @@ public partial class AppDetailPage : Page
 
     private void ApplyChartTheme() => ChartTheming.Apply(SeriesChart);
 
+    /// <summary>
+    /// Mutate the existing <see cref="_xAxis"/> / <see cref="_yAxis"/>
+    /// instances in place with grain- and window-tailored Labeler, MinStep,
+    /// and UnitWidth. Called from <see cref="ApplyDetail"/> as soon as the
+    /// resolved grain is known.
+    ///
+    /// IMPORTANT: this method MUST NOT reassign <c>SeriesChart.XAxes</c> or
+    /// <c>SeriesChart.YAxes</c>. Wholesale axis-array replacement in the same
+    /// frame as a <c>Series</c> reassignment puts LC2 v2 into a state where
+    /// the chart renders nothing. Phase 1's working pattern was axes-once-
+    /// then-mutate; this method preserves that pattern.
+    /// </summary>
+    private void UpdateAxesForGrain(TrafficGrain grain, WindowPreset? preset)
+    {
+        _xAxis.Labeler   = ticks => ChartBuilder.FormatXAxisLabel((long)ticks, grain);
+        _xAxis.MinStep   = ChartBuilder.MinStepFor(grain, preset);
+        _xAxis.UnitWidth = ChartBuilder.UnitWidthFor(grain, preset);
+        _yAxis.Labeler   = v => PerAppPage.FormatBytes((long)v) + ChartBuilder.YUnitSuffix(grain);
+    }
+
     private void OnAppIdReceived()
     {
         AppId = DataContext switch
@@ -80,9 +141,13 @@ public partial class AppDetailPage : Page
             long l => (int)l,
             _ => null,
         };
-        HeaderText.Text = AppId is null
-            ? "App detail"
-            : $"App detail (app id {AppId})";
+        // Title shows the image name once ApplyDetail lands; before that we
+        // show the page placeholder. AppId surfaces in the labeled chip
+        // beside the title (Q4 lock — never inline in the title text).
+        HeaderText.Text = "App detail";
+        AppIdValue.Text = AppId is int id
+            ? id.ToString(CultureInfo.InvariantCulture)
+            : "—";
     }
 
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -95,6 +160,165 @@ public partial class AppDetailPage : Page
     {
         var nav = PerAppPage.FindNavigationView(this);
         nav?.GoBack();
+    }
+
+    // Phase 2.x — AppId chip and path row are now click-anywhere Borders
+    // bound to MouseLeftButtonUp, not ui:Button.Click. The MouseButton event
+    // delegate is MouseButtonEventHandler (MouseButtonEventArgs), not
+    // RoutedEventHandler — handler signatures must match.
+
+    private void OnCopyAppIdClick(object sender, MouseButtonEventArgs e)
+    {
+        if (AppId is not int id) return;
+        TryCopyToClipboard(id.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private void OnCopyPathClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_lastSummary is { ImagePath: var path } && !string.IsNullOrEmpty(path))
+        {
+            TryCopyToClipboard(path);
+        }
+    }
+
+    private void TryCopyToClipboard(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+            ShowCopiedToast();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Clipboard is OS-shared; another process holding the lock
+            // surfaces as a COMException. Silently swallow — failing to
+            // copy is recoverable (user can re-click), and we don't want
+            // an unhandled-exception dialog over a copy button.
+        }
+    }
+
+    /// <summary>
+    /// Surface the "Copied to clipboard" toast and reset its auto-dismiss
+    /// timer. Repeated calls within the timeout reset the visible window
+    /// rather than stacking.
+    /// </summary>
+    private void ShowCopiedToast()
+    {
+        ToastBanner.Visibility = Visibility.Visible;
+        _toastTimer.Stop();
+        _toastTimer.Start();
+    }
+
+    /// <summary>
+    /// Trust-line state classification. Computed after BOTH ApplyDetail and
+    /// ApplyConnections have run so the alert combination — which depends on
+    /// has-WAN-connection — sees the freshly loaded Connections list. Four
+    /// mutually-exclusive Borders in the XAML; exactly one is Visible.
+    /// </summary>
+    private void RefreshTrustLine()
+    {
+        TrustAlertCombo.Visibility = Visibility.Collapsed;
+        TrustSignedPersonal.Visibility = Visibility.Collapsed;
+        TrustSignedSystem.Visibility = Visibility.Collapsed;
+        TrustFallback.Visibility = Visibility.Collapsed;
+
+        if (_lastSummary is not { } s) return;
+
+        var hasWan = Connections.Any(c =>
+            string.Equals(c.RemoteClass, "Wan", StringComparison.OrdinalIgnoreCase));
+
+        switch (ClassifyTrust(s.SignatureStatus, s.IsUserWritablePath, hasWan))
+        {
+            case TrustState.AlertCombo:
+                TrustAlertCombo.Visibility = Visibility.Visible;
+                break;
+            case TrustState.SignedPersonal:
+                TrustSignedPersonal.Visibility = Visibility.Visible;
+                break;
+            case TrustState.SignedSystem:
+                TrustSignedSystem.Visibility = Visibility.Visible;
+                break;
+            case TrustState.Fallback:
+                var (headline, body, fallbackGlyph) = FallbackTrustCopy(s.SignatureStatus, s.IsUserWritablePath);
+                TrustFallbackHeadline.Text = headline;
+                TrustFallbackBody.Text = body;
+                TrustFallbackGlyph.Symbol = fallbackGlyph;
+                TrustFallback.Visibility = Visibility.Visible;
+                break;
+        }
+    }
+
+    // SignatureStatus is a string on the IPC contract (AppListEntry).
+    // Canonical values shipped by the service: "Signed", "Unsigned",
+    // "Invalid", "Unchecked". Compared case-insensitively here so an
+    // unexpected case from a future server build still classifies cleanly
+    // rather than falling all the way through to the Fallback branch.
+    private const string SigSigned    = "Signed";
+    private const string SigUnsigned  = "Unsigned";
+    private const string SigInvalid   = "Invalid";
+    private const string SigUnchecked = "Unchecked";
+
+    private enum TrustState { AlertCombo, SignedPersonal, SignedSystem, Fallback }
+
+    private static TrustState ClassifyTrust(string sig, bool writable, bool hasWan)
+    {
+        var isSigned   = string.Equals(sig, SigSigned,   StringComparison.OrdinalIgnoreCase);
+        var isUnsigned = string.Equals(sig, SigUnsigned, StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(sig, SigInvalid,  StringComparison.OrdinalIgnoreCase);
+
+        if (isUnsigned && writable && hasWan) return TrustState.AlertCombo;
+        if (isSigned   && writable)           return TrustState.SignedPersonal;
+        if (isSigned   && !writable)          return TrustState.SignedSystem;
+        return TrustState.Fallback;
+    }
+
+    private static (SymbolRegular glyph, string foregroundKey) SignatureBadge(string sig)
+    {
+        if (string.Equals(sig, SigSigned, StringComparison.OrdinalIgnoreCase))
+            return (SymbolRegular.ShieldCheckmark20, "status.success");
+        if (string.Equals(sig, SigUnsigned, StringComparison.OrdinalIgnoreCase)
+         || string.Equals(sig, SigInvalid,  StringComparison.OrdinalIgnoreCase))
+            return (SymbolRegular.ShieldError20, "status.caution");
+        return (SymbolRegular.Info20, "text.tertiary");
+    }
+
+    /// <summary>
+    /// Copy generators for the TrustFallback Border — used when the trust
+    /// state doesn't fit one of the three locked treatments (signed-system,
+    /// signed-personal, alert combination). Same neutral surface.subtle
+    /// backdrop as the signed cases; the body content carries the signal.
+    /// </summary>
+    private static (string headline, string body, SymbolRegular glyph) FallbackTrustCopy(string sig, bool writable)
+    {
+        if (string.Equals(sig, SigUnsigned, StringComparison.OrdinalIgnoreCase))
+        {
+            return writable
+                ? ("Unsigned app running from a personal folder",
+                   "This binary isn't digitally signed and lives in a folder you can write to. No outbound connections detected in this window. Worth keeping an eye on if it starts talking.",
+                   SymbolRegular.ShieldError20)
+                : ("Unsigned app in a system folder",
+                   "This binary isn't digitally signed. Unusual for a system folder; worth knowing.",
+                   SymbolRegular.ShieldError20);
+        }
+        if (string.Equals(sig, SigInvalid, StringComparison.OrdinalIgnoreCase))
+        {
+            return writable
+                ? ("Invalid signature, from a personal folder",
+                   "This binary's signature didn't verify cleanly, and it lives in a folder you can write to. Worth confirming you recognise it.",
+                   SymbolRegular.ShieldError20)
+                : ("Invalid signature",
+                   "This binary's signature didn't verify cleanly. Worth knowing.",
+                   SymbolRegular.ShieldError20);
+        }
+        if (string.Equals(sig, SigUnchecked, StringComparison.OrdinalIgnoreCase))
+        {
+            return ("Signature unchecked",
+                    "ZenVizor hasn't verified this binary's signature yet. The check happens once and is cached.",
+                    SymbolRegular.Info20);
+        }
+        return ("Unknown signature state",
+                $"Signature status: {sig}. No additional context.",
+                SymbolRegular.Info20);
     }
 
     private async Task RefreshAsync()
@@ -113,6 +337,7 @@ public partial class AppDetailPage : Page
 
             ApplyDetail(await detailTask);
             ApplyConnections(await connectionsTask);
+            RefreshTrustLine();
         }
         catch (Exception ex)
         {
@@ -128,20 +353,35 @@ public partial class AppDetailPage : Page
     private void ApplyDetail(AppDetailResult detail)
     {
         var s = detail.Summary;
-        HeaderText.Text = $"{s.ImageName} (app id {s.AppId})";
-        SummaryLine1.Text = string.Format(
-            CultureInfo.InvariantCulture,
-            "Publisher: {0}   |   Signature: {1}{2}   |   Grain: {3}",
-            string.IsNullOrEmpty(s.Publisher) ? "(unknown)" : s.Publisher,
-            s.SignatureStatus,
-            s.IsUserWritablePath ? "  [user-writable path]" : "",
-            detail.GrainUsed);
-        SummaryLine2.Text = string.Format(
-            CultureInfo.InvariantCulture,
-            "Path: {0}   |   Up: {1}   |   Down: {2}",
-            s.ImagePath,
-            PerAppPage.FormatBytes(s.BytesUp),
-            PerAppPage.FormatBytes(s.BytesDown));
+        _lastSummary = s;
+
+        // Title = image name only. The AppId lives in the labeled chip
+        // beside the title; no "(app id N)" suffix here (Q4 lock).
+        HeaderText.Text = s.ImageName;
+        AppIdValue.Text = s.AppId.ToString(CultureInfo.InvariantCulture);
+
+        // Identity summary block — fill values and swap each field's
+        // Foreground from the text.tertiary placeholder colour to its
+        // real colour. Up / Down totals get their chart-series brushes
+        // (violet / teal); Publisher / Signature / Path go to text.primary.
+        PublisherValue.Text = string.IsNullOrEmpty(s.Publisher) ? "(unknown)" : s.Publisher;
+        PublisherValue.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "text.primary");
+
+        SignatureValue.Text = string.IsNullOrEmpty(s.SignatureStatus) ? "(unknown)" : s.SignatureStatus;
+        SignatureValue.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "text.primary");
+
+        var (glyph, glyphForegroundKey) = SignatureBadge(s.SignatureStatus);
+        SignatureGlyph.Symbol = glyph;
+        SignatureGlyph.SetResourceReference(SymbolIcon.ForegroundProperty, glyphForegroundKey);
+
+        UpTotalValue.Text = PerAppPage.FormatBytes(s.BytesUp);
+        UpTotalValue.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "chart.upSeries");
+
+        DownTotalValue.Text = PerAppPage.FormatBytes(s.BytesDown);
+        DownTotalValue.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "chart.downSeries");
+
+        PathValue.Text = s.ImagePath;
+        PathValue.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "text.primary");
 
         var bucketsUp = new SortedDictionary<long, long>();
         var bucketsDown = new SortedDictionary<long, long>();
@@ -157,11 +397,36 @@ public partial class AppDetailPage : Page
         var downPoints = bucketsDown
             .Select(kv => new DateTimePoint(DateTimeOffset.FromUnixTimeMilliseconds(kv.Key).LocalDateTime, kv.Value))
             .ToList();
-        (upPoints, downPoints) = ChartSeriesDownsampler.Downsample(upPoints, downPoints);
 
+        // Average-based cap: the Y axis renders rate per the grain's time unit
+        // (/min, /hr, /day), so the reducer must produce averages — summing
+        // adjacent buckets here would make the displayed numbers ~N× too high
+        // relative to the labeled unit. Caps at ChartSeriesDownsampler.MaxBuckets
+        // for the very dense 24h Samples case (1440 → 240 buckets, each carrying
+        // the average bytes/min over its 6-minute group).
+        (upPoints, downPoints) = ChartSeriesDownsampler.DownsampleAverage(upPoints, downPoints);
+
+        // Bar-grain density control: 7d Hourly (168 buckets) and 90d Daily
+        // (90 buckets) coalesce 2× so the 8 px MaxBarWidth in ChartBuilder
+        // renders at a comfortable visual density. 30d Daily (30 buckets) and
+        // 24h Samples (already capped to 240 by DownsampleAverage above) do
+        // not need extra coalescing. Subtitle copy in
+        // ChartBuilder.DescribeView mirrors this policy (returns "2-hour
+        // buckets" / "2-day buckets" for the coalesced cases).
+        if ((detail.GrainUsed == TrafficGrain.Hourly || detail.GrainUsed == TrafficGrain.Daily)
+            && Math.Max(upPoints.Count, downPoints.Count) > 60)
+        {
+            (upPoints, downPoints) = ChartSeriesDownsampler.Coalesce(upPoints, downPoints, factor: 2);
+        }
+
+        var preset = WindowCombo.SelectedItem as WindowPreset;
+        // Mutate axis properties (in-place — see UpdateAxesForGrain doc) BEFORE
+        // assigning Series so the new Labeler / MinStep / UnitWidth are in
+        // place when LC2 lays out the upcoming redraw triggered by the Series
+        // assignment.
+        UpdateAxesForGrain(detail.GrainUsed, preset);
         SeriesChart.Series = ChartBuilder.BuildSeries(detail.GrainUsed, upPoints, downPoints);
-        ChartSubtitle.Text = ChartBuilder.DescribeView(detail.GrainUsed,
-            WindowCombo.SelectedItem as WindowPreset);
+        ChartSubtitle.Text = ChartBuilder.DescribeView(detail.GrainUsed, preset);
 
         NoDataOverlay.Visibility = upPoints.Count == 0 && downPoints.Count == 0
             ? Visibility.Visible

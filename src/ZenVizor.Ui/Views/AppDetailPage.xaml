@@ -15,47 +15,449 @@
          is the only thing that reliably caps it. -->
     <Grid Margin="24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" /> <!-- Row 0: breadcrumb back + window picker -->
+            <RowDefinition Height="Auto" /> <!-- Row 1: page title + AppId chip -->
+            <RowDefinition Height="Auto" /> <!-- Row 2: status banner -->
+            <RowDefinition Height="Auto" /> <!-- Row 3: summary card (Phase 2 will rebuild contents) -->
+            <RowDefinition Height="*" />    <!-- Row 4: chart card -->
+            <RowDefinition Height="*" />    <!-- Row 5: connections + sessions cards (Phase 4 will merge into tabbed single card) -->
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ui:Button Content="&lt; Per-App" Margin="0,0,16,0" Click="OnBackClick" />
-            <ui:TextBlock x:Name="HeaderText" FontTypography="Subtitle" Text="App detail" VerticalAlignment="Center" />
-        </StackPanel>
+        <!--  Row 0 — breadcrumb back affordance (left) + window picker (right).
+              Q3 selected variant: caption-weight "< Per-App" link above the
+              page title. Transparent button background so it reads as a link
+              rather than a chip; ChevronLeft20 glyph replaces the ASCII '<'.  -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
-            <ComboBox x:Name="WindowCombo" Width="180" SelectionChanged="OnSelectionChanged" />
-            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
+            <ui:Button Grid.Column="0"
+                       x:Name="BackButton"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       Padding="0,2"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       Cursor="Hand"
+                       Click="OnBackClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="ChevronLeft20"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               Text="Per-App"
+                               Margin="4,0,0,0"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </ui:Button>
+
+            <ComboBox Grid.Column="1"
+                      x:Name="WindowCombo"
+                      Width="120"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnSelectionChanged">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Short}"
+                                   ToolTip="{Binding Label}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </Grid>
+
+        <!--  Row 1 — page title (image name) + labeled AppId chip with copy.
+              Q4 selected variant: "APP ID N" eyebrow + mono value + copy
+              button, beside (not inside) the title. Title binds ImageName
+              alone — the "(app id N)" suffix is gone (Q4 lock).  -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,12">
+            <ui:TextBlock x:Name="HeaderText"
+                          Style="{StaticResource text.subtitle}"
+                          FontFamily="{StaticResource font.display}"
+                          FontSize="24"
+                          MaxWidth="640"
+                          TextTrimming="CharacterEllipsis"
+                          VerticalAlignment="Center"
+                          Text="App detail" />
+
+            <!--  AppId chip — entire chip is the click target (Phase 2.x
+                  adjustment). Border default has accent-neutral chrome;
+                  IsMouseOver trigger shifts BorderBrush to accent.default so
+                  the chip telegraphs its click affordance. Inner Copy20 is
+                  a decorative glyph, not a separate button. MouseLeftButtonUp
+                  fires OnCopyAppIdClick, which posts the "Copied" toast.
+                  Background=Transparent on the trigger Setter (NOT a literal
+                  attribute) so the surface stays hit-testable AND the trigger
+                  can swap in the hover tint cleanly.  -->
+            <Border x:Name="AppIdChip"
+                    Margin="12,0,0,0"
                     VerticalAlignment="Center"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    Padding="8,4" CornerRadius="4">
-                <TextBlock x:Name="StatusBannerText"
-                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.control}"
+                    Padding="10,4"
+                    Cursor="Hand"
+                    ToolTip="Copy App ID"
+                    MouseLeftButtonUp="OnCopyAppIdClick">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource surface.subtle}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource border.card}" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource accent.default}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource text.eyebrow}"
+                               Text="APP ID"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="AppIdValue"
+                               Style="{StaticResource text.mono}"
+                               FontSize="{StaticResource font.size.caption}"
+                               Text="—"
+                               Margin="6,0,0,0"
+                               VerticalAlignment="Center" />
+                    <ui:SymbolIcon Symbol="Copy20"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center" />
+                </StackPanel>
             </Border>
         </StackPanel>
 
-        <Border Grid.Row="2" CornerRadius="6" Padding="12,8"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                Margin="0,0,0,12">
-            <StackPanel x:Name="SummaryStack" Orientation="Vertical">
-                <TextBlock x:Name="SummaryLine1" />
-                <TextBlock x:Name="SummaryLine2"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Margin="0,4,0,0" />
-            </StackPanel>
+        <!--  Row 2 — status banner (own row). Default Collapsed; Phase 5
+              wires the disconnected (critical) vs error (caution) state
+              split. Background + foreground colors are swapped per-state
+              in code-behind via SetResourceReference.  -->
+        <Border Grid.Row="2"
+                x:Name="StatusBanner"
+                Visibility="Collapsed"
+                Margin="0,0,0,12"
+                Background="{DynamicResource status.caution.background}"
+                Padding="8"
+                CornerRadius="{StaticResource radius.control}">
+            <TextBlock x:Name="StatusBannerText"
+                       Foreground="{DynamicResource status.caution.text}" />
         </Border>
 
-        <Border Grid.Row="3" CornerRadius="6" Padding="8" MinHeight="220"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+        <!--  Row 3 — summary card. Identity block per Q1 selected variant:
+              KPI strip on top (Publisher · Signature on the left, Up · Down
+              totals on the right) + trust line (4 mutually-exclusive states)
+              + border.subtle divider + path copy row. Path NEVER truncates
+              (TextWrapping=Wrap, TextTrimming=None) — App Detail is the
+              deepest drill state, the path must always be fully visible.  -->
+        <Border Grid.Row="3"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="20,16"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" /> <!-- KPI strip -->
+                    <RowDefinition Height="Auto" /> <!-- Trust line -->
+                    <RowDefinition Height="Auto" /> <!-- Divider -->
+                    <RowDefinition Height="Auto" /> <!-- Path copy row -->
+                </Grid.RowDefinitions>
+
+                <!--  KPI strip — left cluster (Publisher · Signature) +
+                      right cluster (Up · Down) on opposite ends of the
+                      same row. Each cell is a caption label above a body
+                      value; the right cell's values render in text.mono
+                      at font.size.metric (24px SemiBold) in the matching
+                      chart series color so the headline numbers read at
+                      a glance.  -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top">
+                        <StackPanel Margin="0,0,40,0">
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="Publisher" />
+                            <TextBlock x:Name="PublisherValue"
+                                       Style="{StaticResource text.body}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="—"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="Signature" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <ui:SymbolIcon x:Name="SignatureGlyph"
+                                               Symbol="ShieldCheckmark20"
+                                               FontSize="14"
+                                               Foreground="{DynamicResource text.tertiary}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+                                <TextBlock x:Name="SignatureValue"
+                                           Style="{StaticResource text.body}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="—"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                        <StackPanel Margin="0,0,32,0" HorizontalAlignment="Right">
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       HorizontalAlignment="Right"
+                                       Text="↑ Up · this window" />
+                            <TextBlock x:Name="UpTotalValue"
+                                       Style="{StaticResource text.mono}"
+                                       FontSize="{StaticResource font.size.metric}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       HorizontalAlignment="Right"
+                                       Text="—"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+                        <StackPanel HorizontalAlignment="Right">
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       HorizontalAlignment="Right"
+                                       Text="↓ Down · this window" />
+                            <TextBlock x:Name="DownTotalValue"
+                                       Style="{StaticResource text.mono}"
+                                       FontSize="{StaticResource font.size.metric}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       HorizontalAlignment="Right"
+                                       Text="—"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <!--  Trust line — four mutually-exclusive Borders, exactly
+                      one Visible at a time. Computed in code-behind from
+                      (SignatureStatus, IsUserWritablePath, has-WAN-row).
+                      AlertCombo is the visually elevated case (amber band
+                      via status.caution.*); the three signed/fallback
+                      states use surface.subtle for a neutral-not-warning
+                      backdrop.  -->
+                <Grid Grid.Row="1" Margin="0,18,0,0">
+                    <Border x:Name="TrustAlertCombo"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource status.caution.background}"
+                            CornerRadius="{StaticResource radius.control}"
+                            Padding="14,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Grid.Column="0"
+                                           Symbol="ShieldError20"
+                                           FontSize="20"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           VerticalAlignment="Top"
+                                           Margin="0,1,12,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource text.body.strong}"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           Text="Unsigned app running from a personal folder, with active connections" />
+                                <TextBlock Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"
+                                           Text="This binary isn't digitally signed and lives in a folder you can write to. That's the pattern malware often uses to stay hidden. It's currently talking to the internet. Worth confirming you recognise it." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border x:Name="TrustSignedPersonal"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource surface.subtle}"
+                            CornerRadius="{StaticResource radius.control}"
+                            Padding="14,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Grid.Column="0"
+                                           Symbol="ShieldCheckmark20"
+                                           FontSize="20"
+                                           Foreground="{DynamicResource status.success}"
+                                           VerticalAlignment="Top"
+                                           Margin="0,1,12,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource text.body.strong}"
+                                           Text="Signed by a verified publisher" />
+                                <TextBlock Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"
+                                           Text="Runs from a personal folder (your %LOCALAPPDATA%), which is normal for apps that update themselves, like Chrome. The valid signature is what matters here." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border x:Name="TrustSignedSystem"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource surface.subtle}"
+                            CornerRadius="{StaticResource radius.control}"
+                            Padding="14,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Grid.Column="0"
+                                           Symbol="ShieldCheckmark20"
+                                           FontSize="20"
+                                           Foreground="{DynamicResource status.success}"
+                                           VerticalAlignment="Top"
+                                           Margin="0,1,12,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource text.body.strong}"
+                                           Text="Signed and running from a system folder" />
+                                <TextBlock Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"
+                                           Text="Nothing unusual about where this app lives or how it's signed." />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!--  TrustFallback — copy filled in code-behind for
+                          uncategorized cases (Unsigned-without-connections,
+                          Unsigned-in-system-folder, Unchecked, etc.). Always
+                          a neutral surface.subtle band — the headline body
+                          and the explainer caption together carry the signal
+                          rather than relying on background elevation.  -->
+                    <Border x:Name="TrustFallback"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource surface.subtle}"
+                            CornerRadius="{StaticResource radius.control}"
+                            Padding="14,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon x:Name="TrustFallbackGlyph"
+                                           Grid.Column="0"
+                                           Symbol="Info20"
+                                           FontSize="20"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Top"
+                                           Margin="0,1,12,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock x:Name="TrustFallbackHeadline"
+                                           Style="{StaticResource text.body.strong}"
+                                           Text="" />
+                                <TextBlock x:Name="TrustFallbackBody"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"
+                                           Text="" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!--  border.subtle hairline divider between trust line and
+                      path row.  -->
+                <Border Grid.Row="2"
+                        Height="1"
+                        Background="{DynamicResource border.subtle}"
+                        Margin="0,16,0,12" />
+
+                <!--  Path copy row — entire row is the click target (Phase 2.x
+                      adjustment). Default Background=Transparent on the Style
+                      Setter (NOT a literal attribute) so the surface stays
+                      hit-testable but invisible; IsMouseOver swaps in
+                      surface.subtle so the hover state reads as a clickable
+                      band. MouseLeftButtonUp fires OnCopyPathClick, which
+                      posts the "Copied" toast.
+
+                      Path renders in text.mono with TextWrapping=Wrap +
+                      TextTrimming=None — §8.2 locked outcome, NEVER truncated
+                      on this screen. Folder glyph anchors the left end;
+                      Copy20 glyph (now a decoration, not a button) anchors
+                      the right end; the path takes all the residual width
+                      and wraps across multiple lines if needed.  -->
+                <Border Grid.Row="3"
+                        x:Name="PathRowHost"
+                        CornerRadius="{StaticResource radius.control}"
+                        Padding="10,8"
+                        Margin="-10,-8"
+                        Cursor="Hand"
+                        ToolTip="Copy path"
+                        MouseLeftButtonUp="OnCopyPathClick">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource surface.subtle}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0"
+                                       Symbol="Folder20"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       VerticalAlignment="Top"
+                                       Margin="0,3,10,0" />
+                        <TextBlock Grid.Column="1"
+                                   x:Name="PathValue"
+                                   Style="{StaticResource text.mono}"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="None"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   VerticalAlignment="Center"
+                                   Text="—" />
+                        <ui:SymbolIcon Grid.Column="2"
+                                       Symbol="Copy20"
+                                       FontSize="14"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       VerticalAlignment="Top"
+                                       Margin="10,3,0,0" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!--  Row 4 — chart card. Canonical card recipe; chart contents
+              unchanged in Phase 1 (Phase 3 plumbs grain-aware labelers
+              via ChartBuilder).  -->
+        <Border Grid.Row="4"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="8"
+                MinHeight="220">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -65,7 +467,7 @@
                 <ui:TextBlock Grid.Row="0" Text="Traffic over time" Margin="4,2,0,2" />
                 <TextBlock Grid.Row="1" x:Name="ChartSubtitle"
                            Margin="4,0,0,8"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                           Foreground="{DynamicResource text.secondary}" />
                 <Grid Grid.Row="2">
                     <lvc:CartesianChart x:Name="SeriesChart"
                                         Background="Transparent"
@@ -74,23 +476,30 @@
                     <TextBlock x:Name="NoDataOverlay"
                                Visibility="Collapsed"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Foreground="{DynamicResource text.secondary}"
                                Text="No traffic recorded in this window."
                                IsHitTestVisible="False" />
                 </Grid>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="4" Margin="0,12,0,0">
+        <!--  Row 5 — Connections + Sessions grid cards (side-by-side for
+              Phase 1; Phase 4 merges into one tabbed card per Q5). Card
+              surfaces migrate to canonical recipe; column / density work
+              lands in Phase 4.  -->
+        <Grid Grid.Row="5" Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Margin="0,0,6,0" CornerRadius="6"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            <Border Grid.Column="0"
+                    Margin="0,0,6,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
                     BorderThickness="1"
-                    BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -120,10 +529,13 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Column="1" Margin="6,0,0,0" CornerRadius="6"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            <Border Grid.Column="1"
+                    Margin="6,0,0,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
                     BorderThickness="1"
-                    BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -153,5 +565,39 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!--  Copied-to-clipboard toast (Phase 2.x). RowSpan=6 so it z-orders
+              over every content row; HorizontalAlignment+VerticalAlignment
+              pin it to bottom-center. IsHitTestVisible=False so it never
+              steals mouse events from the controls beneath. Scrim styling
+              matches Per-App's tooltip (surface.tooltip.scrim background +
+              text.inverse text — readable on both light + dark themes).
+              ShowCopiedToast() in code-behind flips Visibility and resets
+              a 1.5s DispatcherTimer that flips it back.  -->
+        <Border x:Name="ToastBanner"
+                Grid.Row="0"
+                Grid.RowSpan="6"
+                Visibility="Collapsed"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,32"
+                Background="{DynamicResource surface.tooltip.scrim}"
+                CornerRadius="{StaticResource radius.control}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="14,10"
+                IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Checkmark20"
+                               FontSize="16"
+                               Foreground="{DynamicResource text.inverse}"
+                               VerticalAlignment="Center" />
+                <TextBlock x:Name="ToastText"
+                           Text="Copied to clipboard"
+                           Foreground="{DynamicResource text.inverse}"
+                           Style="{StaticResource text.body}"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Page>
