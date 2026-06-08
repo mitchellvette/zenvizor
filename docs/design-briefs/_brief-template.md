@@ -222,14 +222,23 @@ State the constraint per category — NOT the assignment:
   choose from the 4-based scale per Claude Design's composition.
 - **`radius.*`** — role tokens only (`radius.card`, `radius.control`,
   `radius.overlay`). No raw scale tokens.
-- **Material / effect tokens** — state whether this screen uses
-  metallic / brushed surfaces, drop shadows, or catch-light highlights
-  in this round (yes / no). If yes, name the available effect tokens
-  — `metal.card` (gradient brushed-card surface, `LinearGradientBrush`),
-  `edge.light` (inset top catch-light per CSS `box-shadow inset 0 1px 0`),
-  `shadow.card` (`DropShadowEffect`) — and state any per-screen
-  constraint (e.g. "no live blur or animated sheen"). Claude Design
-  composes which surfaces carry the effect.
+- **Material / effect tokens** — **the default for every text- and
+  data-bearing card on every page is the Dashboard / Per-App metallic
+  treatment: `metal.card` background + `edge.light` baked-in
+  catch-light + `border.card` 1px stroke + `shadow.card` elevation +
+  `radius.card` corner.** This is a project-wide surface decision (see
+  `docs/design-system.md` §9 "Card surface — canonical treatment"),
+  not a per-brief negotiation. Briefs do NOT need to re-derive it and
+  MUST NOT specify "flat `surface.card` only" or "no metallic surfaces
+  on this screen" without a documented reason that overrides the
+  default (e.g. the screen is OS-chrome-class, not data-class).
+  Available tokens — `metal.card` (gradient brushed-card surface,
+  `LinearGradientBrush`), `edge.light` (inset top catch-light per CSS
+  `box-shadow inset 0 1px 0`), `shadow.card` (`DropShadowEffect`),
+  `shadow.sm` (softer sibling for info-strip surfaces), `metal.control`
+  (same family at control heights). Static gradients + single
+  `DropShadowEffect` only — no live blur, no animated sheen.
+  Composition (which surface gets which token) is Claude Design's.
 
 **New tokens** — if this screen needs a token that isn't in the
 primer's table, list it here per the §9 rules (canonical dotted
@@ -375,9 +384,12 @@ Recurring examples of outcome-style locks:
   costs measurable GPU per frame. Real Acrylic is reserved for OS
   surfaces only (tray context menu). *Outcome locked: opaque.
   Composition open.*
-- **Brand chrome / brushed-steel surfaces (if any):** static
-  `LinearGradientBrush` + 1px stroke + single `DropShadowEffect`. No
-  live blur. *Outcome locked: static, no continuous animation.
+- **Brand chrome / brushed-steel surfaces:** static
+  `LinearGradientBrush` (`metal.card` / `metal.control`) + 1px stroke
+  (`border.card`) + single `DropShadowEffect` (`shadow.card` /
+  `shadow.sm`). No live blur, no animated sheen. *Outcome locked: this
+  is the canonical card treatment on every data-bearing surface; see
+  §5 material-tokens note. Static, no continuous animation.
   Composition open.*
 - (Per-screen items go here — anything the findings doc settled at
   the OUTCOME level: required visibility of a piece of data, required

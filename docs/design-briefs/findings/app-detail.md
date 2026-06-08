@@ -166,54 +166,132 @@ This is the busiest screen; expect the longest list.
 
 1. **Summary card is two long pipe-separated strings.** Lines wrap
    ungracefully on narrow windows; field labels (`Publisher:`,
-   `Signature:`, `Grain:`, `Path:`, `Up:`, `Down:`) are inline. Hard
-   to scan.
-   → Restructure as a labeled-cell grid: each metric becomes
-   `text.caption` `text.secondary` label above its `text.body` value
-   (or `text.mono` for Path / Up / Down). 2-row by 3-column or
-   3-row by 2-column layout. Specify in brief.
-2. **`is_user_writable_path` is buried as a bracketed footnote.**
-   `"  [user-writable path]"` inline appended after Signature. This
-   is the alert-condition signal — should be visually elevated.
-   → When `is_user_writable_path == true` AND `signature_status !=
-   "Signed"`, render a pill next to the Signature value:
-   `status.caution.background` + `status.caution.text`, copy
-   "User-writable path", `radius.control` (`6 px`). Presentation
-   only; no new data.
+   `Signature:`, `Grain:`, `Path:`, `Up:`, `Down:`) are inline. The
+   eye has no anchor — there's no visual separation between label
+   and value, and no consistent vertical alignment for scanning
+   between fields. The summary card is meant to be the at-a-glance
+   identity block for the app but currently reads as two paragraphs.
+   → **Open design problem for Claude Design.** This finding
+   documents WHAT is broken; the right layout (labeled grid,
+   stacked rows, two columns, key-value chips, etc.) is for the
+   Claude Design pass to determine. Specify in brief as a
+   "scannable identity block" problem, not a prescribed layout.
+   Tied to items 2, 3, and 4 — user-writable framing, path
+   rendering, and AppId placement all live in this card and want
+   to be solved together.
+2. **`is_user_writable_path` is buried as a bracketed footnote AND
+   has no user-facing explanation.** Two coupled problems in one
+   finding:
+   - **(a) Visual elevation.** The literal string
+     `"  [user-writable path]"` is appended inline after Signature
+     status in body text, with no visual elevation. This is the
+     alert-condition signal — *unsigned + user-writable + has
+     connections* is the MVP's first real alert per
+     `zenvizor-sprint-plan.md:250`. Burying it in inline footnote
+     text underplays a high-importance signal.
+   - **(b) Context / meaning.** Even with visual elevation, the
+     casual user doesn't know what "user-writable path" means or
+     what to do with the information. Critically: user-writable
+     on its own is NOT a red flag. Chrome, VS Code, and Discord
+     are all signed binaries running from user-writable locations
+     (`docs/phase-2-verification.md:225`). The signal that matters
+     is the *combination*: unsigned + user-writable + active
+     connections. Phase 4's filter design already tested the
+     user-facing translation — "personal folders" (user-writable)
+     vs "system folders" (system-protected) per
+     `docs/phase-4-filter-recommendations.md:51`. Without the
+     plain-language framing AND the combination logic, surfacing
+     the flag prominently risks crying wolf on benign signed apps.
+   → **Open design problem for Claude Design**, tied to item 1.
+   The card needs both: a presentation that flags the
+   high-importance combination without false alarms on the benign
+   case, AND a way to convey what "user-writable" / "personal
+   folder" means and why it matters here (tooltip on a chip,
+   inline help icon, companion plain-language line, contextual
+   explainer that only appears in the alert combination — many
+   workable directions). Don't prescribe; let Claude Design
+   propose.
 3. **Path is rendered in proportional text.** Paths are code-like —
-   characters per row matters, slashes need column alignment, the eye
-   tracks better in a monospaced face.
+   characters per row matters, slashes need column alignment, the
+   eye tracks better in a monospaced face.
    → Bind path's value to `Style="{StaticResource text.mono}"`.
-   Specify `TextWrapping="NoWrap"` + middle-ellipsis truncation
-   (`TextTrimming="WordEllipsis"` is the closest WPF gets; a custom
-   converter is the polish-pass option). Tooltip carries full path.
-4. **Header includes `(app id {AppId})`.** Useful for support,
-   irrelevant to casual users.
-   → Drop from visible header. Keep AppId in a tooltip on the header.
-5. **Back button is text-only (`"< Per-App"`).** The `<` is an ASCII
-   chevron; Fluent vocabulary uses `ChevronLeft20` / `ArrowLeft24`.
-   → `ui:Button` with `<ui:SymbolIcon Symbol="ChevronLeft20" />` +
-   text `"Per-App"`. Smaller, consistent.
+   **Path MUST NEVER be truncated.** App Detail is the furthest
+   drill-down state in the application — it is the surface where
+   everything about an app is supposed to be visible. Hiding part
+   of the path here (ellipsis, char-clipping, "hover to see the
+   rest") defeats the purpose of the screen. Whatever layout the
+   summary card lands on (item 1), the path needs enough room to
+   render in full at the page's minimum supported width — wrap
+   across multiple lines if necessary; allow horizontal scroll
+   inside a bounded container as a last resort; but do NOT
+   ellipsize. The presentation problem (fitting a long path
+   without making the card visually ugly) is part of item 1's
+   design exploration.
+4. **Header surfaces `(app id {AppId})` too prominently.** The
+   `(app id 42)` suffix renders as part of the `Subtitle`-styled
+   header text. It's useful for support / debugging but visually
+   competes with the actual app name and creates user confusion
+   ("what is app id and why does it matter?").
+   → Drop from the visible header. The AppId still needs a
+   logical home somewhere on this page — it's the canonical
+   handle for the record and support contact will ask for it —
+   but tucking it into a tooltip on the header hides it from a
+   user who needs to read it off the screen, and a tooltip on a
+   non-interactive title block isn't a discoverable affordance
+   anyway.
+   → **Open design problem for Claude Design**, tied to item 1.
+   Find a placement where the AppId is visible without ambiguity
+   about what it is. Candidates worth Claude Design exploration
+   (not prescriptions): a labeled `app_id: 42` cell inside the
+   summary card; a small footer-style metadata line; a
+   copy-to-clipboard chip. Whatever treatment lands, it must be
+   *labeled* so the user knows it's a record identifier, not a
+   piece of app metadata.
+5. **Back button is text-only AND shares a row with the page
+   header.** Two coupled problems:
+   - **(a) ASCII chevron in a Fluent context.** `"< Per-App"`
+     uses a literal `<` character; the Fluent vocabulary on this
+     app uses `ChevronLeft20` / `ArrowLeft24` from `ui:SymbolIcon`.
+   - **(b) Row-sharing hierarchy confusion.** The back button
+     sits in the same horizontal `StackPanel` as `HeaderText`
+     (the app name). This conflates two kinds of information — a
+     navigation control and a page identity label — and creates
+     an unclear hierarchy (which element is the "page title"?).
+     On narrow windows the back button shifts the header right;
+     on wide windows the back button and header drift apart with
+     no visual relationship between them.
+   → Replace the ASCII chevron with `ui:SymbolIcon
+   Symbol="ChevronLeft20"` for the icon part. **The row-sharing
+   hierarchy is an open design question for Claude Design** —
+   does the back affordance belong above the header on its own
+   row (breadcrumb-style), inline with reduced visual weight
+   (caption-styled link), or somewhere else? Don't prescribe;
+   specify the problem and let the design pass solve it.
 6. **Chart card title + subtitle are two stacked TextBlocks at
    default styles.** "Traffic over time" + dynamic subtitle.
    → Title uses `Style="{StaticResource text.subtitle}"`; subtitle
    uses `Style="{StaticResource text.caption}"` with secondary
    foreground (the style already sets it).
-7. **Chart Y-axis says `"/bucket"`.** Jargon — internal storage term.
-   → Adapt the label per grain: `/min` for Samples, `/hr` for
-   Hourly, `/day` for Daily. Pass grain through the labeler closure.
-8. **Chart X-axis is bare `HH:mm`** regardless of window span. For
-   Hourly grain over 7 days, every day's labels repeat
-   indistinguishably.
-   → Adapt by grain: `HH:mm` for Samples, `MM-dd HH` for Hourly,
-   `MM-dd` for Daily. Same closure plumbing as Y-axis fix.
-9. **Connections grid has no empty state.**
+7. **Chart axis labelers are grain-agnostic.** Y-axis reads
+   `"/bucket"` (internal storage jargon — a bucket is a minute for
+   Samples, an hour for Hourly, a day for Daily). X-axis is bare
+   `HH:mm` regardless of window span — for Hourly grain over 7 days
+   every day's labels repeat indistinguishably with no day-boundary
+   cue.
+   → Adapt both labelers by grain through one shared closure
+   plumbing (grain passed through the closure once, both axes
+   consume it).
+   Y unit suffix: `/min` for Samples, `/hr` for Hourly, `/day` for
+   Daily.
+   X format: `HH:mm` for Samples, `MM-dd HH` for Hourly, `MM-dd`
+   for Daily.
+8. **Connections grid has no empty state.**
    → Centered `text.body` `text.secondary` "No endpoints recorded in
    this window." in the grid viewport when the result is empty.
-10. **Sessions grid has no empty state.**
-    → Centered `text.body` `text.secondary` "No sessions recorded
-    in this window." Same pattern.
-11. **Connections grid is missing the Class column.** `RemoteClass`
+9. **Sessions grid has no empty state.**
+   → Centered `text.body` `text.secondary` "No sessions recorded
+   in this window." Same pattern.
+10. **Connections grid is missing the Class column.** `RemoteClass`
     (Local / Wan) is on the view-model but never bound. WAN-vs-local
     is THE most user-facing categorical distinction the screen
     surfaces about endpoints.
@@ -221,94 +299,145 @@ This is the busiest screen; expect the longest list.
     pill: `chart.wan` background for `Wan`, `chart.local` background
     for `Local`, white text. Same Okabe-Ito palette as the
     categorical viz. Pure presentation; no new data.
-12. **Two grids side-by-side compress badly on narrow windows.** At
-    800 px window width (`MinWidth` in `MainWindow.xaml:11`), each
-    grid gets ~370 px before chrome. Connections needs ~360 px to
-    show IPv6 + port without clipping; Sessions needs ~330 px to
-    show both timestamps. Both clip ungracefully.
-    → Responsive switch: when page width drops below ~1000 px, stack
-    the two grids vertically. Specify the breakpoint and the stacked
-    sizing in the brief.
-13. **Compact density not applied.** Both grids feel airy at default
-    spacing — these are the canonical data-dense surfaces.
-    → Apply `Style="{StaticResource style.datagrid.compact}"` on
-    both (row 22, padding 6,2, body font).
-14. **No `AlternatingRowBackground` set on either grid.** Reduces
-    row-scan ergonomics.
-    → Specify `surface.subtle.alt` (matches Per-App's pattern after
-    the rename).
-15. **Connections `Address` and Sessions `Start` / `End` /
-    `Services` columns use proportional digits.** All four are
-    code-like (IP/port, timestamps, comma-separated service tokens).
-    → Bind to `text.mono`. Combined with item 13, the two grids
-    finally read like tables instead of paragraphs.
-16. **Card backgrounds use translucent `CardBackgroundFillColor
-    DefaultBrush`.** Migrate to opaque `surface.card`. Chart card
-    is the highest-data surface; chart text contrast (axis labels)
-    becomes wallpaper-dependent under Mica without opacity.
-17. **Card borders use gradient `ControlElevationBorderBrush`.**
-    Migrate to `border.card`.
-18. **`StatusBanner` does not split disconnected vs query-failed.**
+11. **Connections + Sessions grid presentation needs design
+    review.** A cluster of related pain points, documented here
+    without prescribed solutions because the right treatment is
+    likely several iterations of Claude Design exploration, not a
+    boilerplate token swap. Pain points:
+    - **Responsive collapse.** At 800 px window width (`MinWidth`
+      in `MainWindow.xaml:11`), each grid gets ~370 px before
+      chrome. Connections needs ~360 px to show IPv6 + port
+      without clipping; Sessions needs ~330 px to show both
+      timestamps. Both clip ungracefully — there is no responsive
+      switch.
+    - **Density is the default DataGrid (~28 px rows).** Per-App's
+      AppsGrid uses `style.datagrid.compact` (per `per-app.md:354
+      -358`) because it's the *single dominant grid on its page*
+      and that page's "entire job" is the grid. That justification
+      does NOT automatically transfer to App Detail's two
+      side-by-side grids competing for vertical space with a
+      summary card and a chart card above them. Defaulting to
+      compact is not the right reflex here — one of ZenVizor's
+      goals is to be a light, usable surface, and compacting data
+      into a wall works against that. The right density depends
+      on the broader layout direction Claude Design takes.
+    - **No alternating row background.** Neither grid sets
+      `AlternatingRowBackground`. Row-scan ergonomics are worse
+      than they need to be, but the right treatment may be alt
+      rows, lightweight dividers, or neither, depending on chosen
+      density and layout.
+    - **Code-like columns render in proportional digits.**
+      Connections `Address`, Sessions `Start` / `End` /
+      `Services` are all code-like content (IP/port, timestamps,
+      comma-separated service tokens) currently rendered in
+      proportional text. They read as paragraphs rather than
+      tabular data.
+    - **Column comprehension is poor.** Most users will not know
+      what `Proto`, `Port`, `Session`, `PID`, or `Services`
+      represent, or why they should care. The grids assume a
+      level of sysadmin literacy that ZenVizor's target audience
+      doesn't have. Without contextual help, these columns are
+      decoration to a casual user. This is the most consequential
+      item in the cluster — without solving it, the grids could
+      look beautiful and still fail to inform.
+    → **Open design problem for Claude Design.** Document the
+    pain points in the brief but explicitly state no solutions
+    are prescribed. Iterate. The column-comprehension concern in
+    particular may make F1 (deferred endpoint-detail surface —
+    see below) a *strong* design candidate rather than a
+    pure-future item, since a click-through detail surface is one
+    way to teach the user what a row means without bloating the
+    row itself.
+12. **Card chrome + chart tooltip use translucent / unstyled
+    defaults.** Card backgrounds use translucent
+    `CardBackgroundFillColorDefaultBrush`; card borders use gradient
+    `ControlElevationBorderBrush`; the chart tooltip is LiveCharts2's
+    default unstyled surface. Chart card is the highest-data surface
+    — axis-label and tooltip contrast become wallpaper-dependent
+    under Mica without opacity.
+    → Standard token-migration boilerplate, no new design surface:
+    - Card background → opaque `surface.card`.
+    - Card border → `border.card`.
+    - Chart tooltip → follow the **Dashboard's locked treatment**
+      (`docs/design-briefs/dashboard.md` §tooltip,
+      `docs/dashboard-UI-phase-plan.md:80-85`): opaque
+      `chart.tooltip.bg` + `chart.tooltip.text` with
+      `DropShadow(0, 4, 8, 8, ~38% black)` for backdrop separation.
+      `ChartTheming.Apply()` already wires `TooltipBackgroundPaint`
+      / `TooltipTextPaint` / `FindingStrategy.CompareOnlyXTakeClosest`
+      (`ChartTheming.cs:63-65`); App Detail's `SeriesChart` inherits
+      that automatically since it already calls `ChartTheming.Apply`
+      (`AppDetailPage.xaml.cs:116`).
+
+    **Implementation note (not a Claude Design surface):** Dashboard
+    additionally widened the line-series hover hit area to make
+    tooltip activation more forgiving (`DashboardPage.xaml.cs:96-98,
+    106-108`): `GeometrySize = 20`, `GeometryFill = null`,
+    `GeometryStroke = null` — invisible markers, 20 px wide hit
+    area. App Detail's chart goes through the shared
+    `ChartBuilder.BuildSeries`, which currently sets
+    `GeometrySize = 0` on both Up and Down line series
+    (`ChartBuilder.cs:39, 46`) — hit area is effectively zero, so
+    the tooltip is unhittably tight. Close the gap by moving the
+    forgiving-hover config into `ChartBuilder` (preferred — single
+    source for every line-series chart) rather than re-applying it
+    page-side.
+13. **`StatusBanner` does not split disconnected vs query-failed.**
     Same fix as Per-App (item 3 there).
-19. **No chart tooltip styling.** Default LiveCharts2 tooltip,
-    unstyled.
-    → Specify `chart.tooltip.bg` (opaque) + `chart.tooltip.text` in
-    the brief; extend `ChartTheming` to apply
-    `TooltipBackgroundPaint` / `TooltipTextPaint` to `SeriesChart`.
-20. **Chart series colors still LiveCharts2 defaults.** Same Dashboard
-    fix; `chart.upSeries` / `chart.downSeries` wiring.
-21. **Loading affordance is wait-cursor only.** Three loading
+14. **Chart series colors still LiveCharts2 defaults.** Same Dashboard
+    fix; `chart.upSeries` / `chart.downSeries` wiring (already done
+    by `ChartTheming.Apply()` — verify it's running on this chart).
+15. **Loading affordance is wait-cursor only.** Three loading
     surfaces (chart, connections grid, sessions grid) all silent
     during refresh.
     → One centered Fluent `ProgressRing` per surface, indeterminate;
     OR a single page-level ring overlaid on the whole content area
     (decide in brief). Either way, no shimmer.
-22. **Flyout: not designed yet.** The primer carries the locked
-    decision "App Detail flyout is opaque (`surface.layer`),
-    NOT acrylic." But there is no flyout in the current XAML. The
-    proposed direction has been "selecting a Connections row opens
-    a detail flyout for that endpoint (its sessions, its timeline)."
-    → Carry the opaque-flyout decision into the brief. If the
-    Claude Design mock proposes a flyout for connection inspection,
-    it MUST be opaque + `surface.layer`. If it does NOT propose
-    one, that's also fine — flyout is a feature for later (F4
-    below).
-23. **Long header strings collide with picker on the next row.**
+16. **Long header strings collide with picker on the next row.**
     `"svchost.exe (app id 42)"` is short; a name like
     `"NetworkServiceLikeAReallyLongName.exe (app id 12345)"` can
     overflow.
     → Set `MaxWidth` + `TextTrimming="CharacterEllipsis"` on
     `HeaderText`. Combined with item 4, the header is short anyway.
-24. **`ChartSubtitle` reads `"Showing X over Y."`** Verbose narrator.
+17. **`ChartSubtitle` reads `"Showing X over Y."`** Verbose narrator.
     → Drop `"Showing "`; render as `"per-minute detail · last 24
     hours"` (or grain-by-window without the verb). Specify in brief.
 
 ### Scope sort — MANDATORY
 
 **Polish (this round):** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-14, 15, 16, 17, 18, 19, 20, 21, 22 (carrying the locked decision
-forward; not building the flyout), 23, 24.
+14, 15, 16, 17.
 
 **Feature (flagged for later — explicitly out of brief):**
 
-- F1. **Click-a-connection-row → flyout / detail page** for that
-  endpoint (sessions, timeline, per-endpoint chart). New interaction
-  surface; the primer's "flyout intent" is here but the implementation
-  is feature-class work.
+- F1. **Click-a-connection-row → endpoint detail surface** (sessions,
+  timeline, per-endpoint chart, plus plain-language explanation of
+  what the connection actually represents — the row's hostname,
+  whether it's a known service endpoint, why the app is talking to
+  it). **Promoted from "speculative future" to a viable design
+  direction Claude Design should weigh** — item 11's column-
+  comprehension concern is one of the strongest motivations for
+  this surface, since a click-through detail layer can teach the
+  user what a row means without bloating the row. The primer's old
+  "App Detail flyout is opaque, not acrylic" decision is no longer
+  load-bearing — if endpoint detail is built, the surface treatment
+  itself (flyout, sub-page, expandable inline row, side panel) is
+  an open question, not pre-decided. Still out of brief for THIS
+  round (it's a new interaction surface, feature-class scope), but
+  Claude Design should know the polish-pass result is not the final
+  shape of the grids — a future-detail-surface direction may change
+  what columns the grids need to carry at all.
 - F2. **Reverse DNS / hostname column on Connections.** PRD §7.4
   explicitly reserves `connections.resolved_host` for a future
   passive-DNS module — **NOT IN MVP**. Hard "do not propose this
   column" boundary; brief should state this.
 - F3. **Brush-to-zoom on chart.** Click-and-drag to select a
   sub-window. New interaction.
-- F4. **Endpoint-detail flyout** (see item 22 above — the locked
-  decision applies *when* the flyout is added; building the flyout
-  itself is feature-class).
-- F5. **Export endpoint list to CSV.** Phase 5 owns export.
-- F6. **"See related apps" link from svchost row** — jump to all apps
+- F4. **Export endpoint list to CSV.** Phase 5 owns export.
+- F5. **"See related apps" link from svchost row** — jump to all apps
   that ever shared this PID's services. New nav surface.
-- F7. **Active-action affordances (kill / block / disconnect endpoint).**
+- F6. **Active-action affordances (kill / block / disconnect endpoint).**
   HARD NO per the passive-only invariant. Document the boundary; do
   not even mock.
-- F8. **Filter/search within Connections** (by port, address, class).
+- F7. **Filter/search within Connections** (by port, address, class).
   New capability.

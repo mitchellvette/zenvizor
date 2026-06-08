@@ -593,12 +593,60 @@ The recurring visual elements and which tokens they should pull from.
   `surface.subtle`, `TextFillColorSecondaryBrush` → `text.secondary`,
   `4` → `{StaticResource radius.sm}`, `8,4` → `{StaticResource space.8},{StaticResource space.4}`.
 
-### Card border + surface
-- Standard: `<Border BorderThickness="1" CornerRadius="{StaticResource radius.card}"
-  Background="{DynamicResource surface.card}" BorderBrush="{DynamicResource border.card}">`.
-- Today uses `CardBackgroundFillColorDefaultBrush` + `ControlElevationBorderBrush` — both
-  swap to the tokens above during the polish pass. Use the semantic
-  **`radius.card`** role token, not the raw `radius.md` scale step.
+### Card surface — canonical treatment
+
+**Every text- and data-bearing card on every page uses the same surface
+recipe.** This is a project-wide standing decision, not a per-screen
+question. It has been re-litigated in too many UI passes; the
+resolution is recorded here so future briefs and mockups default to it
+without asking.
+
+```xaml
+<Border Background="{DynamicResource metal.card}"
+        BorderBrush="{DynamicResource border.card}"
+        BorderThickness="1"
+        CornerRadius="{StaticResource radius.card}"
+        Effect="{DynamicResource shadow.card}">
+  <!-- card body -->
+</Border>
+```
+
+- **Background:** `metal.card` — `LinearGradientBrush` carrying the
+  porcelain → cool-steel gradient in light theme and the brushed
+  steel + baked-in `edge.light` catch-light in dark theme. `edge.light`
+  is a sibling token (also available standalone) but the card-level
+  catch-light is composited INTO `metal.card` as a third gradient stop
+  at offset 0.015 in dark, so the typical card doesn't need a
+  separate inset overlay.
+- **Border:** `border.card` 1px stroke. Not the gradient
+  `ControlElevationBorderBrush`.
+- **Radius:** the semantic `radius.card` role token (10), not the raw
+  `radius.md` scale step.
+- **Elevation:** `shadow.card` `DropShadowEffect`. Use `shadow.sm` for
+  smaller / lighter info-strip cards that sit alongside (not above) a
+  primary data card — Per-App's summary strip is the reference.
+
+**Variants:**
+- **`metal.control`** is the same family tuned for short surfaces
+  (~30-40 px tall controls — ComboBox, refresh button, filter input).
+  Per-App's row-1 picker cluster is the reference.
+- **`surface.card`** remains the flat opaque solid. Use ONLY where an
+  explicit reason rules out the metallic treatment — OS-chrome-class
+  surfaces (tray menu, context menu, an HC mode), or a surface inside
+  a card where a second card-on-card visual would be confusing.
+  *Data-bearing cards on a page do NOT qualify for this exception.*
+
+**Pre-polish state** — `AppDetailPage.xaml` / `HistoryPage.xaml`
+shipped with `CardBackgroundFillColorDefaultBrush` +
+`ControlElevationBorderBrush`; the polish round migrates them to the
+canonical recipe above. Dashboard and Per-App already ship the
+canonical recipe (Dashboard polish round 2 + Per-App phases 1-6).
+
+**HC mode** — `HighContrast.xaml` collapses `metal.card` →
+`SystemColors.ControlColor`, `border.card` → `WindowFrameColor`,
+`edge.light` → `WindowFrameColor`, and `shadow.card` / `shadow.sm` →
+inert `DropShadowEffect Opacity="0"`. The recipe degrades cleanly; no
+per-screen HC work is needed beyond verifying.
 
 ### Summary card (App Detail header)
 - Two-line card: line 1 `text.primary`, line 2 `text.secondary`.
