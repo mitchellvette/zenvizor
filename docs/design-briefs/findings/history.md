@@ -97,7 +97,65 @@ Root: `<Grid Margin="24">` with 4 rows
   Dashboard).
 - **Chart series colors:** still LiveCharts2 defaults.
 
-## 5. State coverage today
+## 5. Chart aggregation matrix (target — inherited from App Detail)
+
+History's chart inherits App Detail's grain-adaptive matrix wholesale
+via `ChartBuilder`. The aggregation buckets and series shapes are the
+canonical pattern; History uses the same `BuildSeries`, `MinStepFor`,
+`UnitWidthFor`, `FormatXAxisLabel`, `FormatYAxisLabel`, `DescribeView`
+calls. See `docs/design-briefs/_chart-implementation-notes.md` for the
+implementation contract and all the chart-blanking GOTCHAs.
+
+| Window | Grain | Series shape | Bucket cadence (post downsample / coalesce) | X-axis format | Y-unit suffix | Subtitle (`DescribeView`) |
+|---|---|---|---|---|---|---|
+| 1h  | Samples | `LineSeries` (line)            | 1-minute (60 raw points; no downsample)         | `HH:mm`    | `/min` | `per-minute detail · last 1 hour`   |
+| 24h | Samples | `LineSeries` (line)            | 6-minute (1440 → 240 via `DownsampleAverage`)    | `HH:mm`    | `/min` | `per-minute detail · last 24 hours` |
+| 7d  | Hourly  | `StackedColumnSeries` (bars)   | 2-hour (168 → 84 via `Coalesce(factor: 2)`)      | `MM-dd HH` | `/hr`  | `2-hour buckets · last 7 days`      |
+| 30d | Daily   | `StackedColumnSeries` (bars)   | 1-day (30 buckets; no coalesce)                  | `MM-dd`    | `/day` | `daily buckets · last 30 days`      |
+| 90d | Daily   | `StackedColumnSeries` (bars)   | 2-day (90 → 45 via `Coalesce(factor: 2)`)        | `MM-dd`    | `/day` | `2-day buckets · last 90 days`      |
+
+**Series shape selection** (`ChartBuilder.BuildSeries`): Samples grain →
+two `LineSeries<DateTimePoint>` (Up + Down on separate lines, forgiving-
+hover via `GeometrySize = 20`). Hourly + Daily grains → two
+`StackedColumnSeries<DateTimePoint>` (Up at bottom of stack, Down on
+top; total bar height = Up + Down for the bucket).
+
+**Why averages, not sums.** Every Y value the chart plots is a *rate*
+(bytes per the grain's time unit), not a sum. `DownsampleAverage` (24h
+Samples 1440 → 240) and `Coalesce` (7d Hourly 168 → 84, 90d Daily 90 →
+45) produce averages of the underlying per-unit-time rate. A sum-based
+reducer would make the labeled Y unit (e.g. `MB/hr`) lie by a factor
+equal to the coalesce factor — do NOT swap the reducer.
+
+**`UnitWidth` is mandatory on bar grains.** LC2 v2 needs an explicit
+`UnitWidth` in `DateTime.Ticks` on `DateTime` axes for
+`StackedColumnSeries`, or bars render at sub-pixel width / don't render
+at all. Values must match the post-downsample / post-coalesce bucket
+cadence above (2 hr for 7d Hourly, 1 day for 30d Daily, 2 days for 90d
+Daily). `ChartBuilder.UnitWidthFor(grain, preset)` owns the table.
+
+**Subtitle copy is bucket-accurate.** `DescribeView` honors the
+coalesce policy — 7d Hourly says "2-hour buckets" (not "hourly
+buckets") because that's what the user actually sees on screen
+post-coalesce. Same for 90d Daily ("2-day buckets" not "daily
+buckets"). Hourly grain over other windows (and Daily over 30d) emit
+"hourly buckets" / "daily buckets" plainly since no coalesce is
+applied to those.
+
+**Tooltip-vs-axis precision split.** Axis Y labels round to
+human-friendly values (`"20 MB/hr"` not `"19.6 MB/hr"`) via
+`FormatYAxisLabel`. Tooltip Y rows stay precise via
+`PerAppPage.FormatBytes` + `YUnitSuffix(grain)` — `"Up · 16.6 MB/hr"`.
+Both forms must read; do not unify.
+
+**Forgiving hover on line series only.** `GeometrySize = 20` widens
+the hit area to make X-snap tooltip detection register anywhere along
+the line. Bar series use the bar's own hit area; no `GeometrySize`
+override needed there.
+
+---
+
+## 6. State coverage today
 
 | State | Handled today | Notes |
 |---|---|---|
@@ -107,7 +165,7 @@ Root: `<Grid Margin="24">` with 4 rows
 | disconnected | merged with error | Same `IsConnectionLost` blind spot. |
 | error | yes | `StatusBanner` `"Query failed (<Type>): <msg>"`. |
 
-## 6. Friction list (paired with proposed direction)
+## 7. Friction list (paired with proposed direction)
 
 1. **`"N buckets"` is internal jargon.** Means nothing to a casual
    user. The chart visually answers "how many points" anyway.
