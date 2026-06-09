@@ -204,6 +204,7 @@
               (TextWrapping=Wrap, TextTrimming=None) — App Detail is the
               deepest drill state, the path must always be fully visible.  -->
         <Border Grid.Row="3"
+                x:Name="SummaryCard"
                 Background="{DynamicResource metal.card}"
                 BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
@@ -505,6 +506,7 @@
               window sizes). Paired with RowDefinition.MinHeight=260 on the
               grid above so the row can't shrink below the Border floor.  -->
         <Border Grid.Row="4"
+                x:Name="ChartCard"
                 Background="{DynamicResource metal.card}"
                 BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
@@ -533,92 +535,638 @@
                                Foreground="{DynamicResource text.secondary}"
                                Text="No traffic recorded in this window."
                                IsHitTestVisible="False" />
+                    <!--  Loading overlay — centered ProgressRing + caption.
+                          Visibility flips via the 1s _loadingDelayTimer in
+                          code-behind so fast refreshes don't flash a ring.  -->
+                    <StackPanel x:Name="ChartLoadingOverlay"
+                                Visibility="Collapsed"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsHitTestVisible="False">
+                        <ui:ProgressRing IsIndeterminate="True"
+                                         HorizontalAlignment="Center" />
+                        <TextBlock Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Text="Loading…"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
                 </Grid>
             </Grid>
         </Border>
 
-        <!--  Row 5 — Connections + Sessions grid cards (side-by-side for
-              Phase 1; Phase 4 merges into one tabbed card per Q5). Card
-              surfaces migrate to canonical recipe; column / density work
-              lands in Phase 4.  -->
-        <Grid Grid.Row="5" Margin="0,12,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <!--  Row 5 — single tabbed card (Phase 4.1). Connections and
+              Recent sessions share one canonical-recipe card with a tab
+              strip on top and the active tab's DataGrid filling the body.
+              Active tab is underlined with accent.default via the inline
+              TabItem template (default WPF TabControl chrome — raised
+              bevel, gradient header, content-area border — is fully
+              overridden). Info button placeholder top-right hosts the
+              column-comprehension popover in Phase 4.4; today it carries
+              only its outline + tooltip.  -->
+        <Border Grid.Row="5"
+                x:Name="GridsCard"
+                Margin="0,12,0,0"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}">
+            <Grid>
+                <TabControl x:Name="GridsTab"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="0"
+                            Margin="12,8,12,8">
+                    <TabControl.Resources>
+                        <!--  Inline TabItem template — strips WPF's default
+                              chrome (raised bevel, gradient header,
+                              content-area border) and renders a clean
+                              caption with an active-state underline via
+                              BorderBrush on the bottom edge. MinWidth=200
+                              + horizontal Padding give each tab room for
+                              its glyph + label + count without clipping
+                              (the default TabPanel sized tabs to content
+                              with no buffer, which truncated the longer
+                              "Recent sessions" caption). Hover lifts the
+                              tab visually with a surface.subtle background
+                              fill — text.primary alone wasn't enough
+                              contrast over text.secondary.  -->
+                        <Style TargetType="TabItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+                            <Setter Property="Margin" Value="0,0,4,0" />
+                            <Setter Property="Padding" Value="14,0" />
+                            <Setter Property="MinWidth" Value="200" />
+                            <Setter Property="HorizontalContentAlignment" Value="Left" />
+                            <Setter Property="Cursor" Value="Hand" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="TabItem">
+                                        <Border x:Name="HeaderHost"
+                                                Background="Transparent"
+                                                BorderThickness="0,0,0,2"
+                                                BorderBrush="Transparent"
+                                                Padding="{TemplateBinding Padding}"
+                                                SnapsToDevicePixels="True">
+                                            <ContentPresenter ContentSource="Header"
+                                                              VerticalAlignment="Center"
+                                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                              Margin="0,6,0,8"
+                                                              RecognizesAccessKey="True" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="HeaderHost" Property="BorderBrush"
+                                                        Value="{DynamicResource accent.default}" />
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource text.primary}" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="HeaderHost" Property="Background"
+                                                        Value="{DynamicResource surface.subtle}" />
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource text.primary}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </TabControl.Resources>
 
-            <Border Grid.Column="0"
-                    Margin="0,0,6,0"
-                    Background="{DynamicResource metal.card}"
-                    BorderBrush="{DynamicResource border.card}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource radius.card}"
-                    Effect="{DynamicResource shadow.card}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <ui:TextBlock Grid.Row="0" Text="Connections (endpoints)"
-                                  Margin="12,8,0,4" />
-                    <DataGrid Grid.Row="1" x:Name="ConnectionsGrid"
-                              AutoGenerateColumns="False" IsReadOnly="True"
-                              HeadersVisibility="Column" GridLinesVisibility="None"
-                              Background="Transparent" BorderThickness="0"
-                              EnableRowVirtualization="True"
-                              EnableColumnVirtualization="False"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.ScrollUnit="Item"
-                              ScrollViewer.CanContentScroll="True"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Proto"   Binding="{Binding Protocol}"      Width="60" />
-                            <DataGridTextColumn Header="Address" Binding="{Binding RemoteAddress}" Width="2*" />
-                            <DataGridTextColumn Header="Port"    Binding="{Binding RemotePort}"    Width="60" />
-                            <DataGridTextColumn Header="Up"      Binding="{Binding UpText}"        Width="90" />
-                            <DataGridTextColumn Header="Down"    Binding="{Binding DownText}"      Width="90" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </Border>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Globe20"
+                                               FontSize="14"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0" />
+                                <TextBlock Text="Connections"
+                                           VerticalAlignment="Center" />
+                                <TextBlock x:Name="ConnectionsCount"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="0"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </TabItem.Header>
+                        <Grid>
+                        <DataGrid x:Name="ConnectionsGrid"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" GridLinesVisibility="None"
+                                  Background="Transparent" BorderThickness="0"
+                                  AlternatingRowBackground="{DynamicResource surface.subtle.alt}"
+                                  Margin="0,8,0,0"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="False"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  VirtualizingPanel.ScrollUnit="Item"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Proto" Binding="{Binding Protocol}" Width="60" />
 
-            <Border Grid.Column="1"
-                    Margin="6,0,0,0"
-                    Background="{DynamicResource metal.card}"
-                    BorderBrush="{DynamicResource border.card}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource radius.card}"
-                    Effect="{DynamicResource shadow.card}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <ui:TextBlock Grid.Row="0" Text="Recent sessions"
-                                  Margin="12,8,0,4" />
-                    <DataGrid Grid.Row="1" x:Name="SessionsGrid"
-                              AutoGenerateColumns="False" IsReadOnly="True"
-                              HeadersVisibility="Column" GridLinesVisibility="None"
-                              Background="Transparent" BorderThickness="0"
-                              EnableRowVirtualization="True"
-                              EnableColumnVirtualization="False"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.ScrollUnit="Item"
-                              ScrollViewer.CanContentScroll="True"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Session" Binding="{Binding SessionId}"   Width="80" />
-                            <DataGridTextColumn Header="PID"     Binding="{Binding Pid}"         Width="70" />
-                            <DataGridTextColumn Header="Start"   Binding="{Binding StartText}"   Width="*" />
-                            <DataGridTextColumn Header="End"     Binding="{Binding EndText}"     Width="*" />
-                            <DataGridTextColumn Header="Services" Binding="{Binding HostedServices}" Width="*" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </Border>
-        </Grid>
+                                <!--  Remote endpoint — IP address in mono.
+                                      "Remote endpoint" reads more clearly
+                                      than the original "Address" header for
+                                      the casual user (§8.4 column-
+                                      comprehension concern).  -->
+                                <DataGridTextColumn Header="Remote endpoint"
+                                                    Binding="{Binding RemoteAddress}"
+                                                    Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+
+                                <!--  Port — mono number + plain-language
+                                      service caption (443 HTTPS, 5353 mDNS,
+                                      8443 HTTPS-alt). Caption is null for
+                                      unknown ports and the TextBlock renders
+                                      empty so the row stays clean.  -->
+                                <DataGridTemplateColumn Header="Port" Width="120"
+                                                        SortMemberPath="RemotePort">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding RemotePort}"
+                                                           Style="{StaticResource text.mono}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding PortServiceCaption}"
+                                                           Style="{StaticResource text.caption}"
+                                                           Foreground="{DynamicResource text.tertiary}"
+                                                           Margin="6,0,0,0"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!--  Reach — WAN / Local pill. Background
+                                      is chart.wan (blue) for upstream
+                                      endpoints, chart.local (green) for
+                                      local-network endpoints; icon swaps
+                                      Globe20 -> Home20 via the same
+                                      DataTrigger on IsWan. text.inverse
+                                      reads cleanly on both saturated
+                                      backgrounds.  -->
+                                <DataGridTemplateColumn Header="Reach" Width="90"
+                                                        SortMemberPath="RemoteClass">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="{StaticResource radius.control}"
+                                                    Padding="8,2"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource chart.wan}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsWan}" Value="False">
+                                                                <Setter Property="Background" Value="{DynamicResource chart.local}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon FontSize="11"
+                                                                   Foreground="White"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="0,0,4,0">
+                                                        <ui:SymbolIcon.Style>
+                                                            <Style TargetType="ui:SymbolIcon">
+                                                                <Setter Property="Symbol" Value="Globe20" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsWan}" Value="False">
+                                                                        <Setter Property="Symbol" Value="Home20" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:SymbolIcon.Style>
+                                                    </ui:SymbolIcon>
+                                                    <TextBlock Text="{Binding ReachText}"
+                                                               Style="{StaticResource text.caption}"
+                                                               Foreground="White"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!--  Up / Down — mono right-aligned so the
+                                      byte values stack tidily as a column.  -->
+                                <DataGridTextColumn Header="Up" Binding="{Binding UpText}" Width="90">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                            <Setter Property="HorizontalAlignment" Value="Right" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Down" Binding="{Binding DownText}" Width="90">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                            <Setter Property="HorizontalAlignment" Value="Right" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <!--  Connections loading overlay — centered ring +
+                              caption. Visibility flips via the 1s timer in
+                              code-behind so fast refreshes don't flash.  -->
+                        <StackPanel x:Name="ConnectionsLoadingOverlay"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    IsHitTestVisible="False">
+                            <ui:ProgressRing IsIndeterminate="True"
+                                             HorizontalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="Loading…"
+                                       Margin="0,12,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                        <!--  Connections empty state — shown by
+                              UpdateEmptyStates when Connections.Count==0
+                              and we're not loading / in error.  -->
+                        <TextBlock x:Name="ConnectionsEmptyOverlay"
+                                   Visibility="Collapsed"
+                                   Style="{StaticResource text.body}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Text="No endpoints recorded in this window."
+                                   IsHitTestVisible="False" />
+                        </Grid>
+                    </TabItem>
+
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="History20"
+                                               FontSize="14"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0" />
+                                <TextBlock Text="Recent sessions"
+                                           VerticalAlignment="Center" />
+                                <TextBlock x:Name="SessionsCount"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="0"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </TabItem.Header>
+                        <Grid>
+                        <DataGrid x:Name="SessionsGrid"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" GridLinesVisibility="None"
+                                  Background="Transparent" BorderThickness="0"
+                                  AlternatingRowBackground="{DynamicResource surface.subtle.alt}"
+                                  Margin="0,8,0,0"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="False"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  VirtualizingPanel.ScrollUnit="Item"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Session" Binding="{Binding SessionId}" Width="80">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Started" Binding="{Binding StartText}" Width="150"
+                                                    SortMemberPath="StartTimeUnixMs">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+
+                                <!--  Ended — formatted timestamp for
+                                      completed sessions; for running
+                                      sessions, a status.success bullet +
+                                      "running" caption swaps in. Both views
+                                      are stacked in a Grid; the inactive
+                                      one is Collapsed via a DataTrigger on
+                                      IsRunning. SortMemberPath rides on
+                                      the raw nullable end-time so running
+                                      sessions (null end) group together at
+                                      one end of the sort.  -->
+                                <DataGridTemplateColumn Header="Ended" Width="150"
+                                                        SortMemberPath="EndTimeUnixMs">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <Ellipse Width="8" Height="8"
+                                                             Fill="{DynamicResource status.success}"
+                                                             VerticalAlignment="Center" />
+                                                    <TextBlock Text="running"
+                                                               Style="{StaticResource text.body}"
+                                                               Foreground="{DynamicResource status.success}"
+                                                               Margin="6,0,0,0"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding EndedText}"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!--  Length — derived "Hh Mm" / "Dd Hh"
+                                      duration. SortMemberPath=LengthMs so
+                                      sort runs on the underlying numeric
+                                      value, not the formatted string
+                                      (which would put "10h 5m" before
+                                      "3h 40m" lexically).  -->
+                                <DataGridTextColumn Header="Length" Binding="{Binding LengthText}" Width="80"
+                                                    SortMemberPath="LengthMs">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+
+                                <!--  Services — HostedServices split into
+                                      chip-style tags via ItemsControl +
+                                      WrapPanel. Borderless cell for the
+                                      non-svchost rows (ServiceTags empty
+                                      list). SortMemberPath sorts by the
+                                      raw comma-separated string so the
+                                      service order on the wire is the
+                                      sort key.  -->
+                                <DataGridTemplateColumn Header="Services" Width="*"
+                                                        SortMemberPath="HostedServices">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ItemsControl ItemsSource="{Binding ServiceTags}"
+                                                          VerticalAlignment="Center">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="{DynamicResource border.subtle}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="{StaticResource radius.control}"
+                                                                Padding="8,2"
+                                                                Margin="0,2,4,2">
+                                                            <TextBlock Text="{Binding}"
+                                                                       Style="{StaticResource text.caption}"
+                                                                       Foreground="{DynamicResource text.secondary}" />
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <!--  Sessions loading overlay — same pattern as
+                              Connections; both rings show together so a
+                              tab switch during loading still reveals a
+                              ring rather than an empty grid.  -->
+                        <StackPanel x:Name="SessionsLoadingOverlay"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    IsHitTestVisible="False">
+                            <ui:ProgressRing IsIndeterminate="True"
+                                             HorizontalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="Loading…"
+                                       Margin="0,12,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                        <!--  Sessions empty state — shown by
+                              UpdateEmptyStates when Sessions.Count==0 and
+                              we're not loading / in error.  -->
+                        <TextBlock x:Name="SessionsEmptyOverlay"
+                                   Visibility="Collapsed"
+                                   Style="{StaticResource text.body}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Text="No sessions recorded in this window."
+                                   IsHitTestVisible="False" />
+                        </Grid>
+                    </TabItem>
+                </TabControl>
+
+                <!--  Info button — opens the InfoPopup below with plain-
+                      language column legends. Popup content swaps Connections
+                      <-> Sessions automatically via DataTriggers on
+                      GridsTab.SelectedIndex, so a tab switch while the
+                      popup is open re-keys the content without needing a
+                      code-behind hook.  -->
+                <ui:Button x:Name="InfoButton"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Top"
+                           Margin="0,12,16,0"
+                           Width="28" Height="28"
+                           Padding="0"
+                           Background="Transparent"
+                           BorderBrush="{DynamicResource border.card}"
+                           BorderThickness="1"
+                           CornerRadius="{StaticResource radius.control}"
+                           Cursor="Hand"
+                           ToolTip="Column info"
+                           PreviewMouseDown="OnInfoButtonPreviewMouseDown"
+                           Click="OnInfoClick">
+                    <ui:SymbolIcon Symbol="Info20"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource text.secondary}" />
+                </ui:Button>
+
+                <!--  Column-legend popover. PlacementTarget=InfoButton +
+                      Placement=Top + HorizontalOffset=-292 anchors the
+                      popup's right edge to the button's right edge
+                      (button w=28, popup w=320, so offset = 28 - 320)
+                      and its bottom edge 4px above the button. Placement=
+                      Top means the popup grows up over the CHART card
+                      above instead of down into the grids — keeps the
+                      data visible and avoids window-overflow on smaller
+                      window sizes. StaysOpen=False auto-dismisses on
+                      outside click. AllowsTransparency=True so the card's
+                      rounded corners + shadow render through the popup
+                      host window. Content is two StackPanels stacked in
+                      a Grid; only the one matching GridsTab.SelectedIndex
+                      is Visible.  -->
+                <Popup x:Name="InfoPopup"
+                       PlacementTarget="{Binding ElementName=InfoButton}"
+                       Placement="Top"
+                       HorizontalOffset="-292"
+                       VerticalOffset="-4"
+                       AllowsTransparency="True"
+                       StaysOpen="False">
+                    <Border Background="{DynamicResource surface.card}"
+                            BorderBrush="{DynamicResource border.card}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource radius.card}"
+                            Effect="{DynamicResource shadow.card}"
+                            Padding="20"
+                            Width="320">
+                        <Grid>
+                            <StackPanel x:Name="ConnectionsInfoContent">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedIndex, ElementName=GridsTab}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Style="{StaticResource text.body.strong}"
+                                           Text="Connections columns"
+                                           Margin="0,0,0,12" />
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="PROTO" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="TCP or UDP — the transport protocol the connection uses." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="REMOTE ENDPOINT" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="The IP address this app talked to." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="PORT" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="The destination port, with a hint at the service it usually means (HTTPS for 443, mDNS for 5353, etc.)." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="REACH" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="Where the endpoint sits. WAN means out on the public internet; Local means somewhere on your home network." />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="UP / DOWN" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="Bytes this app sent and received over the selected window." />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel x:Name="SessionsInfoContent">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedIndex, ElementName=GridsTab}" Value="1">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Style="{StaticResource text.body.strong}"
+                                           Text="Sessions columns"
+                                           Margin="0,0,0,12" />
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="SESSION" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="ZenVizor's record ID for this run of the app." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="PID" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="The Windows process ID assigned to this run." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="STARTED · ENDED" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="When the app started and stopped. 'running' means the app is still active right now." />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="LENGTH" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="How long this run lasted (or has been running so far)." />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource text.eyebrow}" Text="SERVICES" />
+                                    <TextBlock Style="{StaticResource text.body}"
+                                               Foreground="{DynamicResource text.secondary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
+                                               Text="For svchost.exe — which Windows services were hosted in this process during its lifetime." />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
 
     </Grid>
             </Border>

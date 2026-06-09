@@ -31,6 +31,28 @@ public partial class AppDetailPage : Page
     // is computed from both surfaces).
     private AppListEntry? _lastSummary;
 
+    // Snapshot of InfoPopup.IsOpen captured in PreviewMouseDown on the
+    // InfoButton, before WPF's Popup (StaysOpen=False) auto-dismisses on
+    // the same mouse-down (button click is "outside" the popup). Without
+    // this, OnInfoClick reads IsOpen=false post-dismissal and re-opens
+    // the popup, defeating click-toggle behaviour.
+    private bool _infoPopupWasOpen;
+
+    // Phase 5 — state-coverage flags + delayed-reveal timer.
+    // _isLoading is true while a RefreshAsync is in flight; gates the
+    // empty-state overlays (loading > empty) and is checked by the
+    // delay timer's Tick handler (race-safe — the timer can fire after
+    // refresh finishes if cancellation is tight).
+    // _inErrorState is true when the last refresh hit a banner-state
+    // (disconnected OR error); gates empty-state overlays (error > empty).
+    // _loadingDelayTimer runs once per refresh — if it ticks before the
+    // refresh completes, both grid bodies + the chart body reveal a
+    // centered ring + "Loading…" caption. Fast refreshes (<1s) never
+    // flash a ring.
+    private bool _isLoading;
+    private bool _inErrorState;
+    private readonly DispatcherTimer _loadingDelayTimer;
+
     // Chart axes — created ONCE in the ctor and mutated per refresh
     // (UpdateAxesForGrain assigns fresh Labeler / MinStep / UnitWidth values).
     // We deliberately do NOT reassign SeriesChart.XAxes / YAxes arrays after
@@ -62,6 +84,19 @@ public partial class AppDetailPage : Page
         {
             _toastTimer.Stop();
             ToastBanner.Visibility = Visibility.Collapsed;
+        };
+
+        // Loading-overlay reveal timer (Phase 5). RefreshAsync starts this
+        // on entry; Tick (after 1s) reveals the chart / connections /
+        // sessions rings IF the refresh is still in flight. RefreshAsync
+        // also Stops it in the finally block, so a fast refresh races the
+        // timer to Stop() before Tick fires — but ShowLoadingOverlays also
+        // gates on _isLoading just in case the dispatch ordering loses.
+        _loadingDelayTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+        _loadingDelayTimer.Tick += (_, _) =>
+        {
+            _loadingDelayTimer.Stop();
+            ShowLoadingOverlays();
         };
 
         // Axes created ONCE here and mutated per refresh below in
@@ -96,6 +131,31 @@ public partial class AppDetailPage : Page
 
         ConnectionsGrid.ItemsSource = Connections;
         SessionsGrid.ItemsSource = Sessions;
+
+        // Phase 4.1: tab header live counts. ObservableCollection.Count is
+        // not a DependencyProperty so XAML bindings to it don't refresh on
+        // CollectionChanged — wire updates manually. Refresh paths use
+        // Clear + Add-per-item which fires CollectionChanged N+1 times,
+        // but two TextBlock writes per event is cheap at ZenVizor's
+        // typical connection / session counts (<100). Phase 5 piggy-backs
+        // empty-state updates on the same hook.
+        Connections.CollectionChanged += (_, _) =>
+        {
+            UpdateTabCounts();
+            UpdateEmptyStates();
+        };
+        Sessions.CollectionChanged += (_, _) =>
+        {
+            UpdateTabCounts();
+            UpdateEmptyStates();
+        };
+        UpdateTabCounts();
+
+        // Close the info popover when the page scrolls. WPF Popup doesn't
+        // reposition with its PlacementTarget when the host ScrollViewer
+        // scrolls — an open popup would visibly drift away from the
+        // now-moved InfoButton. Easiest correct behaviour is to dismiss.
+        PageScroll.ScrollChanged += (_, _) => InfoPopup.IsOpen = false;
 
         DataContextChanged += (_, _) => OnAppIdReceived();
         Loaded += async (_, _) =>
@@ -135,6 +195,12 @@ public partial class AppDetailPage : Page
     }
 
     private void ApplyChartTheme() => ChartTheming.Apply(SeriesChart);
+
+    private void UpdateTabCounts()
+    {
+        ConnectionsCount.Text = Connections.Count.ToString(CultureInfo.InvariantCulture);
+        SessionsCount.Text = Sessions.Count.ToString(CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Mutate the existing <see cref="_xAxis"/> / <see cref="_yAxis"/>
@@ -225,11 +291,42 @@ public partial class AppDetailPage : Page
     /// timer. Repeated calls within the timeout reset the visible window
     /// rather than stacking.
     /// </summary>
-    private void ShowCopiedToast()
+    private void ShowCopiedToast() => ShowToast("Copied to clipboard");
+
+    /// <summary>
+    /// Surface a generic toast with the given text and reset the
+    /// auto-dismiss timer. Used by both the clipboard copy flow (default
+    /// copy of confirmation copy) and the Phase 4.1 Info button
+    /// placeholder. When Phase 4.4 wires the real column-legend Popup the
+    /// Info button's toast call goes away.
+    /// </summary>
+    private void ShowToast(string text)
     {
+        ToastText.Text = text;
         ToastBanner.Visibility = Visibility.Visible;
         _toastTimer.Stop();
         _toastTimer.Start();
+    }
+
+    private void OnInfoButtonPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // Capture popup state BEFORE WPF dismisses it via StaysOpen=False
+        // on this same mouse-down (the button click counts as "outside"
+        // the popup). OnInfoClick uses the snapshot to decide whether to
+        // toggle closed or open.
+        _infoPopupWasOpen = InfoPopup.IsOpen;
+    }
+
+    private void OnInfoClick(object sender, RoutedEventArgs e)
+    {
+        // Toggle: if the popup was open when the click started, close it;
+        // otherwise open. The snapshot captured in
+        // OnInfoButtonPreviewMouseDown wins over IsOpen at click time
+        // (which is already false post-StaysOpen-dismissal). Content
+        // auto-swaps Connections <-> Sessions via DataTriggers on
+        // GridsTab.SelectedIndex.
+        InfoPopup.IsOpen = !_infoPopupWasOpen;
+        _infoPopupWasOpen = false;
     }
 
     /// <summary>
@@ -348,11 +445,16 @@ public partial class AppDetailPage : Page
     {
         if (AppId is not int id || WindowCombo.SelectedItem is not WindowPreset preset) return;
 
+        // Entry — set loading state, recover from any previous error.
+        _isLoading = true;
+        StatusBanner.Visibility = Visibility.Collapsed;
+        SetDataOpacity(1.0);   // un-dim if previous refresh ended disconnected/error
+        HideEmptyOverlays();   // loading > empty
+        _loadingDelayTimer.Stop();
+        _loadingDelayTimer.Start();
+
         try
         {
-            StatusBanner.Visibility = Visibility.Collapsed;
-            Mouse.OverrideCursor = Cursors.Wait;
-
             var window = preset.ToWindow();
             var detailTask = _client.GetAppDetailAsync(id, window, TrafficGrain.Auto);
             var connectionsTask = _client.GetConnectionsAsync(id, window);
@@ -361,16 +463,93 @@ public partial class AppDetailPage : Page
             ApplyDetail(await detailTask);
             ApplyConnections(await connectionsTask);
             RefreshTrustLine();
+            _inErrorState = false;
+            UpdateEmptyStates();
+        }
+        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        {
+            // Pipe down — critical-red banner, last-known data dimmed to 0.6.
+            _inErrorState = true;
+            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.critical.background");
+            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.critical");
+            StatusBannerText.Text = "Service disconnected. Last refresh stale.";
+            StatusBanner.Visibility = Visibility.Visible;
+            SetDataOpacity(0.6);
+            HideEmptyOverlays();   // error > empty
         }
         catch (Exception ex)
         {
-            StatusBanner.Visibility = Visibility.Visible;
+            // Any other query failure — caution-amber banner, same dim.
+            _inErrorState = true;
+            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
             StatusBannerText.Text = $"Query failed ({ex.GetType().Name}): {ex.Message}";
+            StatusBanner.Visibility = Visibility.Visible;
+            SetDataOpacity(0.6);
+            HideEmptyOverlays();
         }
         finally
         {
-            Mouse.OverrideCursor = null;
+            _isLoading = false;
+            _loadingDelayTimer.Stop();
+            HideLoadingOverlays();
         }
+    }
+
+    /// <summary>
+    /// Show the chart + connections + sessions loading rings. Called from
+    /// the _loadingDelayTimer Tick handler after the 1s grace period;
+    /// guards on _isLoading in case the refresh completed in the same
+    /// dispatcher cycle and the timer Stop() lost the race.
+    /// </summary>
+    private void ShowLoadingOverlays()
+    {
+        if (!_isLoading) return;
+        ChartLoadingOverlay.Visibility = Visibility.Visible;
+        ConnectionsLoadingOverlay.Visibility = Visibility.Visible;
+        SessionsLoadingOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideLoadingOverlays()
+    {
+        ChartLoadingOverlay.Visibility = Visibility.Collapsed;
+        ConnectionsLoadingOverlay.Visibility = Visibility.Collapsed;
+        SessionsLoadingOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Dim or restore all three data card surfaces (summary, chart, grids).
+    /// 0.6 telegraphs stale data during disconnected/error states without
+    /// clearing the last-known content; 1.0 restores on next successful
+    /// refresh.
+    /// </summary>
+    private void SetDataOpacity(double opacity)
+    {
+        SummaryCard.Opacity = opacity;
+        ChartCard.Opacity = opacity;
+        GridsCard.Opacity = opacity;
+    }
+
+    private void HideEmptyOverlays()
+    {
+        ConnectionsEmptyOverlay.Visibility = Visibility.Collapsed;
+        SessionsEmptyOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Show the per-grid empty-state overlay when its collection is empty
+    /// and the page is not in a loading or error state. Loading and error
+    /// states own the visual priority and own their own overlays / banner.
+    /// </summary>
+    private void UpdateEmptyStates()
+    {
+        if (_isLoading || _inErrorState)
+        {
+            HideEmptyOverlays();
+            return;
+        }
+        ConnectionsEmptyOverlay.Visibility = Connections.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SessionsEmptyOverlay.Visibility = Sessions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ApplyDetail(AppDetailResult detail)
@@ -493,23 +672,124 @@ public sealed record ConnectionRowViewModel(
         RemoteClass: c.RemoteClass,
         UpText: PerAppPage.FormatBytes(c.BytesUp),
         DownText: PerAppPage.FormatBytes(c.BytesDown));
+
+    /// <summary>
+    /// Plain-language caption for well-known ports. Returns null for
+    /// unknown ports — the Port column then renders the number alone.
+    /// Covers the protocols we expect to see most often in ZenVizor
+    /// traffic; extend as gaps surface during use.
+    /// </summary>
+    public string? PortServiceCaption => RemotePort switch
+    {
+        80 => "HTTP",
+        443 => "HTTPS",
+        53 => "DNS",
+        5353 => "mDNS",
+        8443 => "HTTPS-alt",
+        8080 => "HTTP-alt",
+        22 => "SSH",
+        21 => "FTP",
+        25 => "SMTP",
+        587 => "SMTP-S",
+        465 => "SMTPS",
+        110 => "POP3",
+        995 => "POP3S",
+        143 => "IMAP",
+        993 => "IMAPS",
+        23 => "Telnet",
+        1900 => "SSDP",
+        5355 => "LLMNR",
+        137 or 138 or 139 => "NetBIOS",
+        445 => "SMB",
+        3389 => "RDP",
+        67 or 68 => "DHCP",
+        123 => "NTP",
+        161 or 162 => "SNMP",
+        389 => "LDAP",
+        636 => "LDAPS",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Display string for the Reach pill. RemoteClass ships as
+    /// "Wan"/"Local" on the wire; the pill uses the conventional WAN
+    /// initialism for the upstream side and title-case "Local" for the
+    /// local-network side.
+    /// </summary>
+    public string ReachText => IsWan ? "WAN" : "Local";
+
+    /// <summary>
+    /// True when the endpoint is classified as upstream (WAN). Drives
+    /// the Reach pill's background colour and icon via DataTrigger.
+    /// </summary>
+    public bool IsWan => string.Equals(RemoteClass, "Wan", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record SessionRowViewModel(
     long SessionId,
     int Pid,
-    string StartText,
-    string EndText,
+    long StartTimeUnixMs,
+    long? EndTimeUnixMs,
     string HostedServices)
 {
     public static SessionRowViewModel From(SessionInfo s) => new(
         SessionId: s.SessionId,
         Pid: s.Pid,
-        StartText: FormatLocal(s.StartTimeUnixMs),
-        EndText: s.EndTimeUnixMs is long e ? FormatLocal(e) : "(running)",
-        HostedServices: s.HostedServices ?? "");
+        StartTimeUnixMs: s.StartTimeUnixMs,
+        EndTimeUnixMs: s.EndTimeUnixMs,
+        HostedServices: s.HostedServices ?? string.Empty);
+
+    public string StartText => FormatLocal(StartTimeUnixMs);
+
+    /// <summary>
+    /// Formatted end timestamp for completed sessions; empty string for
+    /// running sessions (the Ended-column template renders a green bullet
+    /// + "running" caption instead, driven by <see cref="IsRunning"/>).
+    /// </summary>
+    public string EndedText => EndTimeUnixMs is long e ? FormatLocal(e) : string.Empty;
+
+    public bool IsRunning => EndTimeUnixMs is null;
+
+    /// <summary>
+    /// Session length in milliseconds. For running sessions, computed
+    /// against UTC "now" at access time — the value drifts but is fine
+    /// for sort (DataGrid captures values once per sort, not continuously).
+    /// </summary>
+    public long LengthMs
+    {
+        get
+        {
+            var end = EndTimeUnixMs ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return Math.Max(0, end - StartTimeUnixMs);
+        }
+    }
+
+    public string LengthText => FormatDuration(LengthMs);
+
+    /// <summary>
+    /// HostedServices split into individual tags for chip rendering. The
+    /// server ships a raw comma-separated string; the chip ItemsControl
+    /// uses this array. Empty / null inputs yield an empty array so the
+    /// column cell renders blank for non-svchost rows.
+    /// </summary>
+    public IReadOnlyList<string> ServiceTags =>
+        string.IsNullOrWhiteSpace(HostedServices)
+            ? Array.Empty<string>()
+            : HostedServices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static string FormatLocal(long unixMs) =>
         DateTimeOffset.FromUnixTimeMilliseconds(unixMs).LocalDateTime
             .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Format a session duration as <c>Hh Mm</c> (under 24h) or
+    /// <c>Dd Hh</c> (24h+). Matches the mockup's "3h 40m" / "1d 5h" form.
+    /// </summary>
+    private static string FormatDuration(long ms)
+    {
+        var span = TimeSpan.FromMilliseconds(ms);
+        return span.TotalHours >= 24
+            ? $"{(int)span.TotalDays}d {span.Hours}h"
+            : $"{(int)span.TotalHours}h {span.Minutes}m";
+    }
 }
