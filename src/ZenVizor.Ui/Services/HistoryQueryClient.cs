@@ -102,7 +102,16 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
     internal static bool IsConnectionLost(Exception ex) =>
         ex is ConnectionLostException
         || ex is System.IO.IOException
-        || ex is ObjectDisposedException;
+        || ex is ObjectDisposedException
+        // NamedPipeClientStream.ConnectAsync(timeoutMs, …) throws
+        // System.TimeoutException when the pipe is unavailable for the
+        // full timeout window — which is exactly the "service down"
+        // case. Without this clause, the first failed call surfaces as
+        // "Service disconnected" (the in-flight call hits an IOException
+        // on the broken pipe and resets the client), but the second
+        // call's 2-second reconnect attempt times out and falls through
+        // to the generic catch as "Query failed (TimeoutException)".
+        || ex is TimeoutException;
 
     public ValueTask DisposeAsync() => new(ResetAsync());
 }

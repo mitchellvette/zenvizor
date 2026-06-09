@@ -6,56 +6,300 @@
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
+    <!--  Phase 1 chrome — page skeleton, picker + refresh, status banner.
+          Summary card carries 5 placeholder cells (RESOLUTION · UPLOADED ·
+          DOWNLOADED · AVERAGE · PEAK); chart card hosts an unstyled
+          CartesianChart. Data wiring + chart polish land in Phases 2-3.
+
+          Brief §10 + mockup hand-off note "page scroll: none" — the page
+          does not scroll; the chart card fills the residual viewport via
+          Row 4 = * with RowDefinition.MinHeight=320 (paired with the Border
+          MinHeight). No outer ScrollViewer (cf. AppDetailPage which has
+          one because its content can exceed viewport at small windows).  -->
     <Grid Margin="24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" /> <!-- Row 0: title + caption -->
+            <RowDefinition Height="Auto" /> <!-- Row 1: window picker + refresh -->
+            <RowDefinition Height="Auto" /> <!-- Row 2: status banner -->
+            <RowDefinition Height="Auto" /> <!-- Row 3: Total traffic summary card -->
+            <RowDefinition Height="*" MinHeight="320" /> <!-- Row 4: chart card -->
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
-            <ui:TextBlock FontTypography="Subtitle" Text="History" />
-            <Border x:Name="StatusBanner" Visibility="Collapsed" Margin="16,0,0,0"
-                    VerticalAlignment="Center"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    Padding="8,4" CornerRadius="4">
+        <!--  Row 0 — page title + caption-beneath explainer. Title renders
+              text.subtitle + font.display (Urbanist) matching Per-App and
+              App Detail page-title rendering (locked Q3 per the mockup —
+              caption sits directly beneath the title, not as an eyebrow or
+              tooltip).  -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                          FontFamily="{StaticResource font.display}"
+                          FontSize="24"
+                          Text="History" />
+            <ui:TextBlock Style="{StaticResource text.caption}"
+                          Foreground="{DynamicResource text.secondary}"
+                          Text="Aggregate up/down traffic across all apps in the selected window."
+                          Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!--  Row 1 — window picker row. "Window:" label (text.body
+              text.secondary) + ComboBox (shorthand value, long-form ToolTip
+              per WindowPreset.Short / Label) + Refresh ui:Button (icon +
+              text per Q-locked variant on mockup page 1). Picker carries
+              metal.control surface + border.card stroke matching Per-App's
+              picker convention (PerAppPage.xaml:258-271); brief §5
+              annotated border.control on the mockup, but that token
+              doesn't resolve in DesignTokens.xaml — border.card is the
+              right pointer (no new tokens per brief §5).  -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Style="{StaticResource text.body}"
+                       Foreground="{DynamicResource text.secondary}"
+                       Text="Window:"
+                       VerticalAlignment="Center"
+                       Margin="0,0,12,0" />
+            <ComboBox Grid.Column="1"
+                      x:Name="WindowCombo"
+                      Width="120"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnSelectionChanged">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Short}"
+                                   ToolTip="{Binding Label}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <ui:Button Grid.Column="2"
+                       x:Name="RefreshButton"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Center"
+                       Background="{DynamicResource metal.control}"
+                       BorderBrush="{DynamicResource border.card}"
+                       Click="OnRefreshClick">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" VerticalAlignment="Center" />
+                    <TextBlock Text="Refresh" Margin="4,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </ui:Button>
+        </Grid>
+
+        <!--  Row 2 — status banner. Own row, default Collapsed; Phase 4
+              wires the disconnected (critical) vs error (caution) state
+              split. Background + foreground are swapped per-state in
+              code-behind via SetResourceReference; the static markup here
+              just establishes the Border + TextBlock pair.  -->
+        <Border Grid.Row="2"
+                x:Name="StatusBanner"
+                Visibility="Collapsed"
+                Margin="0,0,0,12"
+                Background="{DynamicResource status.caution.background}"
+                Padding="12,8"
+                CornerRadius="{StaticResource radius.control}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                               Symbol="Warning20"
+                               FontSize="16"
+                               Foreground="{DynamicResource status.caution.text}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
                 <TextBlock x:Name="StatusBannerText"
-                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
-            </Border>
-        </StackPanel>
-
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-            <TextBlock Text="Window:" VerticalAlignment="Center" Margin="0,0,8,0" />
-            <ComboBox x:Name="WindowCombo" Width="180" SelectionChanged="OnSelectionChanged" />
-            <ui:Button Margin="12,0,0,0" Content="Refresh" Click="OnRefreshClick" />
-        </StackPanel>
-
-        <Border Grid.Row="2" Margin="0,0,0,12" Padding="12,8" CornerRadius="6"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
-            <StackPanel>
-                <TextBlock x:Name="ChartSubtitle"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                <TextBlock x:Name="SummaryLine" Margin="0,4,0,0" />
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource status.caution.text}" />
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Padding="8" CornerRadius="6" MinHeight="320"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+        <!--  Row 3 — "Total traffic" summary card. 5 cells in canonical
+              metal recipe (metal.card + border.card + shadow.card +
+              radius.card). Phase 2 wires the calculations
+              (ComputeAverageAndPeak + GrainLabel); Phase 1 stands up the
+              chrome with em-dash placeholders.
+
+              Cell layout: text.eyebrow uppercase label above text.mono
+              value. Up / Down values get chart.upSeries / chart.downSeries
+              foregrounds. PEAK has a text.tertiary timestamp beneath the
+              value (HH:mm sub-day, MM-dd multi-day) — placeholder empty
+              until Phase 2.  -->
+        <Border Grid.Row="3"
+                x:Name="SummaryCard"
+                Margin="0,0,0,12"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
-                BorderBrush="{DynamicResource ControlElevationBorderBrush}">
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="20,16">
+            <StackPanel>
+                <ui:TextBlock Style="{StaticResource text.subtitle}"
+                              Text="Total traffic"
+                              Margin="0,0,0,12" />
+                <!--  Two-cluster layout: secondary metrics
+                      (RESOLUTION · AVERAGE · PEAK) on the left at
+                      font.size.body.large; headline KPIs (UPLOADED ·
+                      DOWNLOADED) on the right at font.size.metric in
+                      chart series colors. Column 3 (Width="*") is a
+                      flex spacer that pushes the two clusters to
+                      opposite ends and absorbs any extra card width.
+                      UPLOADED ↔ DOWNLOADED carry a 1px border.subtle
+                      vertical hairline divider (Per-App strip
+                      convention — see PerAppPage.xaml:187-234).  -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="48" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,32,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="RESOLUTION" />
+                        <TextBlock x:Name="ResolutionValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.body.large}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="0,0,32,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="AVERAGE" />
+                        <TextBlock x:Name="AverageValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.body.large}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <!--  PEAK eyebrow row pairs the label with the
+                          peak-bucket timestamp inline ("PEAK · 17:00" /
+                          "PEAK · 05-29"), so the cell stays single-line
+                          symmetric with the other cells. PeakTimestamp
+                          carries the leading " · " separator in its text
+                          (set in FillSummary); empty-state windows render
+                          just "PEAK" because PeakTimestamp.Text is "".  -->
+                    <StackPanel Grid.Column="2">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:TextBlock Style="{StaticResource text.eyebrow}"
+                                          Text="PEAK"
+                                          VerticalAlignment="Center" />
+                            <TextBlock x:Name="PeakTimestamp"
+                                       FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text=""
+                                       Margin="6,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock x:Name="PeakValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.body.large}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <!--  Flex spacer (Column 3) absorbs the inter-cluster
+                          gap. MinWidth=48 guarantees visual separation
+                          even at narrow card widths.  -->
+
+                    <StackPanel Grid.Column="4" Margin="0,0,16,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="UPLOADED" />
+                        <TextBlock x:Name="UploadedValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <Border Grid.Column="5"
+                            Width="1"
+                            Margin="0,4"
+                            Background="{DynamicResource border.subtle}" />
+
+                    <StackPanel Grid.Column="6" Margin="16,0,0,0">
+                        <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="DOWNLOADED" />
+                        <TextBlock x:Name="DownloadedValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="—"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!--  Row 4 — chart card. Canonical metal recipe. MinHeight=320 on
+              the Border AND MinHeight=320 on the * row (per
+              _chart-implementation-notes.md §G — * rows can collapse below
+              child MinHeight without the row-level floor, clipping X-axis
+              labels + the card's rounded bottom corners). Inner chart
+              MinHeight=280.
+
+              Phase 1 stands up the card + chart shell; Phase 3 plumbs
+              axes-once-then-mutate, DrawMargin, ApplyToSeries, subtitle.  -->
+        <Border Grid.Row="4"
+                x:Name="ChartCard"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="8"
+                MinHeight="320">
             <Grid>
-                <lvc:CartesianChart x:Name="HistoryChart" MinHeight="280"
-                                    Background="Transparent"
-                                    LegendPosition="Top" />
-                <TextBlock x:Name="NoDataOverlay"
-                           Visibility="Collapsed"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="No traffic recorded in this window."
-                           IsHitTestVisible="False" />
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           x:Name="ChartSubtitle"
+                           Style="{StaticResource text.caption}"
+                           Foreground="{DynamicResource text.secondary}"
+                           Margin="4,2,0,8"
+                           Text="" />
+                <Grid Grid.Row="1">
+                    <lvc:CartesianChart x:Name="HistoryChart"
+                                        Background="Transparent"
+                                        MinHeight="280"
+                                        LegendPosition="Top" />
+                    <TextBlock x:Name="NoDataOverlay"
+                               Visibility="Collapsed"
+                               Style="{StaticResource text.body}"
+                               Foreground="{DynamicResource text.secondary}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Text="No traffic recorded in this window."
+                               IsHitTestVisible="False" />
+                    <!--  Loading overlay — centered ProgressRing + "Loading…"
+                          caption. Visibility flips via the 1s
+                          _loadingDelayTimer in code-behind so fast
+                          refreshes (1h windows) don't flash a ring. Sibling
+                          of HistoryChart so it overlays the chart canvas.  -->
+                    <StackPanel x:Name="ChartLoadingOverlay"
+                                Visibility="Collapsed"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsHitTestVisible="False">
+                        <ui:ProgressRing IsIndeterminate="True"
+                                         HorizontalAlignment="Center" />
+                        <TextBlock Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Text="Loading…"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

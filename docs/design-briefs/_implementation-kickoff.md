@@ -15,7 +15,7 @@ is tracked across the design loop).
 | **Dashboard** | ✓ | ✓ | ✓ | ✓ COMPLETE | reference screen — `docs/dashboard-UI-phase-plan.md` |
 | **Per-App** | ✓ | ✓ | ✓ | ✓ COMPLETE | Phases 1-6 run 2026-06-06; reference for drill-grid pattern |
 | **App Detail** | ✓ | — | — | — | drill from Per-App; richest layout (chart + two grids + summary) |
-| **History** | ✓ | — | — | — | chart-heavy; inherits Phase D infrastructure |
+| **History** | ✓ | ✓ | ✓ | ✓ COMPLETE | Phases 1-5 run 2026-06-08/09; cross-page IsConnectionLost timeout fix |
 | **Reports** (Group B) | ✓ | — | — | placeholder live | brief covers interim + eventual layout per template §18 |
 | **Alerts** (Group B) | ✓ | — | — | placeholder live | same Group B treatment |
 | **Settings** (Group B) | ✓ | — | — | placeholder live | same; underlying logic lands Phase 6 |
@@ -183,12 +183,27 @@ Reference screen for what "complete" looks like. The implementation record captu
 - **Mockup**: pending
 - **Implementation**: pending
 
-### History
+### History — COMPLETE
 
 - **Findings**: `docs/design-briefs/findings/history.md`
-- **Brief**: pending
-- **Mockup**: pending
-- **Implementation**: pending
+- **Brief**: `docs/design-briefs/history.md`
+- **Mockup**: `docs/design/mockups/history-design-mockups.pdf` (13 pages, 5 states × light + 1 dark + annotated reference + grain matrix + hand-off notes)
+- **Phases run**: 1 (page skeleton + cards + picker + refresh + status banner shell) → 2 (5-cell summary card + new Average + Peak calcs at the window-implied step) → 2.x mini-polish (two-cluster layout: Resolution · Average · Peak left at `font.size.body.large`, Uploaded · Downloaded right at `font.size.metric` with `border.subtle` vertical hairline) → 3 (axes-once-then-mutate + DrawMargin + ApplyToSeries re-call + DescribeView subtitle) → 4 (loading overlay + disconnected/error split with PlugDisconnected20 vs Warning20 glyph swap + opacity dim) → 4.x mid-flight fix (HistoryQueryClient.IsConnectionLost timeout case) → 4.y mini-polish (inline PEAK timestamp on the eyebrow row, not its own line) → 5 (HC token audit + commit)
+
+**Tokens introduced this run**: **None.** Every token referenced in the History brief and mockup already resolves in `DesignTokens.xaml` / `BrandAccent.{Light,Dark}.xaml` / `HighContrast.xaml`. The brief's "no new tokens" commitment held.
+
+**Cross-page fix landed this run**:
+- `HistoryQueryClient.IsConnectionLost` now also catches `TimeoutException`. Pre-fix: the first failed call surfaced as "Service disconnected" (in-flight `IOException` on the broken pipe), but the second call's 2-second `NamedPipeClientStream.ConnectAsync(timeoutMs, …)` reconnect threw `TimeoutException` — outside the IsConnectionLost whitelist — and fell through to the generic catch as `"Query failed (TimeoutException): …"` on the amber caution banner. Per-App and App Detail also use `HistoryQueryClient`, so this fix lands across all three pages.
+
+**Canonical patterns established here**:
+- **Window-implied step ≠ chart grain.** History's AVERAGE / PEAK summary cells aggregate at a user-friendly cadence (1h→per-minute, 24h→per-hour, 7d/30d/90d→per-day) that is *deliberately* distinct from the chart grain. The chart grain depends on coalesce (a 7d window plots 2-hour Hourly buckets), but the natural way to read "how busy was this window" is per-day for multi-day windows. Implemented as a private `ImpliedStep` enum + `StepFor` / `StepCountFor` / `StepSuffix` / `TruncateToStep` / `ComputePeakAtImpliedStep` helpers on `HistoryPage`. Reusable pattern for any future aggregate-summary cell on a chart-bearing page.
+- **Two-cluster summary strip.** When a strip carries a mix of headline KPIs and supporting metrics, the headlines anchor to the right cluster at `font.size.metric` (24px) in their chart series colors with a `border.subtle` vertical hairline between them; the supporting metrics anchor to the left cluster at `font.size.body.large` (18px) in `text.primary`. A flex `*` column with `MinWidth=48` between the clusters holds them apart at any card width.
+- **Inline timestamp on the eyebrow row** ("PEAK · 17:00"). When a metric cell needs to surface a "when" qualifier alongside a "how much" value, the cleanest pattern is to inline the qualifier in the eyebrow row (`text.eyebrow` uppercase + ` · ` separator + `text.tertiary` mono caption) rather than under the value as a second line. Keeps the cell single-line symmetric with siblings.
+
+**Lessons learned (apply to next screen)**:
+- **`NamedPipeClientStream.ConnectAsync(timeoutMs, …)` throws `System.TimeoutException`** when the named pipe is unavailable for the full timeout window. `IsConnectionLost`-style filter patterns must include `TimeoutException` alongside `IOException` / `ObjectDisposedException` / `ConnectionLostException`, or the second + subsequent refresh attempts after a service stop will flip from the correct critical "disconnected" banner to the incorrect caution "Query failed" banner.
+- **Brief annotations can reference CSS-only tokens.** Mockup hand-off notes annotated the window picker with `border.control`, which exists in `colors_and_type.css` but is not defined in `DesignTokens.xaml`. Pre-flight token presence verification caught the gap; resolved by retargeting to `border.card` matching App Detail's picker convention, honoring brief §5's "no new tokens" commitment. Future briefs may have the same gap — the verification step is load-bearing.
+- **Summary cell asymmetry visibly hurts.** A standalone TextBlock beneath a single PEAK cell value (used to display the peak timestamp) read as visually empty space at the bottom of the otherwise-symmetric 5-cell strip, even though the data was correct. Inlining the timestamp on the eyebrow row preserved info AND restored symmetry. Worth checking visual symmetry across cells in any future strip — not just typographic consistency within cells.
 
 ### Reports (Group B)
 
