@@ -29,6 +29,7 @@ is auditable.
 
 Any token introduced by the mock that isn't in the primer's token
 table is declared with:
+
 - the canonical dotted name (`<category>.<role>[.<modifier>]`),
 - the proposed value (hex, or `"alias of <existing token>"`),
 - a one-line rationale for why a new token is needed.
@@ -44,6 +45,7 @@ Claude Code implement it consistently when other screens adopt it.
 ## 5. Layout / density hints
 
 Inline notes where they matter for implementation:
+
 - `MinHeight=…`, `MaxHeight=…` where the layout requires a floor or
   cap.
 - `scroll: pane` / `scroll: page` / `scroll: none` on the scrolling
@@ -66,4 +68,4 @@ Code does not have to guess.
 
 ---
 
-Output the final mock with all items above confirmed.
+Output the final mock as a PDF with all items above confirmed.
