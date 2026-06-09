@@ -668,20 +668,64 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Proto" Binding="{Binding Protocol}" Width="60" />
 
-                                <!--  Remote endpoint — IP address in mono.
-                                      "Remote endpoint" reads more clearly
-                                      than the original "Address" header for
-                                      the casual user (§8.4 column-
-                                      comprehension concern).  -->
-                                <DataGridTextColumn Header="Remote endpoint"
-                                                    Binding="{Binding RemoteAddress}"
-                                                    Width="*">
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
-                                            <Setter Property="VerticalAlignment" Value="Center" />
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
+                                <!--  Remote endpoint — IP address in mono, with
+                                      a hover-revealed copy affordance. Cells
+                                      can't be selected in this grid (no
+                                      selection mode wired), so without this
+                                      the user had to type the address out
+                                      manually for diagnostics. Border +
+                                      MouseLeftButtonUp matches the AppId chip /
+                                      path-row pattern from Phase 2.x rather
+                                      than a Button (avoids fighting the
+                                      default Button chrome inside a cell).  -->
+                                <DataGridTemplateColumn Header="Remote endpoint"
+                                                        Width="*"
+                                                        SortMemberPath="RemoteAddress">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding RemoteAddress}"
+                                                           Style="{StaticResource text.mono}"
+                                                           VerticalAlignment="Center" />
+                                                <Border Grid.Column="1"
+                                                        Tag="{Binding RemoteAddress}"
+                                                        Padding="6,2"
+                                                        Margin="6,0,0,0"
+                                                        CornerRadius="{StaticResource radius.control}"
+                                                        Cursor="Hand"
+                                                        ToolTip="Copy endpoint"
+                                                        MouseLeftButtonUp="OnCopyEndpointClick">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                            <Style.Triggers>
+                                                                <!--  Row hover reveals the affordance.  -->
+                                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=IsMouseOver}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                                <!--  Direct hover tints the chip so it
+                                                                      reads as clickable rather than
+                                                                      decorative.  -->
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource surface.subtle}" />
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <ui:SymbolIcon Symbol="Copy20"
+                                                                   FontSize="12"
+                                                                   Foreground="{DynamicResource text.secondary}" />
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
                                 <!--  Port — mono number + plain-language
                                       service caption (443 HTTPS, 5353 mDNS,

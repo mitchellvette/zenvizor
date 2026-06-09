@@ -191,6 +191,25 @@ per-screen briefs in `docs/design-briefs/` and the design system in
   reflect per-project invocation. Deferred for a housekeeping pass —
   flagged here so it doesn't drop.
 
+- **Hostname resolution (passive-DNS observer) — promoted into MVP.**
+  Previously deferred as F2 in `docs/design-briefs/app-detail.md`; promoted
+  during App Detail Phase 6 review (the user wanted hostnames so the
+  Connections grid reads as "talked to **google.com**" instead of an
+  opaque IPv4/IPv6 address that the user otherwise has to copy out and
+  look up manually). PRD §7.4 already reserves the
+  `connections.resolved_host` column for this. **Strictly passive** —
+  source is the user's *existing* DNS traffic which ETW already observes,
+  parsed to build an IP → hostname mapping. Active `Dns.GetHostEntry` /
+  `Dns.GetHostAddresses` calls remain forbidden per CLAUDE.md invariant 1
+  (the application emits ZERO network traffic). **Implementation scope:**
+  ETW subscriber for DNS-protocol events (either the
+  `Microsoft-Windows-DNSClient` provider or the UDP/53 response payloads
+  from `Microsoft-Windows-Kernel-Network`) + DNS-response parser
+  (RFC 1035) + storage wire-up to `connections.resolved_host` + IPC
+  contract field (`ConnectionRow.ResolvedHost`) + UI column on App
+  Detail's Connections grid (and likely Per-App's expanded view). Scope
+  into a phase before MVP cut — flagged here so it doesn't drop.
+
 - **High Contrast runtime merge wiring not implemented.**
   `Resources/HighContrast.xaml` ships with full token collapses for every
   semantic surface, text, accent, status, border, chart, plus the polish

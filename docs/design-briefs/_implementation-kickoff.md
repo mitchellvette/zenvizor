@@ -130,7 +130,7 @@ Phase patterns that worked on Dashboard:
 - Phase 3 — state coverage (empty / loading / error banners hooked up)
 - Phase 4 — interactive behavior (hover, click, scroll, virtualization)
 - Phase 5 — chart wiring (when applicable — paints, axes, tooltip, overlay)
-- Phase 6 — animation / polish (gated, often deferred)
+- Phase 6 — final pass: HC token audit + "any final items?" check with the user before commit. Polish itself happens inline through earlier phases — Phase 6 is verification + user-driven adjustments, not a screenshot diff. Animation is a separate gate, often deferred.
 
 Each phase ends with a "build / launch / validate" cycle; user signs off before next phase. Stop after the phase outline; await approval before starting.
 

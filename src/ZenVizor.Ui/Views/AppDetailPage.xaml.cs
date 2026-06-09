@@ -270,6 +270,18 @@ public partial class AppDetailPage : Page
         }
     }
 
+    private void OnCopyEndpointClick(object sender, MouseButtonEventArgs e)
+    {
+        // The hover-revealed copy chip in the Remote endpoint cell template
+        // carries the row's RemoteAddress in its Tag. Cells in this grid
+        // aren't selectable (no SelectionMode wired) so this is the user's
+        // only path to grab the address for external diagnostics.
+        if (sender is FrameworkElement fe && fe.Tag is string address && !string.IsNullOrEmpty(address))
+        {
+            TryCopyToClipboard(address);
+        }
+    }
+
     private void TryCopyToClipboard(string text)
     {
         try
