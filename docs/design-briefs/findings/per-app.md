@@ -168,7 +168,7 @@ Root: `<Grid Margin="24">` with 3 rows (`Auto / Auto / *`).
    (row 22, padding 6,2, body font).
 6. **Up / Down columns use proportional digits.** Right-aligned but
    the digits don't column-align across rows.
-   → Bind numeric columns to `text.mono` (NF Code Regular 14). Same
+   → Bind numeric columns to `text.mono` (Overpass Mono Regular 14). Same
    fix as Dashboard.
 7. **`AlternatingRowBackground` references `SubtleFillColorTertiaryBrush`
    directly.** Should reference the design-system token `surface.subtle.alt`

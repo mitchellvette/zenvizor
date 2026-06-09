@@ -232,7 +232,7 @@ layout changes).
 9. **Up/s and Dn/s columns use proportional digits.** Right-aligned but
    the digits don't visually align across rows.
    → Bind the two numeric columns to `Style="{StaticResource text.mono}"`
-   (NF Code Regular 14). Solves the alignment without changing
+   (Overpass Mono Regular 14). Solves the alignment without changing
    semantics.
 10. **Legend duplicates units that the Y axis already carries.** Y axis
     label = "42 KB/s"; legend = "Up B/s"/"Down B/s". The "/s" in the

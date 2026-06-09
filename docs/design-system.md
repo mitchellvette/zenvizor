@@ -376,7 +376,7 @@ Three font families are present in `fonts/` (probed via
 | Family       | File(s) on disk                                                                                     | Role token   | Use                                              |
 |--------------|-----------------------------------------------------------------------------------------------------|--------------|--------------------------------------------------|
 | **Urbanist** | `Urbanist-Light.ttf`, `Urbanist-Regular.ttf`, `Urbanist-SemiBold.ttf`, `Urbanist-Bold.ttf`          | `font.display` | Primary UI — body, headers, captions. **Four real on-disk weights**; use `FontWeight` (Light=300, Regular=400, SemiBold=600, Bold=700) to select. SemiBold is the brand's title/subtitle weight — without `Urbanist-SemiBold.ttf` registered in `ZenVizor.Ui.csproj`, WPF would synthesize the weight from Regular and produce blurry strokes. |
-| **NF Code**  | `NFCode-Regular.otf`                                                                                | `font.mono`  | Numeric, paths, hex, code-like text. Regular only — `FontWeight` is a no-op. |
+| **Overpass Mono** | `OverpassMono-VariableFont_wght.ttf`                                                           | `font.mono`  | Numeric, paths, hex, code-like text. Variable weight axis (100-900); `text.mono` pins Regular for the canonical look. |
 | **Nuqun**    | `Nuqun-Regular.otf`                                                                                 | `font.brand` | Wordmark / decorative only. **Not for body text.** Regular only. |
 
 Wired in `Resources/Fonts.xaml`. Pack URI form:

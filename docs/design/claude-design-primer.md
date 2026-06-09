@@ -171,7 +171,7 @@ Three fonts (all on disk):
 | Family       | Role token   | Weights              | Use |
 |--------------|--------------|----------------------|-----|
 | **Urbanist** | `font.display` | Light, Regular, **SemiBold**, Bold | Primary UI — body, headers, captions |
-| **NF Code**  | `font.mono`  | Regular only         | Numeric, paths, hex, code-like text — anywhere column alignment matters |
+| **Overpass Mono** | `font.mono`  | Variable (pinned Regular) | Numeric, paths, hex, code-like text — anywhere column alignment matters |
 | **Nuqun**    | `font.brand` | Regular only         | Wordmark / decorative only — **not** for body text |
 
 Size scale (reconciled brand values; native app currently ships the smaller

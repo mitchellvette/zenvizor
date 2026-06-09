@@ -55,7 +55,7 @@ This is a **hard requirement** and shapes every component. The system keeps Flue
 - **Type ramp:** the Fluent ladder (Caption → Body → Subtitle → Title → Title Large → Display).
 - **Icons:** Fluent System Icons.
 
-The *brand* layer (porcelain + violet palette; Urbanist / Nuqun / NFCode type; the visor mark; the spacious calm) sits on top of these bones.
+The *brand* layer (porcelain + violet palette; Urbanist / Nuqun / Overpass Mono type; the visor mark; the spacious calm) sits on top of these bones.
 
 ---
 
@@ -101,7 +101,7 @@ ZenVizor's voice is **calm, precise, and quietly confident** — a competent co-
 ### Type
 - **Brand / hero — Nuqun** (`font.brand` / `--font-brand`): a distinctive futuristic display face. Used **only** for hero moments — the wordmark, the Display size, brand surfaces. Never body, titles, or dense UI. Ships Regular only, so set at weight 400 (no faux-bold), with comfortable positive tracking (`--tracking-display`).
 - **Daily driver / UI — Urbanist** (`font.display` / `--font-display`; legacy alias `--font-sans`): the everyday geometric sans — nav, body, labels, page titles, most of the interface. This is the **primary UI font role**. Weights 300 / 400 / **600 (SemiBold)** / 700 — 600 is a real weight (used for titles, subtitles, body-strong, eyebrows), no longer faux-bolded.
-- **System / data — NFCode** (`font.mono` / `--font-mono`): strict monospace with tabular figures for rates, byte counts, ports, IDs, technical tags (`ZenVizor.Ipc.v1`, `:443`, `pid 8841`).
+- **System / data — Overpass Mono** (`font.mono` / `--font-mono`): strict monospace with tabular figures for rates, byte counts, ports, IDs, technical tags (`ZenVizor.Ipc.v1`, `:443`, `pid 8841`). Variable-weight font (100-900); pinned to Regular in `text.mono`.
 - **Ramp:** Display 68 / Title Large 40 / Title 28 / Subtitle 20 / Body Large 18 / Body 14 / Caption 12 (`font.size.*`; line-heights/weights in the CSS). Only the Display size renders in Nuqun (`font.brand`); everything from Title-Large down is Urbanist (`font.display`). Eyebrow labels track wide + uppercase. *Native note:* the app currently ships the smaller Fluent ladder (Display 32 / Title 20 / Title-Large 24 / Subtitle 16); these brand sizes are the reconciled target — see the crosswalk in `colors_and_type.css`.
 - All three are **self-hosted** from `fonts/` via `@font-face` in `colors_and_type.css` — no CDN, works offline.
 
@@ -162,7 +162,7 @@ ZenVizor's voice is **calm, precise, and quietly confident** — a competent co-
 - `icons/` — vendored Fluent System Icons (SVG, `currentColor`).
 - `zenvizor-mark-onlight.svg` / `zenvizor-mark-ondark.svg` — the visor brand mark.
 
-**`fonts/`** — self-hosted brand webfonts (Urbanist, NFCode, Nuqun) wired via `@font-face` in `colors_and_type.css`.
+**`fonts/`** — self-hosted brand webfonts (Urbanist, Overpass Mono, Nuqun) wired via `@font-face` in `colors_and_type.css`.
 
 **`preview/`** — small HTML specimen cards that populate the Design System tab (logo, colors, type, spacing, elevation, components, icons).
 
@@ -177,7 +177,7 @@ ZenVizor's voice is **calm, precise, and quietly confident** — a competent co-
 
 ## 8. Caveats & substitutions
 
-- **Fonts** are the uploaded brand families — **Nuqun** (hero/display), **Urbanist** (UI), **NFCode** (data/mono) — self-hosted from `fonts/` via `@font-face`. No CDN; works offline.
+- **Fonts** are the uploaded brand families — **Nuqun** (hero/display), **Urbanist** (UI), **Overpass Mono** (data/mono) — self-hosted from `fonts/` via `@font-face`. No CDN; works offline.
 - **Icons** are the genuine Microsoft Fluent System Icons (MIT). A focused subset is vendored; pull more as needed.
 - The **brand mark** is an original geometric "visor arc" created for this system (no prior logo existed).
 - Existing app screenshots/styling were intentionally **not** mirrored — this is a ground-up brand applied to the product's real information architecture.

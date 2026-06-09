@@ -426,10 +426,10 @@
              Accepted limitation; visually OK because eyebrows are small,
              short, and always uppercase. -->
     </Style>
-    <!-- Mono / data: NF Code with tabular numerics. Used for rates, byte
-         counts, IPs, ports, PIDs — anywhere column alignment of digits
-         matters. font.mono ships single-weight Regular only; FontWeight is
-         a no-op. -->
+    <!-- Mono / data: Overpass Mono with tabular numerics. Used for rates,
+         byte counts, IPs, ports, PIDs — anywhere column alignment of
+         digits matters. font.mono is a variable font (weight axis 100-900)
+         but this Style pins Regular for the canonical look. -->
     <Style x:Key="text.mono" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource font.mono}" />
         <Setter Property="FontSize" Value="{StaticResource font.size.body}" />

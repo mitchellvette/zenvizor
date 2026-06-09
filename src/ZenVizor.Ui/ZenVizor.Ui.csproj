@@ -31,7 +31,7 @@
   <!-- Design system fonts. Linked under Fonts/ in the assembly so the pack URI
        resolves as pack://application:,,,/Fonts/#<FamilyName>. Internal family
        names (probed via System.Windows.Media.Fonts.GetFontFamilies): Urbanist,
-       NF Code, Nuqun.
+       Overpass Mono, Nuqun.
 
        All four Urbanist faces ship so FontWeight resolves to a real on-disk
        glyph (300/400/600/700) — never a synthesized weight. SemiBold (600) is
@@ -55,7 +55,7 @@
     <Resource Include="..\..\fonts\Urbanist-Regular.ttf"  Link="Fonts\Urbanist-Regular.ttf" />
     <Resource Include="..\..\fonts\Urbanist-SemiBold.ttf" Link="Fonts\Urbanist-SemiBold.ttf" />
     <Resource Include="..\..\fonts\Urbanist-Bold.ttf"     Link="Fonts\Urbanist-Bold.ttf" />
-    <Resource Include="..\..\fonts\NFCode-Regular.otf"    Link="Fonts\NFCode-Regular.otf" />
+    <Resource Include="..\..\fonts\OverpassMono-VariableFont_wght.ttf" Link="Fonts\OverpassMono-VariableFont_wght.ttf" />
     <Resource Include="..\..\fonts\Nuqun-Regular.otf"     Link="Fonts\Nuqun-Regular.otf" />
   </ItemGroup>
 

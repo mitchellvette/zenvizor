@@ -94,18 +94,18 @@
    is never wallpaper-dependent.
 
    Load order:
-     1. this file (self-hosts Nuqun / Urbanist / NFCode via @font-face below)
+     1. this file (self-hosts Nuqun / Urbanist / Overpass Mono via @font-face below)
    Then set theme with  <html data-theme="light">  or  data-theme="dark".
    With no attribute, it follows the OS via prefers-color-scheme.
    ============================================================================ */
 
 /* Brand fonts — self-hosted (uploaded). Urbanist = UI/body sans (font.display),
-   NFCode = data/mono (font.mono), Nuqun = wordmark (font.brand). */
+   Overpass Mono = data/mono (font.mono), Nuqun = wordmark (font.brand). */
 @font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Light.ttf') format('truetype');   font-weight: 300; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-SemiBold.ttf') format('truetype'); font-weight: 600; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Urbanist'; src: url('fonts/Urbanist-Bold.ttf') format('truetype');    font-weight: 700; font-style: normal; font-display: swap; }
-@font-face { font-family: 'NFCode';   src: url('fonts/NFCode-Regular.otf') format('opentype');  font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Overpass Mono'; src: url('fonts/OverpassMono-VariableFont_wght.ttf') format('truetype-variations'); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Nuqun';    src: url('fonts/Nuqun-Regular.otf') format('opentype');   font-weight: 400; font-style: normal; font-display: swap; }
 
 /* ----------------------------------------------------------------------------
@@ -193,7 +193,7 @@
 
   /* ---- Typography: font roles --------------------------------------------- */
   --font-display: 'Urbanist', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif; /* font.display — primary UI */
-  --font-mono:    'NFCode', 'Cascadia Code', ui-monospace, 'SF Mono', Menlo, monospace;              /* font.mono    — data/numeric */
+  --font-mono:    'Overpass Mono', 'Cascadia Code', ui-monospace, 'SF Mono', Menlo, monospace;       /* font.mono    — data/numeric */
   --font-brand:   'Nuqun', 'Urbanist', system-ui, sans-serif;                                        /* font.brand   — wordmark ONLY */
 
   /* ---- Typography: size scale (font.size.*) — BRAND values ----------------- */
