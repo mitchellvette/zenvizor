@@ -56,4 +56,21 @@ public interface IZenVizorIpc
 
     /// <summary>Aggregate (all apps) traffic series at chosen grain. Auto-grain by default.</summary>
     Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain = TrafficGrain.Auto);
+
+    // ---- Phase 5 Reports surface ----
+
+    /// <summary>
+    /// Returns the daily report for <paramref name="date"/> with deltas computed
+    /// against the chosen <paramref name="anchor"/>. Hero numerics, the 24-hour
+    /// sparkline series, Top Apps, Uncommon Talkers, and Notable items all flow
+    /// in a single payload — UI uses one round-trip per refresh.
+    /// </summary>
+    /// <param name="date">The report's calendar date (user-local).</param>
+    /// <param name="anchor">The comparison baseline mode.</param>
+    /// <param name="anchorSpecificDate">Required only when <paramref name="anchor"/>
+    /// is <see cref="AnchorMode.SpecificDate"/>; otherwise ignored.</param>
+    Task<IpcEnvelope<DailyReportResult>> GetDailyReportAsync(
+        DateOnly date,
+        AnchorMode anchor,
+        DateOnly? anchorSpecificDate);
 }

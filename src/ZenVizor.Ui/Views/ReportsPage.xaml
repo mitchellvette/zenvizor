@@ -1,0 +1,1732 @@
+<Page x:Class="ZenVizor.Ui.Views.ReportsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      Background="{DynamicResource ApplicationBackgroundBrush}"
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+
+    <!--  Phase 2 — chrome row (title + date control + anchor combo + Export
+          menu + status banner shell) + hero card (totals + WAN/Local bar +
+          day-shape sparkline with peak marker).
+
+          Hero data is mock-only; the real GetDailyReport(date, anchor) IPC
+          wiring lands in Phase 5. Notable / Top Apps / Uncommon Talkers
+          surfaces land in Phase 3. State coverage (loading / empty /
+          quiet-day / disconnected / error) lands in Phase 4.
+
+          Variant locks (per mockup hand-off page 12):
+            * Q1c narrative composition (hero leads; ranking + discovery
+              follow)
+            * Q2b single date + selectable anchor (default 7-day average)
+            * Q3b headline total + Up/Down split + day-shape sparkline +
+              2-segment WAN/Local bar  -->
+
+    <Page.Resources>
+        <!--  Delta-chip CornerRadius = 9999 (pill). Kept as a page-local
+              resource rather than radius.pill so a single value drift
+              re-tones every delta chip together. The CSS source-of-truth
+              ships the same value (radius.pill).  -->
+        <CornerRadius x:Key="delta.chip.radius">9999</CornerRadius>
+
+        <!--  Metallic violet button surface — same three-stop pattern as
+              metal.control (highlight catch-light at top, main face below,
+              darker bottom), shifted into the brand violet ramp. Constant in
+              both themes because accent.fill is constant brand violet
+              (violet-600) AA-safe for white text on either theme. Page-local
+              rather than a global token: this is the Export button's
+              treatment; if it spreads to a second consumer it can be
+              promoted to DesignTokens.xaml + BrandAccent.{Light,Dark}.xaml.
+                * #9A72F0 (violet-400) — catch-light edge band at offset 0
+                * #6D3FD1 (violet-600 / accent.fill) — main face at offset 0.10
+                * #561FB0 (violet-700) — bottom shade at offset 1.00  -->
+        <LinearGradientBrush x:Key="metal.accent.fill" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0"   Color="#9A72F0" />
+            <GradientStop Offset="0.1" Color="#6D3FD1" />
+            <GradientStop Offset="1"   Color="#561FB0" />
+        </LinearGradientBrush>
+
+        <!--  Brand menu-item Style. BasedOn the implicit MenuItem type style
+              so Wpf.Ui's hover / selection / focus chrome is inherited
+              (BasedOn={x:Type MenuItem} resolves to whichever style is
+              registered as MenuItem's default — Wpf.Ui's implicit one). The
+              Setters add the mockup-aligned padding + inter-item margin
+              that the default ContextMenu chrome ships too tight. Reused by
+              both the Export ContextMenu and the Anchor ContextMenu so the
+              two menus visually agree.  -->
+        <Style x:Key="brand.menu.item"
+               TargetType="MenuItem"
+               BasedOn="{StaticResource {x:Type MenuItem}}">
+            <Setter Property="Padding" Value="18,12" />
+            <Setter Property="Margin"  Value="0,4" />
+        </Style>
+
+        <!--  Phase 3 — Top Apps DataGrid resources. These mirror the
+              page-local resources in PerAppPage.xaml (cell.body.trim,
+              cell.body.secondary.trim, cell.mono.right, cell.signature,
+              grid.header*, BoolToVisibility). Duplicated rather than
+              promoted to DesignTokens.xaml so the change stays
+              Phase-3-scoped; if a third consumer arrives (e.g. App Detail
+              gets its own ranked table), lift them to a shared
+              ResourceDictionary then.  -->
+
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!--  Padding asymmetry + LineStackingStrategy explained in the
+              PerAppPage equivalents — Urbanist's ink overshoots the
+              declared descender slightly, and BlockLineHeight + symmetric
+              padding leaves glyphs clipping the cell's bottom edge.  -->
+        <Style x:Key="cell.body.trim" TargetType="TextBlock" BasedOn="{StaticResource text.body}">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
+            <Setter Property="Padding" Value="0,5,0,1" />
+        </Style>
+        <Style x:Key="cell.body.secondary.trim" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
+            <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+        </Style>
+        <Style x:Key="cell.mono.right" TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
+            <Setter Property="Padding" Value="0,5,0,1" />
+        </Style>
+        <!--  Foreground-only treatment for Signature — never pills, never
+              backgrounds (brief §8.2 lock). Unsigned + Invalid both signal
+              security caution; Unchecked sits at text.tertiary; Signed
+              falls through to cell.body.trim's text.primary default.  -->
+        <Style x:Key="cell.signature" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
+                    <Setter Property="Foreground" Value="{DynamicResource text.tertiary}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="grid.header" TargetType="DataGridColumnHeader" BasedOn="{StaticResource DefaultUiDataGridColumnHeaderStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource text.primary}" />
+            <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="{StaticResource font.size.body}" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+        <Style x:Key="grid.header.right" TargetType="DataGridColumnHeader" BasedOn="{StaticResource grid.header}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+        </Style>
+
+        <!--  Section header used on Notable today + Uncommon talkers. Sits
+              between text.subtitle (20 px) and text.body (14 px) — sized
+              for a tier-2 section title without competing with the page
+              title or the Hero card eyebrow row.  -->
+        <Style x:Key="reports.section.header" TargetType="TextBlock" BasedOn="{StaticResource text.subtitle}">
+            <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+        </Style>
+
+        <!--  Top Apps icon tile — tint-keyed by SignatureStatus. Signed /
+              Unchecked use the default accent.subtle treatment; Unsigned /
+              Invalid swap to status.critical.background so the row's risk
+              registers at a glance (mockup-aligned, Q4 audit).  -->
+        <Style x:Key="topapps.tile" TargetType="Border">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="CornerRadius" Value="{StaticResource radius.control}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource accent.subtle}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="topapps.tile.glyph" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource accent.text}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  Optional secondary path / service-list line under the App name.
+              Collapsed when empty; visible when the row's SecondaryLine
+              carries content (e.g. "%TEMP%\updater_x.exe" for unsigned
+              rows from user-writable paths). DataTrigger matches against
+              empty string rather than null — record fields default to ""
+              so the trigger fires reliably.  -->
+        <Style x:Key="topapps.secondary.line" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource font.mono}" />
+            <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
+            <Setter Property="Foreground" Value="{DynamicResource text.tertiary}" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SecondaryLine}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  Signature pill — tag-style rounded rectangle (NOT a full pill).
+              Three states:
+                * Signed → status.success.background fill + .success border + .success text
+                * Unchecked → status.neutral.background fill + .neutral border + .neutral text
+                * Unsigned / Invalid → status.critical.background fill + .critical border + .critical text
+              All three carry the same lock glyph; color disambiguates the
+              state.
+
+              Why literal CornerRadius=6 (not delta.chip.radius=9999): the
+              full-pill rounding on a narrow ~70 px wide pill reads as
+              elliptical because the curve consumes the entire short edge.
+              6 px gives a defined rounded-rect "tag" silhouette that
+              matches the mockup. BorderThickness=1 with a tinted edge
+              matches the mockup's visible outline.  -->
+        <Style x:Key="topapps.sig.pill" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="{DynamicResource status.success.background}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource status.success}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
+                    <Setter Property="Background" Value="{DynamicResource status.neutral.background}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="topapps.sig.pill.icon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource status.success}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
+                    <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="topapps.sig.pill.text" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource font.display}" />
+            <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource status.success}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
+                    <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  Cross-surface overlap indicator — small accent.text dot that
+              paints next to the app name when this row also appears in a
+              different surface (Top Apps × Uncommon Talkers / Notable).
+              Per mockup Q4 audit: "rows that also appear in Uncommon
+              Talkers + Notable (· marks the overlap)". Reused on Top Apps
+              cells AND Uncommon Talker mini-cards.  -->
+        <Style x:Key="reports.overlap.dot" TargetType="Ellipse">
+            <Setter Property="Width" Value="6" />
+            <Setter Property="Height" Value="6" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="{DynamicResource accent.text}" />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasOverlap}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  Uncommon Talker mini-card template — one card per anomaly.
+              Per locked mockup Q5b: each app surfaces in its own metal
+              mini-card (NOT as a row inside an outer container card).
+              The mini-card itself is the drill target — Cursor=Hand at
+              the root Border + MouseLeftButtonUp wires to History (no-op
+              destination until Phase 5).
+
+              Token annotation reinforcement (mockup page 9): "glyph tone
+              carries category severity, ROWS STAY NEUTRAL" — so the
+              mini-card icon tile tints by the row's own SignatureStatus
+              (via topapps.tile / topapps.tile.glyph), NOT by the parent
+              category color.
+
+              Card chrome: metal.card + border.card + shadow.sm + radius.md.
+              Slightly tighter than the full Top Apps card (radius.md = 10,
+              not radius.card = 8 — wait, those are inverted) — actually
+              radius.md is one tier softer. Phase 3 keeps the same recipe
+              the brief calls out.  -->
+        <!--  Notable card template — data-bound, driven by the
+              NotableCardViewModel records the page-code-behind builds in
+              ApplyResult. The DataTemplate carries default-tone (Info)
+              styling on its named elements; DataTriggers swap the
+              sevbar background, icon tile background, glyph foreground,
+              and glyph Symbol for the Critical / Warning severities.
+              No trigger for Info because the defaults already match.
+
+              Bound fields (NotableCardViewModel):
+                * Severity   — drives the DataTriggers below
+                * Title      — text.body.strong title
+                * Detail     — text.body secondary detail
+                * EntityRef  — pre-formatted "App · {image} · pid {pid} · {HH:mm}"
+                * AlertsText — pre-formatted "Alerts · #{id}"
+
+              Phase 6 wires a Click handler on the outer Border to navigate
+              to the Alerts feed (currently inert; Cursor=Hand telegraphs
+              the future affordance).  -->
+        <DataTemplate x:Key="reports.notable.card">
+            <Border Margin="0,10,0,0"
+                    Cursor="Hand"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.sm}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="SevBar"
+                            Grid.Column="0"
+                            Background="{DynamicResource status.neutral}"
+                            CornerRadius="8,0,0,8" />
+                    <Border x:Name="IconTile"
+                            Grid.Column="1"
+                            Width="40" Height="40"
+                            Margin="14,14,12,14"
+                            Background="{DynamicResource status.neutral.background}"
+                            CornerRadius="{StaticResource radius.control}"
+                            VerticalAlignment="Center">
+                        <ui:SymbolIcon x:Name="IconGlyph"
+                                       Symbol="Info20"
+                                       FontSize="20"
+                                       Foreground="{DynamicResource status.neutral}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="0,14,12,14">
+                        <TextBlock Style="{StaticResource text.body.strong}"
+                                   Text="{Binding Title}" />
+                        <TextBlock Style="{StaticResource text.body}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Margin="0,2,0,0"
+                                   Text="{Binding Detail}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <TextBlock FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="{Binding EntityRef}"
+                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="LockClosed20"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource accent.text}"
+                                           Margin="14,0,4,0"
+                                           VerticalAlignment="Center" />
+                            <TextBlock FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource accent.text}"
+                                       Text="{Binding AlertsText}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Path Grid.Column="3"
+                          Data="M 0,0 L 6,6 L 0,12"
+                          Stroke="{DynamicResource text.tertiary}"
+                          StrokeThickness="2"
+                          StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Width="10" Height="16"
+                          Stretch="None"
+                          Margin="0,0,18,0"
+                          VerticalAlignment="Center"
+                          HorizontalAlignment="Center" />
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter TargetName="SevBar"   Property="Background" Value="{DynamicResource status.critical}" />
+                    <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource status.critical.background}" />
+                    <Setter TargetName="IconGlyph" Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter TargetName="IconGlyph" Property="Symbol"     Value="ShieldError20" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter TargetName="SevBar"   Property="Background" Value="{DynamicResource status.caution}" />
+                    <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource status.caution.background}" />
+                    <Setter TargetName="IconGlyph" Property="Foreground" Value="{DynamicResource status.caution}" />
+                    <Setter TargetName="IconGlyph" Property="Symbol"     Value="Warning20" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="reports.uncommon.card">
+            <Border Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.md}"
+                    Effect="{DynamicResource shadow.sm}"
+                    Padding="14"
+                    Margin="0,8,0,0"
+                    Cursor="Hand"
+                    MouseLeftButtonUp="OnUncommonRowMouseUp">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!--  Icon tile reuses Top Apps' tint-by-signature
+                          styles so Unsigned rows get the status.critical
+                          tint here too (consistent treatment across both
+                          surfaces).  -->
+                    <Border Grid.Column="0"
+                            Style="{StaticResource topapps.tile}"
+                            VerticalAlignment="Top">
+                        <ui:SymbolIcon Symbol="{Binding IconGlyph}"
+                                       Style="{StaticResource topapps.tile.glyph}" />
+                    </Border>
+                    <StackPanel Grid.Column="1"
+                                Margin="12,0,12,0"
+                                VerticalAlignment="Center">
+                        <!--  App name + optional overlap dot. Name is
+                              text.body.strong (a tier more emphasis than
+                              the Top Apps row cell, since each mini-card
+                              uses the name as its primary identifier).  -->
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding ImageName}"
+                                       Style="{StaticResource text.body.strong}" />
+                            <Ellipse Style="{StaticResource reports.overlap.dot}" />
+                        </StackPanel>
+                        <!--  Publisher · Signature secondary line. Composed
+                              from inline Runs because the middle-dot delim
+                              and the two distinct foregrounds (secondary
+                              vs tertiary) can't be expressed as a single
+                              Text binding.  -->
+                        <TextBlock Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Margin="0,2,0,0">
+                            <Run Text="{Binding Publisher, Mode=OneWay}" />
+                            <Run Text=" · " Foreground="{DynamicResource text.tertiary}" />
+                            <Run Text="{Binding SignatureStatus, Mode=OneWay}" />
+                        </TextBlock>
+                        <!--  Reason text. The mockup token annotation says
+                              "text.primary", but the rendered mockup
+                              clearly shows the reason copy smaller and
+                              lighter than the bolded app name — caption +
+                              text.secondary matches the visual ground
+                              truth. Annotation aspirational; rendered
+                              treatment wins.  -->
+                        <TextBlock Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Margin="0,8,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Reason}" />
+                    </StackPanel>
+                    <!--  Hover chevron — appears on card-Border hover via
+                          IsMouseOver up the visual tree. Matches the Q6
+                          locked drill affordance: hover reveals a trailing
+                          chevron, cursor becomes a hand, single click
+                          navigates.  -->
+                    <Path Grid.Column="2"
+                          Data="M 0,0 L 6,6 L 0,12"
+                          Stroke="{DynamicResource chart.downSeries}"
+                          StrokeThickness="2.75"
+                          StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Width="10" Height="16"
+                          Stretch="None"
+                          VerticalAlignment="Center"
+                          HorizontalAlignment="Center"
+                          Visibility="{Binding RelativeSource={RelativeSource AncestorType=Border}, Path=IsMouseOver, Converter={StaticResource BoolToVisibility}}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
+    <!--  Page-scroll wrap — mirrors AppDetailPage.xaml's pattern. Wpf.Ui's
+          NavigationView nominally wraps each hosted page in a
+          DynamicScrollViewer, but that wrapper's overflow behaviour is
+          unreliable in this codebase (documented in AppDetailPage.xaml
+          §lines 9-31). Owning the scroll here guarantees the page is
+          scrollable on short windows. The Border binds MinHeight to
+          PageScroll.ViewportHeight so on tall windows the content area
+          still fills vertically without the rows collapsing to their
+          desired height. Border.Padding=24 replaces the former
+          Grid.Margin=24 — same 24 px outer inset, but ViewportHeight is
+          now measured inside that padding so MinHeight matches the
+          visible area exactly.
+
+          Design-system reinforcement (mockup page 12, "scroll: page —
+          the whole page scrolls; no surface scrolls independently").  -->
+    <Grid>
+        <ScrollViewer x:Name="PageScroll"
+                      Background="Transparent"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Padding="24"
+                    MinHeight="{Binding ViewportHeight, ElementName=PageScroll}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /> <!-- Row 0: chrome (title + date + anchor + Export) -->
+            <RowDefinition Height="Auto" /> <!-- Row 1: status banner (Collapsed default) -->
+            <RowDefinition Height="Auto" /> <!-- Row 2: hero card -->
+            <RowDefinition Height="Auto" /> <!-- Row 3: Notable today -->
+            <RowDefinition Height="Auto" /> <!-- Row 4: Top apps -->
+            <RowDefinition Height="Auto" /> <!-- Row 5: Uncommon talkers -->
+        </Grid.RowDefinitions>
+
+        <!--  Row 0 — chrome cluster.  -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!--  Left: title + caption.  -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <ui:TextBlock Style="{StaticResource text.subtitle}"
+                              FontFamily="{StaticResource font.display}"
+                              FontSize="24"
+                              Text="Reports" />
+                <ui:TextBlock Style="{StaticResource text.caption}"
+                              Foreground="{DynamicResource text.secondary}"
+                              Text="Daily overview of network activity on your machine."
+                              Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!--  Right: date controls (top) + Export button (below, right-aligned).  -->
+            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!--  Date picker — Wpf.Ui's brand-styled CalendarDatePicker.
+                          Brand chrome (border, calendar icon, popup) comes
+                          from Wpf.Ui's own template, so the underline / dark
+                          icon / popup-overflow issues from stock WPF
+                          DatePicker are gone. IsTodayHighlighted=False
+                          keeps the today indicator off (matches the brief).
+
+                          F1 fallback (the closed-state button face doesn't
+                          render the formatted Date in v4.0.2): a sibling
+                          TextBlock overlays the picker, bound one-way to
+                          PrimaryDatePicker.Date with the brand format
+                          ("Sun, Jun 8 2026"). IsHitTestVisible=False so the
+                          picker's internal click handling (open popup) still
+                          reaches the user. The Grid lets the overlay sit on
+                          top without participating in horizontal layout.  -->
+                    <Grid VerticalAlignment="Center">
+                        <ui:CalendarDatePicker x:Name="PrimaryDatePicker"
+                                                Width="200" Height="32"
+                                                HorizontalContentAlignment="Right"
+                                                IsTodayHighlighted="False" />
+                        <TextBlock IsHitTestVisible="False"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Left"
+                                   Margin="14,0,0,0"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="{Binding ElementName=PrimaryDatePicker,
+                                                  Path=Date,
+                                                  StringFormat={}{0:ddd\, MMM d yyyy}}" />
+                    </Grid>
+
+                    <TextBlock Text="vs"
+                               Style="{StaticResource text.body}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="12,0,12,0" />
+
+                    <!--  Anchor picker — ui:Button + ContextMenu (same Wpf.Ui
+                          pattern as the Export button below). ContextMenu's
+                          Placement + CustomPopupPlacementCallback are honored
+                          on every open without being overwritten by a template
+                          trigger, so right-anchoring sticks (the stock
+                          ComboBox dropdown placement is hard-coded in its
+                          template and re-set on every IsDropDownOpen trigger,
+                          which made our previous override no-op out).
+
+                          Each anchor option is a MenuItem with Icon (brand
+                          violet glyph) + composite Header (title + mono
+                          date-range caption). Tag-driven Click handler
+                          updates the button face glyph + label.  -->
+                    <ui:Button x:Name="AnchorButton"
+                               Width="240" Height="32"
+                               Padding="10,0"
+                               VerticalAlignment="Center"
+                               Background="{DynamicResource metal.control}"
+                               BorderBrush="{DynamicResource border.card}"
+                               BorderThickness="1"
+                               HorizontalContentAlignment="Stretch"
+                               Click="OnAnchorClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Grid.Column="0"
+                                           x:Name="AnchorGlyph"
+                                           Symbol="History24"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,10,0" />
+                            <TextBlock Grid.Column="1"
+                                       x:Name="AnchorLabel"
+                                       Text="7-day average"
+                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Grid.Column="2"
+                                           Symbol="ChevronDown20"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center" />
+                        </Grid>
+                        <ui:Button.ContextMenu>
+                            <ContextMenu x:Name="AnchorMenu"
+                                         Padding="12"
+                                         MinWidth="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.ActualWidth}"
+                                         ItemContainerStyle="{StaticResource brand.menu.item}">
+                                <MenuItem Click="OnAnchorSelected" Tag="SpecificDate">
+                                    <MenuItem.Icon>
+                                        <ui:SymbolIcon Symbol="CalendarLtr20"
+                                                       FontSize="20"
+                                                       Foreground="{DynamicResource accent.default}" />
+                                    </MenuItem.Icon>
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="A specific date" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="AnchorSpecificCaption"
+                                                       Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource text.secondary}"
+                                                       FontFamily="{StaticResource font.mono}"
+                                                       FontSize="{StaticResource font.size.caption}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                                <MenuItem Click="OnAnchorSelected" Tag="Avg7d">
+                                    <MenuItem.Icon>
+                                        <ui:SymbolIcon Symbol="History24"
+                                                       FontSize="20"
+                                                       Foreground="{DynamicResource accent.default}" />
+                                    </MenuItem.Icon>
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="7-day average" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="Anchor7DayCaption"
+                                                       Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource text.secondary}"
+                                                       FontFamily="{StaticResource font.mono}"
+                                                       FontSize="{StaticResource font.size.caption}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                                <MenuItem Click="OnAnchorSelected" Tag="Avg30d">
+                                    <MenuItem.Icon>
+                                        <ui:SymbolIcon Symbol="History24"
+                                                       FontSize="20"
+                                                       Foreground="{DynamicResource accent.default}" />
+                                    </MenuItem.Icon>
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="30-day average" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="Anchor30DayCaption"
+                                                       Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource text.secondary}"
+                                                       FontFamily="{StaticResource font.mono}"
+                                                       FontSize="{StaticResource font.size.caption}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                                <MenuItem Click="OnAnchorSelected" Tag="Avg90d">
+                                    <MenuItem.Icon>
+                                        <ui:SymbolIcon Symbol="History24"
+                                                       FontSize="20"
+                                                       Foreground="{DynamicResource accent.default}" />
+                                    </MenuItem.Icon>
+                                    <MenuItem.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="90-day average" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="Anchor90DayCaption"
+                                                       Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource text.secondary}"
+                                                       FontFamily="{StaticResource font.mono}"
+                                                       FontSize="{StaticResource font.size.caption}" />
+                                        </StackPanel>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                            </ContextMenu>
+                        </ui:Button.ContextMenu>
+                    </ui:Button>
+                </StackPanel>
+
+                <!--  Export button — metallic violet face (metal.accent.fill,
+                      page-local LinearGradientBrush). Icons inherit
+                      Foreground from the button (text.on-accent → white).
+                      The inline TextBlock needs EXPLICIT Foreground because
+                      DesignTokens.xaml's implicit `<Style TargetType="TextBlock">`
+                      hard-sets Foreground=TextFillColorPrimaryBrush; that
+                      style wins over inherited Foreground and would render
+                      the label black on the violet face. ArrowDownload24 is
+                      the brief-aligned export glyph (the original
+                      ArrowExportLtr24 reads as a less obvious export icon).
+                      The flyout is right-anchored via Placement=Custom +
+                      RightAnchoredBelow callback (set in code-behind) so the
+                      menu's right edge aligns with the button's right edge,
+                      keeping it inside the window when the chrome cluster
+                      sits near the right edge.  -->
+                <ui:Button x:Name="ExportButton"
+                           Margin="0,12,0,0"
+                           Height="32"
+                           Padding="14,0"
+                           HorizontalAlignment="Right"
+                           Background="{DynamicResource metal.accent.fill}"
+                           Foreground="{DynamicResource text.on-accent}"
+                           BorderThickness="0"
+                           Click="OnExportClick">
+                    <!--  WinUI 3 brush-key overrides — Wpf.Ui's ui:Button
+                          template binds its hover/pressed state Background
+                          to ButtonBackgroundPointerOver / Pressed (DynamicResource
+                          in the template, precedence level 4 — beats Style
+                          triggers at level 6). Overriding the keys at the
+                          element's local Resources scope wins via WPF
+                          property precedence and re-tunes the hover + pressed
+                          fills without touching the template. This is the
+                          documented WinUI 3 / Wpf.Ui pattern for state-brush
+                          retuning.
+
+                          Stops mirror the brand CSS:
+                            accent-grad-hover  = violet-300 → violet-500 → violet-600
+                            accent-grad-pressed = violet-500 → violet-700 → violet-800
+
+                          ButtonForegroundPointerOver / Pressed locked to white
+                          so the label + icons stay readable on the violet hover/
+                          pressed faces. ButtonBorderBrushPointerOver
+                          transparent — the gradient is the only visual edge.  -->
+                    <ui:Button.Resources>
+                        <LinearGradientBrush x:Key="ButtonBackgroundPointerOver" StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0"   Color="#B59AF4" />
+                            <GradientStop Offset="0.1" Color="#8254E6" />
+                            <GradientStop Offset="1"   Color="#6D3FD1" />
+                        </LinearGradientBrush>
+                        <LinearGradientBrush x:Key="ButtonBackgroundPressed" StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0"   Color="#8254E6" />
+                            <GradientStop Offset="0.1" Color="#561FB0" />
+                            <GradientStop Offset="1"   Color="#461D7C" />
+                        </LinearGradientBrush>
+                        <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                    </ui:Button.Resources>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock Text="Export"
+                                   Foreground="{DynamicResource text.on-accent}"
+                                   Margin="8,0,4,0"
+                                   VerticalAlignment="Center" />
+                        <ui:SymbolIcon Symbol="ChevronDown20" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ui:Button.ContextMenu>
+                        <ContextMenu x:Name="ExportMenu"
+                                     Padding="12"
+                                     MinWidth="200"
+                                     ItemContainerStyle="{StaticResource brand.menu.item}">
+                            <MenuItem Click="OnExportCsvClick">
+                                <MenuItem.Icon>
+                                    <ui:SymbolIcon Symbol="DocumentTable24"
+                                                   FontSize="20"
+                                                   Foreground="{DynamicResource accent.default}" />
+                                </MenuItem.Icon>
+                                <MenuItem.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="CSV" FontWeight="SemiBold" />
+                                        <TextBlock Text="Spreadsheet-friendly"
+                                                   Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource text.secondary}"
+                                                   FontSize="{StaticResource font.size.caption}" />
+                                    </StackPanel>
+                                </MenuItem.Header>
+                            </MenuItem>
+                            <MenuItem Click="OnExportHtmlClick">
+                                <MenuItem.Icon>
+                                    <ui:SymbolIcon Symbol="Document24"
+                                                   FontSize="20"
+                                                   Foreground="{DynamicResource accent.default}" />
+                                </MenuItem.Icon>
+                                <MenuItem.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="HTML" FontWeight="SemiBold" />
+                                        <TextBlock Text="Self-contained document"
+                                                   Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource text.secondary}"
+                                                   FontSize="{StaticResource font.size.caption}" />
+                                    </StackPanel>
+                                </MenuItem.Header>
+                            </MenuItem>
+                        </ContextMenu>
+                    </ui:Button.ContextMenu>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
+
+        <!--  Row 1 — status banner shell (Collapsed default). HistoryPage
+              pattern verbatim. Phase 4 wires the disconnected vs error
+              state split.  -->
+        <Border Grid.Row="1"
+                x:Name="StatusBanner"
+                Visibility="Collapsed"
+                Margin="0,0,0,12"
+                Background="{DynamicResource status.caution.background}"
+                Padding="12,8"
+                CornerRadius="{StaticResource radius.control}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                               Symbol="Warning20"
+                               FontSize="16"
+                               Foreground="{DynamicResource status.caution.text}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                <TextBlock x:Name="StatusBannerText"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource status.caution.text}" />
+            </StackPanel>
+        </Border>
+
+        <!--  Row 2 — hero card. Canonical metal recipe. Three horizontal
+              clusters: totals (left) · WAN vs Local (middle) · sparkline
+              (right). The clusters' MinWidths keep the layout readable at
+              the 1000-px window minimum; the * columns redistribute slack
+              on wider windows.  -->
+        <Border Grid.Row="2"
+                x:Name="HeroCard"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="24,20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" MinWidth="300" />
+                    <ColumnDefinition Width="*" MinWidth="240" />
+                    <ColumnDefinition Width="*" MinWidth="280" />
+                </Grid.ColumnDefinitions>
+
+                <!--  LEFT cluster — totals + Up/Down split.  -->
+                <StackPanel Grid.Column="0" Margin="0,0,32,0">
+                    <ui:TextBlock x:Name="HeroEyebrow"
+                                  Style="{StaticResource text.eyebrow}"
+                                  Text="TOTAL TRAFFIC" />
+
+                    <!--  Headline row: value (40px mono) + unit (20px mono in
+                          text.secondary) + delta chip + anchor caption.
+                          VerticalAlignment=Bottom on the unit + chip + caption
+                          baselines them with the big value's bottom.
+                          LineHeight overrides match text.title.large (48) /
+                          text.subtitle (28) — without them, text.mono's
+                          baseline LineHeight=21 (sized for body text) leaves
+                          the 40 px headline glyph overshooting the line box
+                          upward by ~24 px, climbing into the eyebrow row
+                          above.  -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock x:Name="HeroTotalValue"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.title.large}"
+                                   LineHeight="48"
+                                   Text="9.9" />
+                        <TextBlock x:Name="HeroTotalUnit"
+                                   Style="{StaticResource text.mono}"
+                                   FontSize="{StaticResource font.size.subtitle}"
+                                   LineHeight="28"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Bottom"
+                                   Margin="6,0,0,6"
+                                   Text="GB" />
+                        <Border x:Name="HeroTotalDeltaChip"
+                                VerticalAlignment="Bottom"
+                                Margin="12,0,0,10"
+                                Background="{DynamicResource status.success.background}"
+                                CornerRadius="{StaticResource delta.chip.radius}"
+                                Padding="6,2">
+                            <TextBlock x:Name="HeroTotalDeltaText"
+                                       FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource status.success}"
+                                       Text="▼3%" />
+                        </Border>
+                        <TextBlock x:Name="HeroAnchorCaption"
+                                   VerticalAlignment="Bottom"
+                                   Margin="8,0,0,10"
+                                   Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Text="vs 7-day avg" />
+                    </StackPanel>
+
+                    <!--  Up/Down split — two equal columns. Each: eyebrow row
+                          (arrow + label) + value row (mono value + unit + delta
+                          chip). Value paints in chart.{upSeries|downSeries} so
+                          the series identity reads at a glance.  -->
+                    <Grid Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="ArrowUp16"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource text.tertiary}"
+                                               VerticalAlignment="Center" />
+                                <TextBlock Text="Up"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock x:Name="HeroUpValue"
+                                           Style="{StaticResource text.mono}"
+                                           FontSize="{StaticResource font.size.subtitle}"
+                                           LineHeight="28"
+                                           Foreground="{DynamicResource chart.upSeries}"
+                                           Text="1.2" />
+                                <TextBlock x:Name="HeroUpUnit"
+                                           Style="{StaticResource text.mono}"
+                                           FontSize="{StaticResource font.size.caption}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Bottom"
+                                           Margin="4,0,0,4"
+                                           Text="GB" />
+                                <Border VerticalAlignment="Bottom"
+                                        Margin="10,0,0,4"
+                                        Background="{DynamicResource status.neutral.background}"
+                                        CornerRadius="{StaticResource delta.chip.radius}"
+                                        Padding="6,2">
+                                    <TextBlock x:Name="HeroUpDeltaText"
+                                               FontFamily="{StaticResource font.mono}"
+                                               FontSize="{StaticResource font.size.caption}"
+                                               Foreground="{DynamicResource status.neutral}"
+                                               Text="▲+18%" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="ArrowDown16"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource text.tertiary}"
+                                               VerticalAlignment="Center" />
+                                <TextBlock Text="Down"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Margin="4,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock x:Name="HeroDownValue"
+                                           Style="{StaticResource text.mono}"
+                                           FontSize="{StaticResource font.size.subtitle}"
+                                           LineHeight="28"
+                                           Foreground="{DynamicResource chart.downSeries}"
+                                           Text="8.7" />
+                                <TextBlock x:Name="HeroDownUnit"
+                                           Style="{StaticResource text.mono}"
+                                           FontSize="{StaticResource font.size.caption}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Bottom"
+                                           Margin="4,0,0,4"
+                                           Text="GB" />
+                                <Border VerticalAlignment="Bottom"
+                                        Margin="10,0,0,4"
+                                        Background="{DynamicResource status.success.background}"
+                                        CornerRadius="{StaticResource delta.chip.radius}"
+                                        Padding="6,2">
+                                    <TextBlock x:Name="HeroDownDeltaText"
+                                               FontFamily="{StaticResource font.mono}"
+                                               FontSize="{StaticResource font.size.caption}"
+                                               Foreground="{DynamicResource status.success}"
+                                               Text="▼6%" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <!--  MIDDLE cluster — WAN vs Local proportion. Bar is two
+                      <Border>s with widths bound proportionally — NOT a
+                      CartesianChart (light-and-fast). Reusable pattern
+                      wherever a 2-way visual split is needed.  -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,32,0">
+                    <ui:TextBlock Style="{StaticResource text.eyebrow}" Text="WAN VS LOCAL" />
+                    <Grid Height="10" Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="WanBarCol" Width="73*" />
+                            <ColumnDefinition x:Name="LocalBarCol" Width="27*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource chart.wan}"
+                                CornerRadius="5,0,0,5" />
+                        <Border Grid.Column="1"
+                                Background="{DynamicResource chart.local}"
+                                CornerRadius="0,5,5,0" />
+                    </Grid>
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,24,0">
+                            <Ellipse Width="8" Height="8"
+                                     Fill="{DynamicResource chart.wan}"
+                                     VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="Globe24"
+                                           FontSize="14"
+                                           Margin="10,0,4,0"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center" />
+                            <TextBlock Text="WAN"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="HeroWanPercent"
+                                       FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.body}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource text.primary}"
+                                       Margin="8,0,0,0"
+                                       Text="73%"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Ellipse Width="8" Height="8"
+                                     Fill="{DynamicResource chart.local}"
+                                     VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="Home24"
+                                           FontSize="14"
+                                           Margin="10,0,4,0"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center" />
+                            <TextBlock Text="Local"
+                                       Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="HeroLocalPercent"
+                                       FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.body}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource text.primary}"
+                                       Margin="8,0,0,0"
+                                       Text="27%"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <!--  RIGHT cluster — day-shape sparkline. lvc:CartesianChart
+                      with Y axis hidden, X axis carrying 6h-stepped HH:00
+                      labels, gridlines suppressed in code-behind, tooltip
+                      Hidden (sparklines are trend-cues only, brief §6.2).
+                      The peak dot is a 1-point LineSeries named "Peak" so
+                      ChartTheming paints it as geometry-only in
+                      chart.downSeries. Peak time label sits top-right of the
+                      chart canvas — STARTING POINT placement; if a future
+                      tune wants it data-anchored above the peak point we
+                      switch to a translated overlay.  -->
+                <StackPanel Grid.Column="2">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBlock Grid.Column="0"
+                                      Style="{StaticResource text.eyebrow}"
+                                      Text="WHEN TRAFFIC HAPPENED" />
+                        <TextBlock Grid.Column="1"
+                                   Text="by hour"
+                                   Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Margin="0,8,0,0" Height="110">
+                        <lvc:CartesianChart x:Name="SparklineChart"
+                                            Background="Transparent"
+                                            LegendPosition="Hidden" />
+                        <!--  Peak overlay — dashed vertical guide + label
+                              positioned in code on Loaded + SizeChanged.
+                              Canvas-with-absolute coords gives pixel control
+                              over X positioning relative to LC2's plot area
+                              (chart canvas minus DrawMargin), which a Grid
+                              + Margin approach can't deliver because TextBlock
+                              ActualWidth resolves async with layout.
+                              IsHitTestVisible=False on the overlay so it
+                              doesn't intercept any future tooltip / drag
+                              events.  -->
+                        <Canvas x:Name="PeakOverlay" IsHitTestVisible="False">
+                            <Line x:Name="PeakLine"
+                                  Stroke="{DynamicResource chart.downSeries}"
+                                  StrokeThickness="1"
+                                  StrokeDashArray="3,3"
+                                  SnapsToDevicePixels="True" />
+                            <!--  Peak dot — XAML Ellipse rather than an LC2
+                                  one-point LineSeries. LC2 v2's animation
+                                  pipeline leaks Geometry instances across
+                                  resize re-layouts on single-point series,
+                                  accumulating ghost dots on every resize
+                                  tick. As a XAML primitive positioned by
+                                  RepositionPeakOverlay (same path as the
+                                  guide line + label), the dot is a single
+                                  element repositioned in place — LC2 no
+                                  longer owns it.  -->
+                            <Ellipse x:Name="PeakDot"
+                                     Width="10" Height="10"
+                                     Fill="{DynamicResource chart.downSeries}" />
+                            <TextBlock x:Name="PeakLabel"
+                                       FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       Text="peak 19:00" />
+                        </Canvas>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!--  Row 3 — Notable today. Three severity sections (Critical →
+              Warning → Info), each with one mock incident card per locked
+              mockup Q7a. NOT a DataGrid (locked: heterogeneous payload →
+              cards, never tabular). Phase 3 ships one card per severity
+              for visual coverage; real counts arrive in Phase 5.
+
+              Section header treatment (per locked mockup):
+                * 8 px filled Ellipse in status.{sev} — the "dot bubble"
+                * Severity name in DEFAULT text.primary (NOT sev-colored).
+                  The bubble carries the severity color; the text does not.
+                * Tiny count number after the title in text.secondary.
+
+              Card structure:
+                * Outer Border: metal.card + border.card + shadow.sm +
+                  radius.card. Softer shadow.sm because incidents group
+                  under a section header rather than standing as primary
+                  data surfaces.
+                * 4-column Grid inside:
+                  - Sevbar — 3 px column, Background=status.{sev}, with
+                    asymmetric CornerRadius="8,0,0,8" so its top-left and
+                    bottom-left arc with the outer card's radius.card=8.
+                    (WPF Border CornerRadius clips its own paint only,
+                    not child geometry; without the matching inner
+                    corners the sevbar paints square over the rounded
+                    card. Literal Thickness — token binding doesn't work
+                    on CornerRadius any more than on Margin.)
+                  - 40 px tinted icon tile (status.{sev}.background) with
+                    glyph in status.{sev}.
+                  - body: title (text.body.strong, text.primary) + detail
+                    (text.body, text.secondary) + entity-ref (mono
+                    caption) carrying the inline "Alerts · #N" reference
+                    in accent.text — NOT a pill, just a violet-tinted
+                    mono Run continuing the entity-ref text. Lock glyph
+                    sits to its left for clickability cue. Inert in
+                    Phase 3; sprint Phase 6 wires the Alerts deep-link.
+                  - trailing chevron at far right in text.tertiary. The
+                    whole card is the drill affordance; for Phase 3
+                    it's visible-but-inert.  -->
+        <StackPanel x:Name="NotableRow" Grid.Row="3" Margin="0,24,0,0">
+            <!--  Section header — name + caption flow inline on the same row,
+                  per locked mockup. The caption sits to the right of the title
+                  with a left margin so they read as a single header band.  -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource reports.section.header}"
+                           Text="Notable today" />
+                <TextBlock Style="{StaticResource text.caption}"
+                           Foreground="{DynamicResource text.secondary}"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"
+                           Text="Alert-eligible observations for the day. Read-only echo of the Alerts feed." />
+            </StackPanel>
+
+            <!--  NotableNormal — the three severity sections. Each is a
+                  named StackPanel containing a header (dot + label +
+                  count) and an ItemsControl bound to the per-severity
+                  view-model list. Sections start Collapsed; ApplyNotable
+                  flips them Visible based on filtered counts. Toggled
+                  Collapsed at the parent level in state=QuietDay; the
+                  quiet variant (NotableQuiet) takes over there.
+
+                  Phase 5b note: the aggregator emits real Notable entries
+                  derived from the UnsignedFromUserPath rule. Until
+                  Phase 6 wires more rules, only the Critical section
+                  will typically have items on a real machine.  -->
+            <StackPanel x:Name="NotableNormal">
+
+            <!--  Three data-bound severity sections. Each is gated
+                  Collapsed by ApplyNotable when its filtered list is
+                  empty; the section header (dot + label + count) shares
+                  layout shape across all three for visual consistency.  -->
+            <StackPanel x:Name="NotableCriticalSection" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <Ellipse Width="8" Height="8"
+                             Fill="{DynamicResource status.critical}"
+                             VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.body.strong}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"
+                               Text="Critical" />
+                    <TextBlock x:Name="NotableCriticalCount"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
+                </StackPanel>
+                <ItemsControl x:Name="NotableCriticalList"
+                              ItemTemplate="{StaticResource reports.notable.card}" />
+            </StackPanel>
+
+            <StackPanel x:Name="NotableWarningSection" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <Ellipse Width="8" Height="8"
+                             Fill="{DynamicResource status.caution}"
+                             VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.body.strong}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"
+                               Text="Warning" />
+                    <TextBlock x:Name="NotableWarningCount"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
+                </StackPanel>
+                <ItemsControl x:Name="NotableWarningList"
+                              ItemTemplate="{StaticResource reports.notable.card}" />
+            </StackPanel>
+
+            <StackPanel x:Name="NotableInfoSection" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                    <Ellipse Width="8" Height="8"
+                             Fill="{DynamicResource status.neutral}"
+                             VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.body.strong}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"
+                               Text="Info" />
+                    <TextBlock x:Name="NotableInfoCount"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
+                </StackPanel>
+                <ItemsControl x:Name="NotableInfoList"
+                              ItemTemplate="{StaticResource reports.notable.card}" />
+            </StackPanel>
+
+            </StackPanel> <!-- /NotableNormal -->
+
+            <!--  NotableQuiet — quiet-day variant. Single soft-success
+                  card replaces the three severity sections; copy lock
+                  from mockup page 5 / hand-off page 12: "Nothing notable
+                  today." The check glyph carries status.success — a
+                  reassuring tone for a day with no anomalies, NOT a
+                  warning. Collapsed by default; ApplyState toggles to
+                  Visible in state=QuietDay.  -->
+            <Border x:Name="NotableQuiet"
+                    Visibility="Collapsed"
+                    Margin="0,16,0,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.sm}"
+                    Padding="20,18">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center">
+                    <ui:SymbolIcon Symbol="CheckmarkCircle20"
+                                   FontSize="18"
+                                   Foreground="{DynamicResource status.success}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.body}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"
+                               Text="Nothing notable today." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!--  Row 4 — Top apps. DataGrid in the Per-App vocabulary
+              (App / Publisher / Signature / Up / Down + trailing
+              hover-chevron column). MaxHeight enforcement happens in
+              code-behind (EnforceTopAppsGridBound) because the page
+              hosts inside Wpf.Ui's NavigationView DynamicScrollViewer
+              (infinite vertical extent) — XAML bindings up the tree
+              can't deliver a finite measure.
+
+              Single-click drill on the row navigates to HistoryPage; the
+              (app, date) filter parameter capability lands in Phase 5,
+              so until then this is a no-op destination — the navigation
+              succeeds, History opens unfiltered. The visual affordance
+              is in place; the data contract isn't.  -->
+        <Border x:Name="TopAppsCard"
+                Grid.Row="4"
+                Margin="0,24,0,0"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.card}"
+                Effect="{DynamicResource shadow.card}"
+                Padding="0,0,0,4">
+            <StackPanel>
+                <!--  Card header strip — title left, ranking caption right.  -->
+                <Grid Margin="20,16,20,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource text.body.strong}"
+                               Text="Top apps" />
+                    <TextBlock Grid.Column="1"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Text="ranked by total bytes · top 10" />
+                </Grid>
+
+                <!--  RowHeight=56 + MinRowHeight=56 override style.datagrid.compact's
+                      32 px floor specifically for Reports. Sized to the
+                      tallest case: the App cell's two-line layout (name +
+                      mono secondary path for unsigned rows) needs
+                      21 + 2 + 17 = 40 px content area, and CellStyle
+                      Padding=12,8 adds 16 px vertical → 56 fits exactly.
+                      Single-line rows at 56 carry a 28 px tile in a 40 px
+                      content area (6 px breathing top/bottom) — still
+                      reads compact, not airy. Fixed height (not variable
+                      RowHeight=NaN) keeps the grid visually uniform.
+                      PerApp keeps its 32 px row — the global style is
+                      untouched.  -->
+                <DataGrid x:Name="TopAppsGrid"
+                          Style="{StaticResource style.datagrid.compact}"
+                          RowHeight="56"
+                          MinRowHeight="56"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="None"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          RowBackground="Transparent"
+                          AlternatingRowBackground="{DynamicResource surface.subtle.alt}"
+                          ColumnHeaderStyle="{StaticResource grid.header}"
+                          Cursor="Hand"
+                          PreviewMouseLeftButtonUp="OnTopAppsGridLeftButtonUp"
+                          PreviewKeyDown="OnTopAppsGridKeyDown"
+                          PreviewMouseWheel="OnTopAppsGridPreviewMouseWheel"
+                          SelectionMode="Single"
+                          SelectionUnit="FullRow"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="False"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Item"
+                          ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <DataGrid.Columns>
+                        <!--  App column — icon tile + name (with optional
+                              overlap dot) + optional secondary path line.
+                              Vertical inner StackPanel handles the 1-or-2
+                              line layout: rows with a SecondaryLine value
+                              (e.g. updater_x.exe: %TEMP%\updater_x.exe)
+                              show a mono caption beneath the name; rows
+                              with an empty SecondaryLine collapse the
+                              caption via Style trigger.  -->
+                        <DataGridTemplateColumn Header="App" Width="2*" SortMemberPath="ImageName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Style="{StaticResource topapps.tile}">
+                                            <ui:SymbolIcon Symbol="{Binding IconGlyph}"
+                                                           Style="{StaticResource topapps.tile.glyph}" />
+                                        </Border>
+                                        <StackPanel Orientation="Vertical"
+                                                    Margin="12,0,0,0"
+                                                    VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding ImageName}"
+                                                           Style="{StaticResource cell.body.trim}" />
+                                                <Ellipse Style="{StaticResource reports.overlap.dot}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding SecondaryLine}"
+                                                       Style="{StaticResource topapps.secondary.line}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Header="Publisher"
+                                            Binding="{Binding Publisher}"
+                                            Width="2*"
+                                            ElementStyle="{StaticResource cell.body.secondary.trim}" />
+
+                        <DataGridTemplateColumn Header="Signature" Width="120" SortMemberPath="SignatureStatus">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource topapps.sig.pill}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="LockClosed20"
+                                                           Style="{StaticResource topapps.sig.pill.icon}" />
+                                            <TextBlock Text="{Binding SignatureStatus}"
+                                                       Style="{StaticResource topapps.sig.pill.text}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!--  Up / Down — formatted display text but
+                              SortMemberPath = raw byte fields so
+                              header-click sort is numeric, not lexical.  -->
+                        <DataGridTextColumn Header="Up"
+                                            Binding="{Binding UpText}"
+                                            SortMemberPath="BytesUp"
+                                            Width="110"
+                                            HeaderStyle="{StaticResource grid.header.right}"
+                                            ElementStyle="{StaticResource cell.mono.right}" />
+                        <DataGridTextColumn Header="Down"
+                                            Binding="{Binding DownText}"
+                                            SortMemberPath="BytesDown"
+                                            Width="110"
+                                            HeaderStyle="{StaticResource grid.header.right}"
+                                            ElementStyle="{StaticResource cell.mono.right}" />
+
+                        <!--  Hover-chevron column — Path stroked in brand
+                              teal, flipped Visible by the row's IsMouseOver.
+                              Presentational only; the drill itself is the
+                              DataGrid's single-click handler.  -->
+                        <DataGridTemplateColumn Width="28" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Path Data="M 0,0 L 6,6 L 0,12"
+                                          Stroke="{DynamicResource chart.downSeries}"
+                                          StrokeThickness="2.75"
+                                          StrokeLineJoin="Round"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Width="10" Height="16"
+                                          Stretch="None"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Center"
+                                          Visibility="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=IsMouseOver, Converter={StaticResource BoolToVisibility}}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </Border>
+
+        <!--  Row 5 — Uncommon talkers. Three flat category columns; each
+              column has a header strip (category glyph + name + count) at
+              top and a stack of individual mini-cards below — NOT three
+              outer container cards as I built in the first Phase 3 pass.
+              Mockup Q5b lock + page-12 hand-off note ("glyph tone carries
+              category severity, rows stay neutral") drive the flat
+              treatment.
+
+              Discovery > ranking is enforced here: these lists are NOT
+              byte-rank capped (memory: project_discovery_principle.md).
+              A stealthy low-volume process wouldn't be in any top-N, so
+              we coarsen by time elsewhere, never by rank.
+
+              Phase 3 mock layout matches the mockup roster: 1 + 2 + 1
+              across New today / Unusual volume / Risky paths. Real-data
+              wiring lands in Phase 5 via GetDailyReport's per-category
+              fields (per-app rolling median, publisher-first-seen flag,
+              path-class).  -->
+        <StackPanel x:Name="UncommonRow" Grid.Row="5" Margin="0,24,0,0">
+            <!--  Section header with inline caption — same shape as
+                  Notable today's header band.  -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource reports.section.header}"
+                           Text="Uncommon talkers" />
+                <TextBlock Style="{StaticResource text.caption}"
+                           Foreground="{DynamicResource text.secondary}"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"
+                           Text="Apps behaving unusually for themselves, independent of byte rank." />
+            </StackPanel>
+
+            <!--  UncommonNormal — the three-column flat layout. Toggled
+                  Collapsed in state=QuietDay; UncommonQuiet takes over.  -->
+            <Grid x:Name="UncommonNormal" Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!--  New today column. Header is flat (no card chrome) —
+                      category color sits on the glyph tile only; the
+                      mini-cards below stay neutral.  -->
+                <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Width="28" Height="28"
+                                Background="{DynamicResource status.neutral.background}"
+                                CornerRadius="{StaticResource radius.control}"
+                                VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Sparkle24"
+                                           FontSize="16"
+                                           Foreground="{DynamicResource status.neutral}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1"
+                                   Style="{StaticResource text.body.strong}"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   Text="New today" />
+                        <TextBlock Grid.Column="2"
+                                   Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Center"
+                                   Text="1" />
+                    </Grid>
+                    <ItemsControl x:Name="UncommonNewTodayList"
+                                  ItemTemplate="{StaticResource reports.uncommon.card}" />
+                </StackPanel>
+
+                <!--  Unusual volume column.  -->
+                <StackPanel Grid.Column="1" Margin="8,0,8,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Width="28" Height="28"
+                                Background="{DynamicResource status.caution.background}"
+                                CornerRadius="{StaticResource radius.control}"
+                                VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="PulseSquare24"
+                                           FontSize="16"
+                                           Foreground="{DynamicResource status.caution}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1"
+                                   Style="{StaticResource text.body.strong}"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   Text="Unusual volume" />
+                        <TextBlock Grid.Column="2"
+                                   Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Center"
+                                   Text="2" />
+                    </Grid>
+                    <ItemsControl x:Name="UncommonUnusualVolumeList"
+                                  ItemTemplate="{StaticResource reports.uncommon.card}" />
+                </StackPanel>
+
+                <!--  Risky paths column.  -->
+                <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Width="28" Height="28"
+                                Background="{DynamicResource status.critical.background}"
+                                CornerRadius="{StaticResource radius.control}"
+                                VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="ShieldError24"
+                                           FontSize="16"
+                                           Foreground="{DynamicResource status.critical}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1"
+                                   Style="{StaticResource text.body.strong}"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   Text="Risky paths" />
+                        <TextBlock Grid.Column="2"
+                                   Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   VerticalAlignment="Center"
+                                   Text="1" />
+                    </Grid>
+                    <ItemsControl x:Name="UncommonRiskyPathsList"
+                                  ItemTemplate="{StaticResource reports.uncommon.card}" />
+                </StackPanel>
+            </Grid>
+
+            <!--  UncommonQuiet — quiet-day variant. Single soft-success
+                  message replaces the three category columns; copy lock
+                  from mockup page 5 / hand-off page 12: "A deliberately
+                  quiet day. No app strayed from its usual pattern."  -->
+            <Border x:Name="UncommonQuiet"
+                    Visibility="Collapsed"
+                    Margin="0,16,0,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.sm}"
+                    Padding="20,18">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center">
+                    <ui:SymbolIcon Symbol="CheckmarkCircle20"
+                                   FontSize="18"
+                                   Foreground="{DynamicResource status.success}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource text.body}"
+                               Foreground="{DynamicResource text.secondary}"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"
+                               Text="A deliberately quiet day. No app strayed from its usual pattern." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!--  LoadingPlaceholders — three stacked metal.card placeholders
+              that paint over rows 2-5 in state=Loading. Brief §8.1 lock:
+              "Generating report…" caption fades in after a 1 s
+              DispatcherTimer so quick refreshes don't flash text. The
+              caption sits on the first (top) placeholder only — keeps
+              the visual focus on a single message rather than repeating
+              it three times.
+
+              MinHeight=150 per mockup hand-off page 12: "Hero / surface
+              loading bodies: MinHeight = 150 so the centered ProgressRing
+              doesn't collapse." Grid.RowSpan=4 layers the placeholders
+              over rows 2-5; the real data rows are set Collapsed by
+              ApplyLoadingState.  -->
+        <StackPanel x:Name="LoadingPlaceholders"
+                    Grid.Row="2" Grid.RowSpan="4"
+                    Visibility="Collapsed">
+            <Border MinHeight="150"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <StackPanel VerticalAlignment="Center"
+                            HorizontalAlignment="Center">
+                    <ui:ProgressRing IsIndeterminate="True"
+                                     Width="40" Height="40" />
+                    <TextBlock x:Name="LoadingCaption"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.secondary}"
+                               Text="Generating report…"
+                               HorizontalAlignment="Center"
+                               Margin="0,12,0,0"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+            <Border MinHeight="150"
+                    Margin="0,24,0,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="40" Height="40"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Center" />
+            </Border>
+            <Border MinHeight="150"
+                    Margin="0,24,0,0"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="40" Height="40"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Center" />
+            </Border>
+        </StackPanel>
+
+        <!--  EmptyOverlay — page-level "no traffic recorded" state.
+              Centered DocumentText48 + title + caption. Per mockup
+              hand-off page 12: "text.body / text.secondary, centered.
+              Date control stays; Export disabled." Title text is set
+              dynamically in code to include the selected date.  -->
+        <StackPanel x:Name="EmptyOverlay"
+                    Grid.Row="2" Grid.RowSpan="4"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Margin="0,80,0,0">
+            <ui:SymbolIcon Symbol="DocumentText48"
+                           FontSize="48"
+                           Foreground="{DynamicResource text.tertiary}"
+                           HorizontalAlignment="Center" />
+            <TextBlock x:Name="EmptyTitle"
+                       Style="{StaticResource text.body}"
+                       Foreground="{DynamicResource text.primary}"
+                       HorizontalAlignment="Center"
+                       Margin="0,16,0,0"
+                       Text="No traffic recorded on Sun, Jun 8 2026." />
+            <TextBlock Style="{StaticResource text.caption}"
+                       Foreground="{DynamicResource text.secondary}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       Margin="0,8,0,0"
+                       Text="Nothing was observed talking to the network on this date. Pick another day above." />
+        </StackPanel>
+    </Grid>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Page>

@@ -210,6 +210,26 @@ per-screen briefs in `docs/design-briefs/` and the design system in
   Detail's Connections grid (and likely Per-App's expanded view). Scope
   into a phase before MVP cut — flagged here so it doesn't drop.
 
+- **App Detail — specific-calendar-day window mode (post-MVP follow-up).**
+  App Detail today uses trailing rate-window presets (`1h / 24h / 7d /
+  30d / 90d`). The Reports → drill question
+  (`docs/design-briefs/findings/reports.md` §9F review, 2026-06-09)
+  established that a richer-fidelity destination for "this app, on
+  this specific day" — peak times, endpoints, sessions — lives in
+  App Detail with a calendar-day window mode (rather than a trailing
+  window). Phase 5 routes the Reports drill to **History**
+  pre-filtered to `(app, date)` instead (History grows the filter
+  capability per `docs/design-briefs/findings/history.md` F8). Adding
+  a specific-day mode to App Detail proper is the natural follow-up
+  once the History route is in: it gives the user a way to pivot
+  from the History timeline view of `(app, date)` to App Detail's
+  Connections / Sessions / chart depth scoped to the same day.
+  Scope: App Detail picker grows a "specific date" option alongside
+  the trailing-window presets; the chart's X-axis labels and Y-axis
+  rate unit reflow to a 24-hour day; Connections and Sessions grids
+  filter to events whose timestamps fall within the day. Deferred
+  for a post-MVP pass — flagged here so it doesn't drop.
+
 - **High Contrast runtime merge wiring not implemented.**
   `Resources/HighContrast.xaml` ships with full token collapses for every
   semantic surface, text, accent, status, border, chart, plus the polish
@@ -257,6 +277,53 @@ per-screen briefs in `docs/design-briefs/` and the design system in
 - [ ] Daily report numbers reconcile with the history view for the same date.
 - [ ] CSV opens cleanly in a spreadsheet; HTML opens in a browser; both match the in-app view.
 
+### Follow-up: anchor-baseline insufficient-history guard (deferred from 5b)
+
+The Reports page's "vs N-day average" hero deltas + Uncommon Talkers'
+"× the 7-day median" reasons compare against a rolling baseline whose
+length the user picks (7 / 30 / 90 days). On a fresh install — or on
+any machine whose service has been running for fewer days than the
+chosen anchor window — that baseline is a partial average; the deltas
+and "Nx the median" multiples it produces aren't directly comparable
+to a full-history machine's numbers and may misrepresent normal
+usage as anomalous (or vice versa).
+
+The aggregator already has the data needed to detect the shortfall:
+the per-day baseline-row count it pulls for `LoadAnchorBaseline` and
+for `LoadUnusualVolume`. The `UnusualVolumeMinBaselineDays = 4` guard
+in `DailyReportRepository` already prevents that *category* from
+false-firing — this follow-up extends the same idea to the hero
+deltas and to the cross-page user expectation.
+
+Pick one of two treatments at implementation time (both viable):
+
+- **(a) Placeholder ("pending until X").** Compute the
+  earliest-eligible date as `first_service_run + anchor_days`. Before
+  that date, the delta chip + caption hide entirely; the hero shows
+  totals only, and a small inline message reads "Comparisons unlock
+  on {Date}." Same logic suppresses Uncommon Talkers' "Nx" phrasing
+  in favor of "Today's volume: {bytes}." until the baseline matures.
+- **(b) Warning banner.** Always show the comparison, but if the
+  baseline window has insufficient history, paint a `status.caution`
+  inline note (next to the anchor label) reading "Comparison based on
+  {N} days of history; may not reflect typical usage." Lighter touch;
+  delta chip stays visible.
+
+(a) is the honest treatment when the baseline is genuinely too short
+to be informative; (b) is the right call when there's *some*
+baseline but it's known partial. A reasonable mid-ground: (a) for
+<3 days of baseline history (no signal at all); (b) for 3-to-N
+days (partial).
+
+**Where the gap lives:** the service has no per-machine
+"first-run" timestamp wired to this query yet. Either persist one
+in the `settings` table at install time, or derive it from
+`MIN(first_seen)` across the `apps` table (cheap, no migration).
+
+**Status:** Noted 2026-06-10. Not blocking 5c/5d/5e. Implement as a
+post-Phase-5 polish round or fold into Phase 6 alongside the Alerts
+deep-link wiring.
+
 ---
 
 ## Phase 6 — Alert pipeline (first customer), Settings, tray polish, installer
@@ -270,6 +337,17 @@ per-screen briefs in `docs/design-briefs/` and the design system in
 - Settings: **autostart toggle** (service start mode incl. "off" for fast-boot users), retention windows, purge history, flush/bucket intervals, toast toggle, theme.
 - Tray polish; close-to-tray/Exit finalized.
 - **WiX .msi:** installs/registers the service with the chosen start mode, installs the UI, sets DB ACLs and `%ProgramData%\ZenVizor\` layout; clean uninstall; `wix build` CLI-drivable in CI.
+- **Reports → Alerts deep-link wiring (deferred from Phase 5 Reports implementation).**
+  Reports' "Notable today" incident cards render a visible-but-inert `Alerts · #N`
+  chip linking each item to its corresponding `Alert` (see
+  `docs/design-briefs/reports.md` §16.2 and the mockup hand-off). Phase 5 cannot
+  wire the navigation because the Alerts page is still a Group-B placeholder
+  and the alert pipeline (`Alert` entity, `GetAlerts`, alert IDs) lands here in
+  Phase 6. **Deferral is necessary, not optional.** Action: when the Alerts page
+  ships its real layout in this phase, wire the `Alerts · #N` chip Click on
+  Reports to navigate to the Alerts feed, filtered/scrolled to the matching
+  `Alert.Id`. Update Reports' code-behind in the same commit so the chip stops
+  being inert.
 
 **Acceptance criteria — CI (headless)**
 

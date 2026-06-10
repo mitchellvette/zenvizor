@@ -26,6 +26,12 @@ public partial class AppDetailPage : Page
 
     public int? AppId { get; private set; }
 
+    // Phase 5e — when a specific date is set (either by the user via the
+    // chrome-row date picker, or via the Reports → AppDetail drill), the
+    // chart's time window overrides the WindowCombo preset and shows the
+    // 24-hour local day for that date. Null means "use WindowCombo".
+    private DateOnly? _specificDate;
+
     // Latest detail summary, retained so RefreshTrustLine can re-classify after
     // a Connections refresh changes the has-WAN signal (the alert combination
     // is computed from both surfaces).
@@ -164,6 +170,15 @@ public partial class AppDetailPage : Page
             await RefreshAsync();
         };
         SizeChanged += (_, _) => EnforceDataGridBounds();
+
+        // Phase 5e — Wpf.Ui's CalendarDatePicker exposes Date as a DP but
+        // doesn't surface a public DateChanged event. Subscribe via
+        // DependencyPropertyDescriptor (same pattern as ReportsPage's
+        // primary date picker).
+        var dpd = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(
+            CalendarDatePicker.DateProperty,
+            typeof(CalendarDatePicker));
+        dpd?.AddValueChanged(DatePicker, OnDatePickerDateChanged);
     }
 
     /// <summary>
@@ -224,12 +239,30 @@ public partial class AppDetailPage : Page
 
     private void OnAppIdReceived()
     {
-        AppId = DataContext switch
+        // Two navigation-parameter shapes are accepted:
+        //   * bare int / long — legacy PerAppPage drill (no date override).
+        //   * AppDetailNavParams — Phase 5e drill from Reports with an
+        //     optional date that pre-populates the chrome-row DatePicker
+        //     and overrides the WindowCombo on first refresh.
+        switch (DataContext)
         {
-            int i => i,
-            long l => (int)l,
-            _ => null,
-        };
+            case int i:
+                AppId = i;
+                ApplySpecificDate(null);
+                break;
+            case long l:
+                AppId = (int)l;
+                ApplySpecificDate(null);
+                break;
+            case AppDetailNavParams p:
+                AppId = p.AppId;
+                ApplySpecificDate(p.Date);
+                break;
+            default:
+                AppId = null;
+                ApplySpecificDate(null);
+                break;
+        }
         // Title shows the image name once ApplyDetail lands; before that we
         // show the page placeholder. AppId surfaces in the labeled chip
         // beside the title (Q4 lock — never inline in the title text).
@@ -237,6 +270,41 @@ public partial class AppDetailPage : Page
         AppIdValue.Text = AppId is int id
             ? id.ToString(CultureInfo.InvariantCulture)
             : "—";
+    }
+
+    // Phase 5e — set the chrome-row DatePicker to a specific date and update
+    // the WindowCombo / clear-button visibility accordingly. Setting
+    // DatePicker.Date triggers OnDatePickerDateChanged which sinks the value
+    // into _specificDate and refreshes.
+    private void ApplySpecificDate(DateOnly? date)
+    {
+        if (date is null)
+        {
+            DatePicker.Date = null;
+            return;
+        }
+        DatePicker.Date = date.Value.ToDateTime(new TimeOnly(0));
+    }
+
+    private async void OnDatePickerDateChanged(object? sender, EventArgs e)
+    {
+        _specificDate = DatePicker.Date is { } dt ? DateOnly.FromDateTime(dt) : null;
+        var hasDate = _specificDate is not null;
+        // Visually swap chrome state. DatePickerOverlay (placeholder) hides
+        // when a date is set; DatePickerLabel (formatted date) shows in its
+        // place — they sit at the same Grid layer.
+        WindowCombo.IsEnabled        = !hasDate;
+        ClearDateButton.Visibility   = hasDate ? Visibility.Visible : Visibility.Collapsed;
+        DatePickerOverlay.Visibility = hasDate ? Visibility.Collapsed : Visibility.Visible;
+        DatePickerLabel.Visibility   = hasDate ? Visibility.Visible : Visibility.Collapsed;
+        if (IsLoaded && AppId is int) await RefreshAsync();
+    }
+
+    private void OnClearDateClick(object sender, RoutedEventArgs e)
+    {
+        // Clearing DatePicker.Date fires OnDatePickerDateChanged which
+        // handles the visibility flips + RefreshAsync.
+        DatePicker.Date = null;
     }
 
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -249,6 +317,21 @@ public partial class AppDetailPage : Page
     {
         var nav = PerAppPage.FindNavigationView(this);
         nav?.GoBack();
+    }
+
+    // Convert a local DateOnly into the UTC unix-ms window covering its
+    // 24 local hours. Mirrors the boundary math in
+    // DailyReportRepository.LocalDayWindowUtcMs so the AppDetailPage chart
+    // and the source Reports row reconcile exactly.
+    private static QueryWindow LocalDayWindow(DateOnly date)
+    {
+        var midnight     = new DateTime(date.Year, date.Month, date.Day, 0, 0, 0, DateTimeKind.Unspecified);
+        var midnightNext = midnight.AddDays(1);
+        var startUtc     = TimeZoneInfo.ConvertTimeToUtc(midnight,     TimeZoneInfo.Local);
+        var endUtc       = TimeZoneInfo.ConvertTimeToUtc(midnightNext, TimeZoneInfo.Local);
+        return new QueryWindow(
+            FromUnixMs: new DateTimeOffset(startUtc, TimeSpan.Zero).ToUnixTimeMilliseconds(),
+            ToUnixMs:   new DateTimeOffset(endUtc,   TimeSpan.Zero).ToUnixTimeMilliseconds());
     }
 
     // Phase 2.x — AppId chip and path row are now click-anywhere Borders
@@ -467,7 +550,14 @@ public partial class AppDetailPage : Page
 
         try
         {
-            var window = preset.ToWindow();
+            // Phase 5e — when _specificDate is set, the chart and
+            // connections queries cover that calendar day's 24-hour local
+            // window for this app, overriding the WindowCombo preset. The
+            // user's local zone is used for the day boundary so the data
+            // matches their "what happened today" intent.
+            var window = _specificDate is { } d
+                ? LocalDayWindow(d)
+                : preset.ToWindow();
             var detailTask = _client.GetAppDetailAsync(id, window, TrafficGrain.Auto);
             var connectionsTask = _client.GetConnectionsAsync(id, window);
             await Task.WhenAll(detailTask, connectionsTask);
@@ -805,3 +895,12 @@ public sealed record SessionRowViewModel(
             : $"{(int)span.TotalHours}h {span.Minutes}m";
     }
 }
+
+/// <summary>
+/// Phase 5e — navigation parameter for opening AppDetailPage with an
+/// optional date pre-populated in the chrome-row date picker. Passed via
+/// <c>NavigationView.Navigate(typeof(AppDetailPage), new AppDetailNavParams(...))</c>.
+/// The legacy bare-int DataContext path (PerAppPage → AppDetail) still
+/// works; only the Reports drill uses this record.
+/// </summary>
+public sealed record AppDetailNavParams(int AppId, DateOnly? Date);

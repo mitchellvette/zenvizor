@@ -104,20 +104,76 @@
                 </StackPanel>
             </ui:Button>
 
-            <ComboBox Grid.Column="1"
-                      x:Name="WindowCombo"
-                      Width="120"
-                      VerticalAlignment="Center"
-                      Background="{DynamicResource metal.control}"
-                      BorderBrush="{DynamicResource border.card}"
-                      SelectionChanged="OnSelectionChanged">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding Short}"
-                                   ToolTip="{Binding Label}" />
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
+            <!--  Right cluster — date picker (Phase 5e) + clear button + window
+                  preset. The date picker is the override: when set, the chart
+                  shows that day's 24-hour local window for this app and the
+                  WindowCombo is disabled (visually grayed). When the user clicks
+                  the clear-button (visible only when a date is set), the date
+                  reverts to null and the WindowCombo re-takes effect.
+
+                  The picker also accepts a date from the Reports → AppDetail
+                  drill via AppDetailNavParams, so opening this page from a
+                  daily-report row arrives pre-filtered to that report's date.  -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Grid VerticalAlignment="Center">
+                    <ui:CalendarDatePicker x:Name="DatePicker"
+                                            Width="180" Height="32"
+                                            HorizontalContentAlignment="Right"
+                                            IsTodayHighlighted="False" />
+                    <!--  Two overlays toggled by OnDatePickerDateChanged:
+                          DatePickerOverlay is the tertiary-tone placeholder
+                          when Date is null; DatePickerLabel is the primary
+                          text.primary formatted-date display when Date is set.
+                          Wpf.Ui v4.0.2's closed-state button face doesn't
+                          render the formatted Date itself (same gotcha
+                          documented at ReportsPage.xaml:104), so we paint
+                          the visible label ourselves.  -->
+                    <TextBlock x:Name="DatePickerOverlay"
+                               IsHitTestVisible="False"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left"
+                               Margin="14,0,0,0"
+                               Foreground="{DynamicResource text.tertiary}"
+                               Text="Specific day" />
+                    <TextBlock x:Name="DatePickerLabel"
+                               IsHitTestVisible="False"
+                               Visibility="Collapsed"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left"
+                               Margin="14,0,0,0"
+                               Foreground="{DynamicResource text.primary}"
+                               Text="{Binding ElementName=DatePicker,
+                                              Path=Date,
+                                              StringFormat={}{0:ddd\, MMM d yyyy}}" />
+                </Grid>
+                <ui:Button x:Name="ClearDateButton"
+                           Margin="6,0,0,0"
+                           Visibility="Collapsed"
+                           Padding="6,4"
+                           Background="Transparent"
+                           BorderThickness="0"
+                           Cursor="Hand"
+                           Click="OnClearDateClick"
+                           ToolTip="Clear specific day">
+                    <ui:SymbolIcon Symbol="Dismiss16"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource text.secondary}" />
+                </ui:Button>
+                <ComboBox x:Name="WindowCombo"
+                          Margin="12,0,0,0"
+                          Width="120"
+                          VerticalAlignment="Center"
+                          Background="{DynamicResource metal.control}"
+                          BorderBrush="{DynamicResource border.card}"
+                          SelectionChanged="OnSelectionChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Short}"
+                                       ToolTip="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
         </Grid>
 
         <!--  Row 1 — page title (image name) + labeled AppId chip with copy.

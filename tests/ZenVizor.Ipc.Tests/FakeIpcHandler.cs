@@ -98,6 +98,23 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
     public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain) =>
         Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(1, History));
 
+    // ---- Phase 5 Reports surface: scriptable stub for contract tests ----
+    public DailyReportResult DailyReport { get; set; } = new(
+        Date:               new DateOnly(2026, 6, 8),
+        Anchor:             AnchorMode.Avg7d,
+        AnchorSpecificDate: null,
+        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0),
+        HourlyTraffic:      Array.Empty<DailyReportHourPoint>(),
+        TopApps:            Array.Empty<DailyReportAppRow>(),
+        UncommonTalkers:    Array.Empty<DailyReportTalker>(),
+        Notable:            Array.Empty<DailyReportNotable>());
+
+    public Task<IpcEnvelope<DailyReportResult>> GetDailyReportAsync(
+        DateOnly date,
+        AnchorMode anchor,
+        DateOnly? anchorSpecificDate) =>
+        Task.FromResult(new IpcEnvelope<DailyReportResult>(1, DailyReport));
+
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>
         ProtocolVersion.IsCompatible(clientVersion)
             ? new NegotiateVersionResult(Accepted: true, ServerVersion: ProtocolVersion.Current, Reason: null)

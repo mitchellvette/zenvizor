@@ -29,6 +29,9 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     /// <summary>Schema version of the Phase-4 query result payloads.</summary>
     private const int QuerySchemaVersion = 1;
 
+    /// <summary>Schema version of the Phase-5 DailyReport payload.</summary>
+    private const int DailyReportSchemaVersion = 1;
+
     private readonly long _startedAtUnixMs;
     private readonly string _dbPath;
     private readonly Func<bool> _isCaptureActive;
@@ -38,6 +41,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private readonly Func<int, QueryWindow, TrafficGrain, AppDetailResult> _appDetailProvider;
     private readonly Func<int, QueryWindow, ConnectionListResult> _connectionsProvider;
     private readonly Func<QueryWindow, TrafficGrain, TrafficHistoryResult> _historyProvider;
+    private readonly Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult> _dailyReportProvider;
     private readonly string _serviceVersion;
 
     public ZenVizorIpcHandler(
@@ -49,7 +53,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Func<QueryWindow, AppListResult>? appListProvider = null,
         Func<int, QueryWindow, TrafficGrain, AppDetailResult>? appDetailProvider = null,
         Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
-        Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null)
+        Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null,
+        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null)
     {
         _startedAtUnixMs = startedAtUnixMs;
         _dbPath = dbPath;
@@ -62,6 +67,11 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
             Array.Empty<TrafficPoint>(), Array.Empty<SessionInfo>()));
         _connectionsProvider = connectionsProvider ?? ((_, w) => new ConnectionListResult(w, Array.Empty<ConnectionRow>()));
         _historyProvider = historyProvider ?? ((w, g) => new TrafficHistoryResult(w, g, Array.Empty<TrafficPoint>()));
+        // Phase 5b — composition root in ZenVizorHostedService now always
+        // supplies the real DailyReportRepository-backed provider. When no
+        // provider is wired (legacy test harnesses), fall back to an empty
+        // result rather than mock data.
+        _dailyReportProvider = dailyReportProvider ?? EmptyDailyReport;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
@@ -79,6 +89,16 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         CapturedAtUnixMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         ObservationsSeen: 0,
         ObservationsUnattributed: 0);
+
+    private static DailyReportResult EmptyDailyReport(DateOnly date, AnchorMode anchor, DateOnly? specificDate) => new(
+        Date: date,
+        Anchor: anchor,
+        AnchorSpecificDate: specificDate,
+        Hero: new DailyReportHero(0, 0, 0, 0, 0, 0, 0),
+        HourlyTraffic: Array.Empty<DailyReportHourPoint>(),
+        TopApps: Array.Empty<DailyReportAppRow>(),
+        UncommonTalkers: Array.Empty<DailyReportTalker>(),
+        Notable: Array.Empty<DailyReportNotable>());
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -154,5 +174,14 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     {
         var payload = _historyProvider(window, grain);
         return Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(QuerySchemaVersion, payload));
+    }
+
+    public Task<IpcEnvelope<DailyReportResult>> GetDailyReportAsync(
+        DateOnly date,
+        AnchorMode anchor,
+        DateOnly? anchorSpecificDate)
+    {
+        var payload = _dailyReportProvider(date, anchor, anchorSpecificDate);
+        return Task.FromResult(new IpcEnvelope<DailyReportResult>(DailyReportSchemaVersion, payload));
     }
 }

@@ -36,6 +36,13 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
     public Task<TrafficHistoryResult> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain, CancellationToken cancellationToken = default)
         => CallAsync(p => p.GetTrafficHistoryAsync(window, grain), cancellationToken);
 
+    public Task<DailyReportResult> GetDailyReportAsync(
+        DateOnly date,
+        AnchorMode anchor,
+        DateOnly? anchorSpecificDate,
+        CancellationToken cancellationToken = default)
+        => CallAsync(p => p.GetDailyReportAsync(date, anchor, anchorSpecificDate), cancellationToken);
+
     private async Task<T> CallAsync<T>(
         Func<IZenVizorIpc, Task<IpcEnvelope<T>>> work,
         CancellationToken cancellationToken)

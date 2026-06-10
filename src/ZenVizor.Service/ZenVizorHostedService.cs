@@ -142,7 +142,8 @@ internal sealed class ZenVizorHostedService : IHostedService
         await _captureMonitor.StartAsync(cancellationToken).ConfigureAwait(false);
 
         // ---- IPC ----
-        var queryRepo = new AppHistoryQueryRepository(connections);
+        var queryRepo       = new AppHistoryQueryRepository(connections);
+        var dailyReportRepo = new DailyReportRepository(connections);
         var startedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var handler = new ZenVizorIpcHandler(
             startedAtUnixMs,
@@ -160,7 +161,8 @@ internal sealed class ZenVizorHostedService : IHostedService
             appListProvider:     w        => queryRepo.GetAppList(w),
             appDetailProvider:   (id,w,g) => queryRepo.GetAppDetail(id, w, g),
             connectionsProvider: (id,w)   => queryRepo.GetConnections(id, w),
-            historyProvider:     (w,g)    => queryRepo.GetTrafficHistory(w, g));
+            historyProvider:     (w,g)    => queryRepo.GetTrafficHistory(w, g),
+            dailyReportProvider: (d,a,sd) => dailyReportRepo.GetDailyReport(d, a, sd, TimeZoneInfo.Local));
 
         _pipeServer = new ZenVizorPipeServer(
             handler,

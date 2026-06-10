@@ -254,3 +254,28 @@ override needed there.
 - F6. **Click a chart point to filter Per-App to that window.** Cross-
   page state coordination — new interaction model.
 - F7. **Export aggregate history to CSV.** Phase 5 owns export.
+- F8. **`(app, date)` filter — Phase 5 coupled, NOT "for later."**
+  Reports drills from a top-apps row into this page pre-filtered to a
+  single app on a single calendar day (per
+  `docs/design-briefs/findings/reports.md` §3-6 / §9F). Today History
+  is "aggregate timeline across all apps in the selected window" —
+  no per-app filter, and the window picker is trailing-relative
+  (`1h / 24h / 7d / 30d / 90d`), not specific-date. This drill
+  destination requires History to accept:
+  - **App filter** — single app scope (distinct from F2, which is
+    multi-app overlay). Visible filter chip / strip near the picker
+    so the user understands they're looking at one app's slice of
+    History, not the aggregate.
+  - **Specific-date window mode** — the picker grows a "specific
+    date" option alongside the trailing-window presets, or a
+    parallel calendar control. Same `Wpf.Ui.Controls.CalendarDatePicker`
+    primitive as Reports uses for consistency.
+  - **Clear-filter affordance** — a one-click path back to the
+    unfiltered aggregate view so the user can pivot from
+    "this app on this day" → "everything on this day" → "this
+    app's pattern overall."
+  - Capability lands with Reports in Phase 5; it is NOT in the
+    polish-interlude scope, but it IS NOT deferred indefinitely
+    like F1–F7 either. Flag as a Phase-5-coupled feature so the
+    Reports brief and the History brief surface it in the same
+    review.
