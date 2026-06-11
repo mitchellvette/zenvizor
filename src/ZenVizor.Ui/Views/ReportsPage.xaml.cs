@@ -83,6 +83,13 @@ public sealed partial class ReportsPage : Page
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         SparklineChart.SizeChanged += (_, _) => RepositionPeakOverlay();
+        // Wpf.Ui's NavigationView wraps hosted pages in a DynamicScrollViewer
+        // (infinite vertical extent), so any DataGrid that wants to bound
+        // its row panel must have MaxHeight set programmatically — XAML
+        // bindings up the chain don't propagate a finite measure constraint.
+        // (Pattern locked: PerAppPage.EnforceAppsGridBound,
+        // AppDetailPage.EnforceDataGridBounds.)
+        SizeChanged += (_, _) => EnforceTopAppsGridBound();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -92,9 +99,38 @@ public sealed partial class ReportsPage : Page
         RepositionPeakOverlay();
         ChartTheming.Changed += OnThemeChanged;
 
+        // Apply the initial MaxHeight bound BEFORE the first IPC fetch — the
+        // backfill of TopApps rows must measure against a finite cap or the
+        // virtualizer materializes every row at once (the original Phase 3
+        // failure mode that this whole pattern exists to prevent).
+        EnforceTopAppsGridBound();
+
         // First IPC fetch — populates Hero / sparkline / Top Apps /
         // Uncommon Talkers with real data from the service.
         await RefreshAsync();
+    }
+
+    /// <summary>
+    /// Bound the Top Apps DataGrid's height at runtime so WPF row
+    /// virtualization engages. Same rationale as
+    /// <see cref="AppDetailPage"/>.EnforceDataGridBounds and
+    /// <see cref="PerAppPage"/>.EnforceAppsGridBound: Wpf.Ui's NavigationView
+    /// hands the page infinite vertical extent and the DataGrid can't
+    /// inherit a finite measure from XAML alone.
+    /// <para>
+    /// Formula mirrors PerAppPage's <c>window - 220</c> floor; the 220 covers
+    /// chrome (page title row + filter strip + footer card padding) on a
+    /// typical ZenVizor frame. Floor at 200 so the grid stays usable on
+    /// short windows.
+    /// </para>
+    /// </summary>
+    private void EnforceTopAppsGridBound()
+    {
+        if (TopAppsGrid is null) return;
+        var window = Window.GetWindow(this);
+        if (window is null) return;
+        var cap = Math.Max(200, window.ActualHeight - 220);
+        TopAppsGrid.MaxHeight = cap;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -701,13 +737,19 @@ public sealed partial class ReportsPage : Page
     // WPF DataGrid wraps its content in an internal ScrollViewer that
     // captures wheel events even when it has no rows to scroll past, which
     // traps the wheel and keeps the page from scrolling whenever the cursor
-    // is over the grid. Phase 3 has 10 fixed rows and no MaxHeight, so the
-    // grid never needs to scroll internally — unconditionally forward the
-    // wheel delta up to PageScroll. Phase 5 caveat: when real-data Top-N
-    // grows past the visible area and the grid gets an internal MaxHeight
-    // back, this needs to become conditional.
+    // is over the grid. With EnforceTopAppsGridBound now applying a finite
+    // MaxHeight (so virtualization engages), the grid CAN have internal
+    // scroll to do — only forward to PageScroll when it doesn't, otherwise
+    // the wheel can't scroll the grid's own rows.
     private void OnTopAppsGridPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        var inner = FindDescendantScrollViewer(TopAppsGrid);
+        if (inner is not null && CanScrollInDirection(inner, e.Delta))
+        {
+            // Let the grid handle its own wheel.
+            return;
+        }
+
         e.Handled = true;
         var fwd = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
         {
@@ -715,6 +757,35 @@ public sealed partial class ReportsPage : Page
             Source = sender,
         };
         PageScroll.RaiseEvent(fwd);
+    }
+
+    private static bool CanScrollInDirection(ScrollViewer sv, int delta)
+    {
+        // delta > 0 means wheel-up (scroll toward the start). The viewer can
+        // consume that gesture iff its current offset can still move toward
+        // the requested edge — VerticalOffset > 0 for wheel-up,
+        // VerticalOffset < ScrollableHeight for wheel-down. Without this
+        // check, the forwarder hijacks the wheel even when the grid has
+        // visible scroll headroom, which is precisely the bug the old
+        // unconditional forwarder produced once MaxHeight kicked in.
+        if (sv.ScrollableHeight <= 0) return false;
+        return delta > 0
+            ? sv.VerticalOffset > 0
+            : sv.VerticalOffset < sv.ScrollableHeight;
+    }
+
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject? root)
+    {
+        if (root is null) return null;
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer sv) return sv;
+            var found = FindDescendantScrollViewer(child);
+            if (found is not null) return found;
+        }
+        return null;
     }
 
     private void OnUncommonRowMouseUp(object sender, MouseButtonEventArgs e)

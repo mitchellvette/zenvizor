@@ -336,6 +336,7 @@
                       RowBackground="Transparent"
                       AlternatingRowBackground="{DynamicResource surface.subtle.alt}"
                       ColumnHeaderStyle="{StaticResource grid.header}"
+                      Cursor="Hand"
                       PreviewMouseLeftButtonUp="OnGridLeftButtonUp"
                       PreviewKeyDown="OnGridKeyDown"
                       SelectionMode="Single"

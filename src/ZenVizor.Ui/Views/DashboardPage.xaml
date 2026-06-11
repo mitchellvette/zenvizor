@@ -380,7 +380,21 @@
                     <!--  List body. Three layers, mutually exclusive in
                           practice: the ListView (always present), the
                           loading overlay (state: empty/initial), and the
-                          empty text (state: warming or post-warming quiet).  -->
+                          empty text (state: warming or post-warming quiet).
+
+                          Drill decision (intentionally NOT wired):
+                          PerAppPage and ReportsPage rows drill to
+                          AppDetailPage by app_id; AppActivity (this
+                          ListView's bound DTO) carries no app_id because
+                          the snapshot path is in-memory — adding one
+                          would require either an extra IPC lookup per
+                          drill or a DTO change that pierces the capture
+                          pipeline. The Dashboard is a live "what's
+                          happening right now" surface; drill-to-history
+                          isn't its job. If a future revision wants this,
+                          the right shape is to extend AppActivity with
+                          AppId once the in-memory aggregator can resolve
+                          it cheaply (Phase 6 scope, not before).  -->
                     <Grid Grid.Row="1">
                         <ListView x:Name="TalkersList"
                                   Background="Transparent"

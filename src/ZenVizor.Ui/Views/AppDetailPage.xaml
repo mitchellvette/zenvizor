@@ -1171,7 +1171,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="TCP or UDP — the transport protocol the connection uses." />
+                                               Text="TCP or UDP. The transport protocol the connection uses." />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="REMOTE ENDPOINT" />
@@ -1259,7 +1259,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="For svchost.exe — which Windows services were hosted in this process during its lifetime." />
+                                               Text="For svchost.exe: which Windows services were hosted in this process during its lifetime." />
                                 </StackPanel>
                             </StackPanel>
                         </Grid>

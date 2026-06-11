@@ -71,7 +71,7 @@ public sealed class DailyReportHtmlWriter
     {
         writer.WriteLine("<head>");
         writer.WriteLine("  <meta charset=\"utf-8\">");
-        writer.WriteLine($"  <title>{Html("ZenVizor daily report — " + r.Date.ToString("yyyy-MM-dd"))}</title>");
+        writer.WriteLine($"  <title>{Html("ZenVizor daily report: " + r.Date.ToString("yyyy-MM-dd"))}</title>");
         writer.WriteLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         writer.WriteLine("  <meta name=\"generator\" content=\"ZenVizor\">");
         writer.WriteLine("  <style>");
@@ -194,7 +194,7 @@ public sealed class DailyReportHtmlWriter
         var anchorText = FormatAnchor(r.Anchor, r.AnchorSpecificDate);
         writer.WriteLine("    <header class=\"doc-header\">");
         writer.WriteLine("      <div>");
-        writer.WriteLine("        <h1 class=\"doc-title\">ZenVizor — Daily report</h1>");
+        writer.WriteLine("        <h1 class=\"doc-title\">ZenVizor Daily Report</h1>");
         writer.WriteLine($"        <p class=\"doc-subtitle\">{Html(dateLong)} · {Html(anchorText)}</p>");
         writer.WriteLine("      </div>");
         writer.WriteLine("      <div class=\"doc-callout\">");

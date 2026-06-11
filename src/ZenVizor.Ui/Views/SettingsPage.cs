@@ -4,7 +4,7 @@ public sealed class SettingsPage : PlaceholderPage
 {
     public SettingsPage() : base(
         title: "Settings",
-        subtitle: "Autostart, retention, theme, intervals — Phase 6.")
+        subtitle: "Autostart, retention, theme, intervals. Phase 6.")
     {
     }
 }

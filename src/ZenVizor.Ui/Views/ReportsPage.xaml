@@ -277,9 +277,9 @@
         <!--  Uncommon Talker mini-card template — one card per anomaly.
               Per locked mockup Q5b: each app surfaces in its own metal
               mini-card (NOT as a row inside an outer container card).
-              The mini-card itself is the drill target — Cursor=Hand at
-              the root Border + MouseLeftButtonUp wires to History (no-op
-              destination until Phase 5).
+              The mini-card itself is the drill target: Cursor=Hand at
+              the root Border + MouseLeftButtonUp wires to AppDetailPage
+              with the report date (DrillToAppDetail in code-behind).
 
               Token annotation reinforcement (mockup page 9): "glyph tone
               carries category severity, ROWS STAY NEUTRAL" — so the
@@ -1296,14 +1296,13 @@
               hover-chevron column). MaxHeight enforcement happens in
               code-behind (EnforceTopAppsGridBound) because the page
               hosts inside Wpf.Ui's NavigationView DynamicScrollViewer
-              (infinite vertical extent) — XAML bindings up the tree
+              (infinite vertical extent); XAML bindings up the tree
               can't deliver a finite measure.
 
-              Single-click drill on the row navigates to HistoryPage; the
-              (app, date) filter parameter capability lands in Phase 5,
-              so until then this is a no-op destination — the navigation
-              succeeds, History opens unfiltered. The visual affordance
-              is in place; the data contract isn't.  -->
+              Single-click drill on the row navigates to AppDetailPage
+              with an AppDetailNavParams(appId, reportDate) parameter
+              (DrillToAppDetail in code-behind) so the user lands on the
+              app's 24-hour traffic for the report day.  -->
         <Border x:Name="TopAppsCard"
                 Grid.Row="4"
                 Margin="0,24,0,0"

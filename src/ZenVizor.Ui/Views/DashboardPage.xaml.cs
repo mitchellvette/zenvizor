@@ -354,8 +354,8 @@ public partial class DashboardPage : Page
             ShowBanner(
                 isCritical: steady,
                 copy: steady
-                    ? $"Service disconnected ({update.FailureReason}) — last refresh stale"
-                    : $"Service disconnected ({update.FailureReason}) — retrying");
+                    ? $"Service disconnected ({update.FailureReason}); last refresh stale"
+                    : $"Service disconnected ({update.FailureReason}); retrying");
 
             // Disconnect: preserve last-known content (chart history, talkers
             // list, status card values) and dim the lot. Chart spinner stays
@@ -381,7 +381,7 @@ public partial class DashboardPage : Page
         // shows the canonical empty-state copy, status cards stay em-dash.
         if (snap.WindowSeconds <= 0)
         {
-            ShowBanner(isCritical: false, copy: "Warming up — first flush bucket lands within ~5 s", warmingClass: true);
+            ShowBanner(isCritical: false, copy: "Warming up. First flush bucket lands within ~5 s.", warmingClass: true);
             SetStatusCardsPlaceholder();
             ChartLoadingOverlay.Visibility = Visibility.Visible;
             ChartXAxisOverlay.Visibility = Visibility.Collapsed;
