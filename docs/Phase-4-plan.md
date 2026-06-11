@@ -441,16 +441,17 @@ These remain in effect from prior phases:
 
 ## 9. Definition of done
 
-All of the following pass:
+**Phase 4 SHIPPED 2026-06-06 (commit `709898d` — "Phase 4: history
+tiers, query surface, per-app drill-down"); all boxes ticked.**
 
-- [ ] Open questions §2 answered (recorded in this doc).
-- [ ] Migration 003 ships with unique constraints; existing DBs migrate cleanly.
-- [ ] CI green: rollup correctness, retention purge, grain selection, query correctness, IPC contract round-trips.
-- [ ] `zvctl apps` / `zvctl app <id>` / `zvctl connections <id>` / `zvctl history` work against the live service.
-- [ ] UI Per-App, AppDetail, History pages replace placeholders with live data; window picker functional.
-- [ ] Manual gates §7 walked.
-- [ ] Phase 4 boxes in sprint plan checked off.
-- [ ] Commit pushed, CI green on `windows-latest`.
+- [x] Open questions §2 answered (recorded in this doc).
+- [x] Migration 003 ships with unique constraints; existing DBs migrate cleanly.
+- [x] CI green: rollup correctness, retention purge, grain selection, query correctness, IPC contract round-trips.
+- [x] `zvctl apps` / `zvctl app <id>` / `zvctl connections <id>` / `zvctl history` work against the live service.
+- [x] UI Per-App, AppDetail, History pages replace placeholders with live data; window picker functional.
+- [x] Manual gates §7 walked.
+- [x] Phase 4 boxes in sprint plan checked off.
+- [x] Commit pushed, CI green on `windows-latest`.
 
 ---
 

@@ -27,11 +27,21 @@ without re-deriving decisions.
 
 ## Status
 
+All five phases shipped in commit `1121b4f` ("Reports page: Phases 1-5
+complete + AppDetail (app, date) drill"). Subsequent commits hardened
+the chart layer (`0a97ab7`), the storage path (`55b2d2b`), and the IPC
+contract (`137d983`); none of those changed the Reports surface scope.
+
 - **Phase 1** ✓ COMPLETE — interim placeholder ships in the polish-interlude app.
 - **Phase 2** ✓ COMPLETE — chrome row + hero card with mock data, walked through extensive fix passes.
-- **Phase 3** ◻ next — Notable today + Top Apps + Uncommon Talkers surfaces.
-- **Phase 4** ◻ — state coverage matrix.
-- **Phase 5** ◻ — IPC contract + real data + CSV/HTML serializers + History drill.
+- **Phase 3** ✓ COMPLETE — Notable today + Top Apps + Uncommon Talkers surfaces.
+- **Phase 4** ✓ COMPLETE — state coverage matrix (Empty / Quiet day / Loading / Disconnected / Error).
+- **Phase 5** ✓ COMPLETE — IPC contract + real data + CSV/HTML serializers + drill to AppDetailPage with the report date (drill destination changed from the original History-prefiltered design to AppDetailPage during Phase 5e; see locked-variants table below).
+
+The drill destination ended up as **AppDetailPage** carrying
+`AppDetailNavParams(appId, reportDate)`, not History as originally
+locked. AppDetailPage is the better target because its 24-hour grain
+already lines up with a daily report's date.
 
 ---
 
@@ -376,17 +386,16 @@ This is the **sprint plan Phase 5 deliverable**. See
 
 ---
 
-## How to pick up in a fresh chat
+## How to pick up in a fresh chat (Phase 5 follow-up / regression triage)
 
-1. Read this doc + `docs/design-briefs/reports.md` (the brief) + the locked-variant page (mockup page 12).
-2. Glance at `src/ZenVizor.Ui/Views/ReportsPage.xaml` + `.xaml.cs` for current state.
-3. Spot-check `docs/zenvizor-sprint-plan.md` §Phase 5 for the IPC + export scope.
-4. **Phase 3 starts** by expanding the Grid in `ReportsPage.xaml` to 6 rows (chrome / banner / hero / notable / top apps / uncommon talkers).
-5. Mock data lives at the top of `ReportsPage.xaml.cs` — extend the static-readonly block with Notable / Top Apps / Uncommon Talkers fixtures.
-6. The chevron-drill + DataGrid virtualization patterns are in
-   `src/ZenVizor.Ui/Views/PerAppPage.xaml` and `.cs` — Top Apps lifts
-   from there.
-7. The state-banner pattern is in `HistoryPage.xaml.cs:127-177` — Phase 4 lifts from there.
+The Reports surface is complete. New work on this page (Alerts deep-link
+once Phase 6 wires alerts; future Phase D refresh on real data) lifts
+from these files:
+
+1. `src/ZenVizor.Ui/Views/ReportsPage.xaml` + `.xaml.cs` — page layout, state machine, drill handlers.
+2. `src/ZenVizor.Storage/Repositories/DailyReportRepository.cs` — server-side aggregator (Hero / sparkline / Top Apps / Uncommon Talkers / Notable). `AlertId` is sentinel 0 until Phase 6 lands the alerts table.
+3. `src/ZenVizor.Ui/Services/DailyReport{Csv,Html}Writer.cs` — export serializers; HTML is self-contained (no remote refs).
+4. The IPC contract is `IZenVizorIpc.GetDailyReportAsync`; schema version is `IpcSchemaVersion.DailyReport` (v1).
 
 ---
 

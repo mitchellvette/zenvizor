@@ -25,6 +25,12 @@ Get-Command procmon64.exe -ErrorAction SilentlyContinue
 #   winget install --id Microsoft.Sysinternals.ProcessMonitor
 # Then open a new shell so PATH refreshes.
 
+# sqlite3.exe — required for Gate #1 (DB attribution check).
+Get-Command sqlite3.exe -ErrorAction SilentlyContinue
+# Empty? Install:
+#   winget install --id SQLite.SQLite
+# Then open a new shell so PATH refreshes.
+
 # Resource Monitor + Performance Monitor — built-in (resmon.exe / perfmon.exe), no install needed.
 ```
 
@@ -122,15 +128,6 @@ sqlite3.exe -cmd ".mode column" -cmd ".headers on" $db "SELECT a.image_name, ps.
 > `"@` **must be at column 0** — leading whitespace makes PowerShell keep
 > consuming input forever. Press **Ctrl+C** if you find yourself stuck at
 > a `>>` continuation prompt.
-
-Don't have `sqlite3.exe`? Pre-flight:
-
-```powershell
-Get-Command sqlite3.exe -ErrorAction SilentlyContinue
-# Empty? Install:
-#   winget install --id SQLite.SQLite
-# Or use the .NET API; ad-hoc queries are easier with the CLI though.
-```
 
 ### 1c. Pass criteria
 

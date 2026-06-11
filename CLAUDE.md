@@ -23,6 +23,34 @@ These are not preferences. Do not violate them, and do not "temporarily" violate
 
 If a requested change appears to conflict with any of these, surface the conflict before implementing.
 
+### Intentional design tension — DB ACL vs IPC INTERACTIVE access
+
+The `zenvizor.db` file is ACL'd to **SYSTEM + Administrators only**
+(`ProgramDataAcl.EnsureDirectoryWithAcl`). The IPC named pipe is ACL'd
+to **SYSTEM + Administrators full + INTERACTIVE read/write**
+(`ZenVizorPipeServer.BuildPipeSecurity`) so the non-elevated desktop UI
+and `zvctl` can connect. **That means any logged-in interactive user
+can read every byte of report data through IPC, while the underlying
+`.db` is unreadable to them.** This is intentional, not a leak:
+
+- **The ACL protects the raw file**, not the data. We don't want a
+  standard user able to point sqlite3 at the DB and corrupt the schema,
+  exhaust disk on the page cache, or trigger a WAL replay race against
+  the service. A read-side leak via IPC is not on the same threat
+  surface.
+- **Invariant 3 ("UI has NO database access") is the gate that lets
+  this work.** All data flows through `IZenVizorIpc`; the surface
+  validates arguments, sanitizes errors, and bounds query cost. We
+  audit ONE surface for data exposure, not two.
+- **Without the IPC ACL grant the UI can't run as a standard user.**
+  Requiring elevation for the dashboard would push users toward Run As
+  Administrator, which is materially worse for everything else.
+
+If a future feature adds data the user shouldn't see (a hypothetical
+multi-tenant build, secrets-in-DB), the right move is to gate at the
+IPC handler — not to tighten the pipe ACL and break the non-elevated
+UI contract.
+
 ---
 
 ## Tech stack (pinned)
@@ -62,9 +90,8 @@ ZenVizor.sln
     ZenVizor.Storage.Tests/
     ZenVizor.Ipc.Tests/            # contract tests, no real pipe
     ZenVizor.Integration.Tests/    # pipe round-trips, synthetic end-to-end
-  installer/
-    ZenVizor.Installer/      # WiX project
-  .github/workflows/          # CI
+  installer/                # NOT YET CREATED — Phase 6 (WiX project lands then)
+  .github/workflows/        # CI
 ```
 
 Runtime data lives under `%ProgramData%\ZenVizor\` (DB + config), ACL'd to SYSTEM + Administrators.
@@ -88,13 +115,14 @@ Build these as specified; they exist so post-MVP modules slot in without re-arch
 > Use the actual scripts/targets as they land; the commands below are the intended shape.
 
 ```bash
-# Build
-dotnet build ZenVizor.sln -c Release
+# Build (solution file is ZenVizor.slnx — the new SDK-style format, NOT .sln;
+# `dotnet build ZenVizor.sln` fails with MSB1009 "Project file does not exist")
+dotnet build ZenVizor.slnx -c Release
 
 # Headless tests (these run in CI — must pass before advancing a phase)
-dotnet test ZenVizor.sln -c Release
+dotnet test ZenVizor.slnx -c Release
 
-# Installer (must be CLI-drivable)
+# Installer (must be CLI-drivable when it exists — Phase 6)
 wix build ...   # produces the .msi artifact
 
 # Service control (dev)

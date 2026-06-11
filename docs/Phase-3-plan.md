@@ -367,18 +367,19 @@ These are CLAUDE.md invariants Phase 3 must respect:
 
 ## 9. Definition of done
 
-All of the following pass:
+**Phase 3 SHIPPED 2026-06-04 (commit `82eb9f8` — "Phase 3: activity
+snapshot, UI dashboard, attribution reliability"); all boxes ticked.**
 
-- [ ] Open questions §2 answered (answers committed alongside this plan).
-- [ ] CI green: 6 test projects, all passing, no skipped tests. New tests: envelope round-trip, snapshot determinism, "no SQLite on snapshot path" guard.
-- [ ] `zvctl snapshot` works against the running service and produces sane output (top-N + `--all` + `--json`).
-- [ ] UI dashboard replaces the placeholder; LiveCharts2 area chart and top-talkers list update on the 2 s poll.
-- [ ] Manual gates §7 walked by user on a real box.
-- [ ] `docs/phase-3-verification.md` exists with the three gates.
-- [ ] **Self-monitoring gate passes — zero own traffic from ZenVizor processes.** (Founding invariant.)
-- [ ] CPU budget still passes (< 1 % idle, < 80 MB working set) with the dashboard open + polling.
-- [ ] Phase 3 boxes in Sprint Plan checked off.
-- [ ] Commit pushed, CI green on `windows-latest`.
+- [x] Open questions §2 answered (answers committed alongside this plan).
+- [x] CI green: 6 test projects, all passing, no skipped tests. New tests: envelope round-trip, snapshot determinism, "no SQLite on snapshot path" guard.
+- [x] `zvctl snapshot` works against the running service and produces sane output (top-N + `--all` + `--json`).
+- [x] UI dashboard replaces the placeholder; LiveCharts2 area chart and top-talkers list update on the 2 s poll.
+- [x] Manual gates §7 walked by user on a real box.
+- [x] `docs/phase-3-verification.md` exists with the three gates.
+- [x] **Self-monitoring gate passes — zero own traffic from ZenVizor processes.** (Founding invariant.)
+- [x] CPU budget still passes (< 1 % idle, < 80 MB working set) with the dashboard open + polling.
+- [x] Phase 3 boxes in Sprint Plan checked off.
+- [x] Commit pushed, CI green on `windows-latest`.
 
 ---
 

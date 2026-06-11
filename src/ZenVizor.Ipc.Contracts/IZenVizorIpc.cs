@@ -23,8 +23,10 @@ public interface IZenVizorIpc
     Task<PingResult> PingAsync();
 
     /// <summary>
-    /// Returns identifying / status information about the running service.
-    /// Phase 0 stub: capture/DB fields will be wired in later phases.
+    /// Returns identifying / status information about the running service:
+    /// service name, version, protocol version, start time, uptime, DB
+    /// path, and a live capture-active flag the bottom-bar indicator and
+    /// <c>zvctl status</c> render.
     /// </summary>
     Task<ServiceStatusResult> GetServiceStatusAsync();
 

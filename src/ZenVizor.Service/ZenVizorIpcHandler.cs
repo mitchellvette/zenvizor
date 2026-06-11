@@ -6,8 +6,13 @@ using ZenVizor.Ipc.Contracts.Dto;
 namespace ZenVizor.Service;
 
 /// <summary>
-/// The service-side implementation of <see cref="IZenVizorIpc"/>.
-/// Phase 0 stub: capture/DB-derived fields will be wired in later phases.
+/// The service-side implementation of <see cref="IZenVizorIpc"/>. Composes
+/// the in-memory snapshot path (Phase 3) with the SQLite-backed history
+/// query path (Phase 4) and the daily-report aggregator (Phase 5) behind
+/// per-RPC provider delegates that the hosted service wires from
+/// <see cref="ZenVizorHostedService.StartAsync"/>. The handler itself is
+/// concerned only with envelope stamping, argument validation, and the
+/// negotiation gate — the providers own the data plane.
 /// </summary>
 internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 {

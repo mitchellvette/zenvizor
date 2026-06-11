@@ -605,7 +605,6 @@ public sealed class DailyReportRepository
         cmd.Parameters.AddWithValue("$start", dayStart);
         cmd.Parameters.AddWithValue("$end",   dayEnd);
         using var reader = cmd.ExecuteReader();
-        var alertSeq = 1;
         while (reader.Read())
         {
             var appId = reader.GetInt32(0);
@@ -626,7 +625,16 @@ public sealed class DailyReportRepository
                 ImageName:       name,
                 Pid:             pid,
                 EventTimeUnixMs: firstWanMs,
-                AlertId:         alertSeq++));
+                // Synthesized for the report: there is no row in `alerts`
+                // backing these incidents in Phase 5b — the daily aggregator
+                // computes them straight from sessions/connections. A
+                // sequential 1,2,3 would COLLIDE with the real alerts.alert_id
+                // values once Phase 6 wires the alert pipeline. Sentinel 0
+                // signals "no Alerts deep-link yet"; the Reports UI keeps the
+                // inline "Alerts · #N" affordance visible-but-inert against
+                // a zero AlertId until Phase 6 supplies real IDs from the
+                // alerts table.
+                AlertId:         0));
         }
         return rows;
     }

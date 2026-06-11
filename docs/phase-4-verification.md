@@ -204,7 +204,7 @@ After running, clean up the synthetic rows if you want a tidy DB:
 
 ```powershell
 # Elevated
-sqlite3.exe 'C:\ProgramData\ZenVizor\zenvizor.db' "DELETE FROM traffic_daily WHERE bucket_start < (strftime('%s','now')*1000 - 30L*86400000);"
+sqlite3.exe 'C:\ProgramData\ZenVizor\zenvizor.db' "DELETE FROM traffic_daily WHERE bucket_start < (strftime('%s','now')*1000 - 30*86400000);"
 ```
 
 ---
