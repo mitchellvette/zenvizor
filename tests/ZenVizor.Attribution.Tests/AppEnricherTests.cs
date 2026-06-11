@@ -121,6 +121,54 @@ public sealed class AppEnricherTests : IDisposable
     }
 
     [Fact]
+    public void Enrich_CacheGrowsPastBound_OldestEntriesEvictedFifo()
+    {
+        // Working-set guard: the cache must not grow without bound on a
+        // long-running service. Use the internal cap-injecting ctor with a
+        // small bound so the test stays fast — production default is 1024.
+        const int cap = 3;
+        var verifier = new RecordingVerifier(new SignatureVerificationResult("Signed", "Acme Co"));
+        var enricher = new AppEnricher(verifier, new FakeClassifier(false), logger: null, maxCacheEntries: cap);
+
+        var paths = new List<string>();
+        for (var i = 0; i < cap + 2; i++)
+        {
+            var p = Path.Combine(Path.GetTempPath(), $"zenvizor-bound-{Guid.NewGuid():N}.exe");
+            File.WriteAllBytes(p, new byte[] { 0x4d, 0x5a, (byte)i });
+            paths.Add(p);
+        }
+        try
+        {
+            foreach (var p in paths)
+            {
+                enricher.Enrich(ImageFor(p));
+            }
+
+            enricher.CacheCount.Should().Be(cap,
+                "the cache must never exceed its configured cap");
+
+            // The two oldest paths (paths[0] and paths[1]) were evicted FIFO,
+            // so re-enriching them must invoke the verifier again. The most-
+            // recently-inserted entries (paths[2..]) remain a cache hit.
+            var callsAfterInitialFill = verifier.CallCount;
+            enricher.Enrich(ImageFor(paths[0]));
+            verifier.CallCount.Should().Be(callsAfterInitialFill + 1,
+                "oldest entry was evicted; verifier re-runs");
+
+            enricher.Enrich(ImageFor(paths[cap + 1]));
+            verifier.CallCount.Should().Be(callsAfterInitialFill + 1,
+                "most-recent entry is still cached");
+        }
+        finally
+        {
+            foreach (var p in paths)
+            {
+                try { File.Delete(p); } catch (IOException) { }
+            }
+        }
+    }
+
+    [Fact]
     public void Enrich_UnsignedFromTempPath_FlagsUserWritable()
     {
         var verifier = new RecordingVerifier(new SignatureVerificationResult("Unsigned", null));

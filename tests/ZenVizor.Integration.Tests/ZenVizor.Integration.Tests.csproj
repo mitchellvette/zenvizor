@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\ZenVizor.Ipc.Client\ZenVizor.Ipc.Client.csproj" />
     <ProjectReference Include="..\..\src\ZenVizor.Core\ZenVizor.Core.csproj" />
     <ProjectReference Include="..\..\src\ZenVizor.Capture\ZenVizor.Capture.csproj" />
+    <ProjectReference Include="..\..\src\ZenVizor.Service\ZenVizor.Service.csproj" />
     <ProjectReference Include="..\..\src\ZenVizor.Storage\ZenVizor.Storage.csproj" />
     <!-- Phase 5c — Reports CSV/HTML serializers live in ZenVizor.Ui.Services
          and have no WPF dependencies of their own; the test project references

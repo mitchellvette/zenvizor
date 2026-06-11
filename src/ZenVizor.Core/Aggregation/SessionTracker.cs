@@ -9,6 +9,7 @@ namespace ZenVizor.Core.Aggregation;
 /// they're batched into the single <see cref="IFlushSink"/> transaction.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Sprint Plan Phase 1 responsibilities preserved:
 /// <list type="bullet">
 ///   <item>First observation of a PID: resolve image, queue a pending session open.</item>
@@ -16,6 +17,16 @@ namespace ZenVizor.Core.Aggregation;
 ///   <item>Stale process exit: <see cref="CollectStaleSessionIds"/> drains validated stale sessions.</item>
 ///   <item>PID 0 skipped; PID 4 (System) accepted via the resolver.</item>
 /// </list>
+/// </para>
+/// <para>
+/// Threading: this class owns its own <c>_gate</c> so the caller
+/// (<see cref="TrafficAggregator.Observe"/>) does NOT hold its accumulator
+/// lock while session-open enrichment (WinVerifyTrust + FileInfo + SCM
+/// enumeration) runs. <see cref="TryTrack"/>'s slow path releases the
+/// internal lock for the duration of the enrichment work, then re-enters
+/// to commit; concurrent <see cref="TryTrack"/> calls for the same PID
+/// race-resolve via a double-check on the second acquisition.
+/// </para>
 /// </remarks>
 public sealed class SessionTracker
 {
@@ -27,6 +38,8 @@ public sealed class SessionTracker
     private readonly IServiceHostResolver _serviceHostResolver;
 
     private readonly Dictionary<int, SessionState> _byPid = new();
+    private readonly List<int> _explicitCloses = new();
+    private readonly object _gate = new();
 
     public SessionTracker(
         IProcessImageResolver imageResolver,
@@ -53,6 +66,13 @@ public sealed class SessionTracker
     /// Hot path. Adopts the PID into the tracker (or refreshes its last-observed
     /// timestamp). Returns <c>false</c> if the PID is untrackable (Idle process,
     /// or the resolver has no image info — phantom PID).
+    /// <para>
+    /// Fast path (existing PID, same start time): acquires the internal lock
+    /// only long enough to bump <c>LastObservedUnixMs</c>. Slow path (new PID
+    /// or PID reuse): releases the lock while running session-open enrichment
+    /// (<see cref="IAppEnricher.Enrich"/> + <see cref="IServiceHostResolver"/>)
+    /// so the per-event hot path doesn't block on file I/O or signature checks.
+    /// </para>
     /// </summary>
     public bool TryTrack(int pid, long nowUnixMs)
     {
@@ -61,57 +81,85 @@ public sealed class SessionTracker
             return false;
         }
 
-        if (_byPid.TryGetValue(pid, out var existing))
+        ProcessImageInfo? newImage = null;
+        bool isPidReuse = false;
+        int reusedSessionIdToClose = 0;
+
+        lock (_gate)
         {
-            // PID reuse: same PID, different start time → close old, open new.
-            var image = _imageResolver.Resolve(pid);
-            if (image is null)
+            if (_byPid.TryGetValue(pid, out var existing))
             {
-                // Process disappeared mid-session; keep state but stop touching it,
-                // stale reap will collect it shortly.
-                return true;
-            }
-            if (existing.StartTimeUnixMs != image.StartTimeUnixMs)
-            {
+                var cached = _imageResolver.Resolve(pid);
+                if (cached is null)
+                {
+                    // Process vanished mid-session; keep state, stale reap
+                    // will collect it shortly.
+                    existing.LastObservedUnixMs = nowUnixMs;
+                    return true;
+                }
+                if (existing.StartTimeUnixMs == cached.StartTimeUnixMs)
+                {
+                    // Common fast path — same process, same PID, just bump.
+                    existing.LastObservedUnixMs = nowUnixMs;
+                    return true;
+                }
+
+                // PID reuse — different start time at the same PID. Queue the
+                // old session's close (if persisted), drop the entry, and
+                // proceed to the slow open path below. The enrichment work
+                // for the new image runs OUTSIDE this lock.
                 if (existing.IsPersisted)
                 {
-                    // Queue the old session for close. If it was still pending
-                    // (no session_id yet), it just gets dropped — its traffic for
-                    // this window was already attributed to the pending session.
-                    _explicitCloses.Add(existing.SessionId);
+                    isPidReuse = true;
+                    reusedSessionIdToClose = existing.SessionId;
                 }
-                _byPid[pid] = OpenSession(pid, image, nowUnixMs);
+                _byPid.Remove(pid);
+                newImage = cached;
+            }
+        }
+
+        if (newImage is null)
+        {
+            // No entry yet — resolve the image now. Most lookups are the
+            // lifecycle resolver's PID-keyed cache hit (cheap); Win32 fallback
+            // can stat the process and is the reason we won't hold the lock.
+            newImage = _imageResolver.Resolve(pid);
+            if (newImage is null)
+            {
+                return false;
+            }
+        }
+
+        // Heavy work runs without the lock. WinVerifyTrust + FileInfo (in
+        // AppEnricher) plus the SCM service-host enumeration each take many
+        // milliseconds on cold cache and used to block every aggregator
+        // update.
+        var enrichment = _appEnricher.Enrich(newImage);
+        var hostedServices = FormatHostedServices(_serviceHostResolver.ResolveHostedServices(pid));
+
+        lock (_gate)
+        {
+            if (isPidReuse)
+            {
+                _explicitCloses.Add(reusedSessionIdToClose);
+            }
+
+            if (_byPid.TryGetValue(pid, out var raceWinner))
+            {
+                // Another thread committed a session for this PID while we
+                // were enriching. Adopt its entry — our enrichment work was
+                // redundant but harmless.
+                raceWinner.LastObservedUnixMs = nowUnixMs;
                 return true;
             }
 
-            existing.LastObservedUnixMs = nowUnixMs;
+            _byPid[pid] = new SessionState(
+                appIdentity: BuildAppIdentity(newImage, enrichment),
+                hostedServices: hostedServices,
+                startTimeUnixMs: newImage.StartTimeUnixMs,
+                lastObservedUnixMs: nowUnixMs);
             return true;
         }
-
-        var freshImage = _imageResolver.Resolve(pid);
-        if (freshImage is null)
-        {
-            return false;
-        }
-
-        _byPid[pid] = OpenSession(pid, freshImage, nowUnixMs);
-        return true;
-    }
-
-    /// <summary>
-    /// Builds a new <see cref="SessionState"/> for a session-open. This is where
-    /// Phase 2 enrichment (publisher / signature status / user-writable-path) and
-    /// the svchost service-host snapshot happen — each is exactly once per session.
-    /// </summary>
-    private SessionState OpenSession(int pid, ProcessImageInfo image, long nowUnixMs)
-    {
-        var enrichment = _appEnricher.Enrich(image);
-        var hostedServices = FormatHostedServices(_serviceHostResolver.ResolveHostedServices(pid));
-        return new SessionState(
-            appIdentity: BuildAppIdentity(image, enrichment),
-            hostedServices: hostedServices,
-            startTimeUnixMs: image.StartTimeUnixMs,
-            lastObservedUnixMs: nowUnixMs);
     }
 
     /// <summary>
@@ -121,10 +169,13 @@ public sealed class SessionTracker
     /// </summary>
     public bool TryGetSessionId(int pid, out int sessionId)
     {
-        if (_byPid.TryGetValue(pid, out var state) && state.IsPersisted)
+        lock (_gate)
         {
-            sessionId = state.SessionId;
-            return true;
+            if (_byPid.TryGetValue(pid, out var state) && state.IsPersisted)
+            {
+                sessionId = state.SessionId;
+                return true;
+            }
         }
 
         sessionId = 0;
@@ -137,20 +188,23 @@ public sealed class SessionTracker
     /// </summary>
     public IReadOnlyList<NewSessionEntry> CollectPendingOpens()
     {
-        var pending = new List<NewSessionEntry>();
-        foreach (var (pid, state) in _byPid)
+        lock (_gate)
         {
-            if (state.IsPersisted)
+            var pending = new List<NewSessionEntry>();
+            foreach (var (pid, state) in _byPid)
             {
-                continue;
+                if (state.IsPersisted)
+                {
+                    continue;
+                }
+                pending.Add(new NewSessionEntry(
+                    Pid: pid,
+                    App: state.AppIdentity,
+                    StartTimeUnixMs: state.StartTimeUnixMs,
+                    HostedServices: state.HostedServices));
             }
-            pending.Add(new NewSessionEntry(
-                Pid: pid,
-                App: state.AppIdentity,
-                StartTimeUnixMs: state.StartTimeUnixMs,
-                HostedServices: state.HostedServices));
+            return pending;
         }
-        return pending;
     }
 
     /// <summary>
@@ -161,12 +215,15 @@ public sealed class SessionTracker
     /// </summary>
     public IReadOnlyDictionary<int, PidAppInfo> SnapshotPidToApp()
     {
-        var snapshot = new Dictionary<int, PidAppInfo>(_byPid.Count);
-        foreach (var (pid, state) in _byPid)
+        lock (_gate)
         {
-            snapshot[pid] = new PidAppInfo(state.AppIdentity, state.HostedServices);
+            var snapshot = new Dictionary<int, PidAppInfo>(_byPid.Count);
+            foreach (var (pid, state) in _byPid)
+            {
+                snapshot[pid] = new PidAppInfo(state.AppIdentity, state.HostedServices);
+            }
+            return snapshot;
         }
-        return snapshot;
     }
 
     /// <summary>
@@ -175,15 +232,18 @@ public sealed class SessionTracker
     /// </summary>
     public IReadOnlyDictionary<int, int> SnapshotPersistedSessions()
     {
-        var snapshot = new Dictionary<int, int>(_byPid.Count);
-        foreach (var (pid, state) in _byPid)
+        lock (_gate)
         {
-            if (state.IsPersisted)
+            var snapshot = new Dictionary<int, int>(_byPid.Count);
+            foreach (var (pid, state) in _byPid)
             {
-                snapshot[pid] = state.SessionId;
+                if (state.IsPersisted)
+                {
+                    snapshot[pid] = state.SessionId;
+                }
             }
+            return snapshot;
         }
-        return snapshot;
     }
 
     /// <summary>
@@ -197,28 +257,31 @@ public sealed class SessionTracker
     /// </summary>
     public IReadOnlyList<int> CollectStaleSessionIds(long nowUnixMs)
     {
-        var stale = new List<int>(_explicitCloses);
-        foreach (var (pid, state) in _byPid)
+        lock (_gate)
         {
-            if (!state.IsPersisted)
+            var stale = new List<int>(_explicitCloses);
+            foreach (var (pid, state) in _byPid)
             {
-                continue;
-            }
-            if (nowUnixMs - state.LastObservedUnixMs < StaleThresholdMs)
-            {
-                continue;
-            }
+                if (!state.IsPersisted)
+                {
+                    continue;
+                }
+                if (nowUnixMs - state.LastObservedUnixMs < StaleThresholdMs)
+                {
+                    continue;
+                }
 
-            var image = _imageResolver.Resolve(pid);
-            if (image is not null && image.StartTimeUnixMs == state.StartTimeUnixMs)
-            {
-                // Process is still alive, just idle — keep the session.
-                continue;
-            }
+                var image = _imageResolver.Resolve(pid);
+                if (image is not null && image.StartTimeUnixMs == state.StartTimeUnixMs)
+                {
+                    // Process is still alive, just idle — keep the session.
+                    continue;
+                }
 
-            stale.Add(state.SessionId);
+                stale.Add(state.SessionId);
+            }
+            return stale;
         }
-        return stale;
     }
 
     /// <summary>
@@ -235,35 +298,39 @@ public sealed class SessionTracker
         IReadOnlyDictionary<int, int> pidToNewSessionId,
         IReadOnlyList<int> closedSessionIds)
     {
-        foreach (var (pid, sessionId) in pidToNewSessionId)
+        lock (_gate)
         {
-            if (_byPid.TryGetValue(pid, out var state))
+            foreach (var (pid, sessionId) in pidToNewSessionId)
             {
-                state.MarkPersisted(sessionId);
+                if (_byPid.TryGetValue(pid, out var state))
+                {
+                    state.MarkPersisted(sessionId);
+                }
             }
-        }
 
-        var closedSet = new HashSet<int>(closedSessionIds);
-        var pidsToDrop = new List<int>();
-        foreach (var (pid, state) in _byPid)
-        {
-            if (state.IsPersisted && closedSet.Contains(state.SessionId))
+            var closedSet = new HashSet<int>(closedSessionIds);
+            var pidsToDrop = new List<int>();
+            foreach (var (pid, state) in _byPid)
             {
-                pidsToDrop.Add(pid);
+                if (state.IsPersisted && closedSet.Contains(state.SessionId))
+                {
+                    pidsToDrop.Add(pid);
+                }
             }
-        }
-        foreach (var pid in pidsToDrop)
-        {
-            _byPid.Remove(pid);
-        }
+            foreach (var pid in pidsToDrop)
+            {
+                _byPid.Remove(pid);
+            }
 
-        _explicitCloses.Clear();
+            _explicitCloses.Clear();
+        }
     }
 
     /// <summary>Number of currently tracked PIDs (test diagnostic).</summary>
-    internal int TrackedCount => _byPid.Count;
-
-    private readonly List<int> _explicitCloses = new();
+    internal int TrackedCount
+    {
+        get { lock (_gate) return _byPid.Count; }
+    }
 
     private static AppIdentity BuildAppIdentity(ProcessImageInfo image, EnrichmentResult enrichment) =>
         new(

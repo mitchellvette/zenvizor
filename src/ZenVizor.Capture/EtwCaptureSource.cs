@@ -23,20 +23,32 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
     /// <summary>Default session name used by ZenVizor. Stable across restarts.</summary>
     public const string DefaultSessionName = "ZenVizor.Capture";
 
+    /// <summary>
+    /// Bounded channel capacity. At a sustained 10 k events/sec — well past
+    /// typical desktop load — 65 536 slots buffer ~6 s of backlog, which is
+    /// enough to ride out a flush hiccup without the channel itself becoming
+    /// a memory pressure source. Sustained overrun drops oldest events; the
+    /// drop count is exposed via <see cref="DroppedObservations"/>.
+    /// </summary>
+    public const int ChannelCapacity = 65_536;
+
     private readonly string _sessionName;
     private readonly ILogger _logger;
     private readonly IProcessLifecycleSink? _processSink;
     private readonly IConnectionLifecycleSink? _connectionSink;
     private readonly Channel<NetworkObservation> _channel =
-        Channel.CreateUnbounded<NetworkObservation>(new UnboundedChannelOptions
+        Channel.CreateBounded<NetworkObservation>(new BoundedChannelOptions(ChannelCapacity)
         {
+            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = false,
         });
 
     private TraceEventSession? _session;
     private Thread? _processThread;
-    private CancellationTokenSource? _internalCts;
+    private volatile bool _shutdownRequested;
+    private volatile bool _isFaulted;
+    private long _droppedObservations;
 
     public EtwCaptureSource(
         string? sessionName = null,
@@ -65,7 +77,8 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
         // Defensive cleanup — a prior unclean shutdown can leave a session running.
         TryStopLeakedSession(_sessionName, _logger);
 
-        _internalCts = new CancellationTokenSource();
+        _shutdownRequested = false;
+        _isFaulted = false;
         _session = new TraceEventSession(_sessionName)
         {
             StopOnDispose = true,
@@ -143,9 +156,22 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
         {
             // Blocks until session is disposed.
             _session?.Source.Process();
+
+            // Process() returning without us asking for shutdown means the
+            // session died on its own (kernel logger evicted, ETW backpressure,
+            // etc.). Surface as faulted so CaptureMonitor stops reporting
+            // CaptureActive=true.
+            if (!_shutdownRequested)
+            {
+                _isFaulted = true;
+                _logger.LogError(
+                    "ETW Process loop exited unexpectedly without a shutdown request — " +
+                    "capture is now dead.");
+            }
         }
         catch (Exception ex)
         {
+            _isFaulted = true;
             _logger.LogError(ex, "ETW Process loop terminated unexpectedly.");
         }
         finally
@@ -153,6 +179,9 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
             _channel.Writer.TryComplete();
         }
     }
+
+    /// <inheritdoc />
+    public bool IsFaulted => _isFaulted;
 
     private static void TryStopLeakedSession(string sessionName, ILogger logger)
     {
@@ -225,8 +254,30 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
         IPEndPoint local, IPEndPoint remote, Direction direction, long bytes)
     {
         var ts = ToUnixTimeMs(timestamp);
-        _channel.Writer.TryWrite(new NetworkObservation(ts, pid, protocol, local, remote, direction, bytes));
+        var observation = new NetworkObservation(ts, pid, protocol, local, remote, direction, bytes);
+
+        // DropOldest mode: when the bounded channel is full, TryWrite still
+        // returns true after silently discarding the oldest entry. To surface
+        // that load signal, check Reader.Count first — if it's at capacity,
+        // this write will displace one. Best-effort under concurrency (the
+        // reader runs on another thread, so the count can fall between check
+        // and write), but ETW Process loop is single-threaded, so we never
+        // double-count a drop from the writer side.
+        if (_channel.Reader.Count >= ChannelCapacity)
+        {
+            Interlocked.Increment(ref _droppedObservations);
+        }
+
+        _channel.Writer.TryWrite(observation);
     }
+
+    /// <summary>
+    /// Approximate count of observations the bounded channel discarded
+    /// (oldest-first) since startup. Surfaces sustained back-pressure for
+    /// QA. Bounded mode is a relief valve, not the steady state: any non-zero
+    /// here means the reader / aggregator is not keeping up.
+    /// </summary>
+    public long DroppedObservations => Interlocked.Read(ref _droppedObservations);
 
     /// <summary>
     /// Coerce a TraceEvent <see cref="DateTime"/> (which arrives with
@@ -466,6 +517,11 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
             return;
         }
 
+        // Tell ProcessLoop "this exit is intentional" before we tear the
+        // session down. Without this, a clean Dispose looks identical to
+        // an unexpected exit and would flip IsFaulted.
+        _shutdownRequested = true;
+
         try
         {
             _session.Dispose();
@@ -488,9 +544,7 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
         }
 
         _channel.Writer.TryComplete();
-        _internalCts?.Dispose();
         _session = null;
         _processThread = null;
-        _internalCts = null;
     }
 }

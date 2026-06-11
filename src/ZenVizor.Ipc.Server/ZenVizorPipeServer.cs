@@ -93,7 +93,16 @@ public sealed class ZenVizorPipeServer : IAsyncDisposable
         try
         {
             _logger.LogDebug("Pipe client connected.");
-            using var rpc = ZenVizorRpcHost.Host(pipe, _handler);
+            var gate = new NegotiationGate(_handler);
+            using var rpc = ZenVizorRpcHost.Host(pipe, gate, _logger);
+            // Wire the mismatch action so a rejected NegotiateVersionAsync
+            // tears down this connection after the rejection response
+            // flushes. The handler is shared, but the gate (and the rpc
+            // session it gates) live and die with this one connection.
+            gate.SetMismatchAction(() =>
+            {
+                try { rpc.Dispose(); } catch { /* best-effort */ }
+            });
             await rpc.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -110,7 +119,7 @@ public sealed class ZenVizorPipeServer : IAsyncDisposable
         }
     }
 
-    private static PipeSecurity BuildPipeSecurity()
+    internal static PipeSecurity BuildPipeSecurity()
     {
         var security = new PipeSecurity();
 
@@ -128,9 +137,13 @@ public sealed class ZenVizorPipeServer : IAsyncDisposable
 
         // INTERACTIVE — connect/read/write so the desktop UI and zvctl work,
         // but remote/network/anonymous principals get no rule and so no access.
+        // Deliberately NO CreateNewInstance: only SYSTEM/Admins (FullControl above)
+        // may stand up new server instances on this pipe name, closing the
+        // local pipe-instance squatting hole where a non-elevated interactive
+        // user could pre-create a listener and impersonate the service.
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.InteractiveSid, null),
-            PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance,
+            PipeAccessRights.ReadWrite,
             AccessControlType.Allow));
 
         return security;

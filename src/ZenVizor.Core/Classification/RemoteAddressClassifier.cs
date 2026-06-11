@@ -8,6 +8,12 @@ namespace ZenVizor.Core.Classification;
 /// Pure-function classifier mapping a remote IP address to <see cref="RemoteClass.Local"/>
 /// or <see cref="RemoteClass.Wan"/>. Covers IPv4 and IPv6; never touches the network.
 /// </summary>
+/// <remarks>
+/// Allocation-free: <see cref="IPAddress.TryWriteBytes"/> writes into a stack-allocated
+/// span instead of <see cref="IPAddress.GetAddressBytes"/>'s per-call <c>byte[]</c>.
+/// Called once per network observation on the hot path, so this directly affects the
+/// project's idle-CPU and working-set budgets.
+/// </remarks>
 public static class RemoteAddressClassifier
 {
     public static RemoteClass Classify(IPAddress address)
@@ -29,7 +35,11 @@ public static class RemoteAddressClassifier
 
     private static RemoteClass ClassifyV4(IPAddress address)
     {
-        var bytes = address.GetAddressBytes();
+        Span<byte> bytes = stackalloc byte[4];
+        if (!address.TryWriteBytes(bytes, out var written) || written != 4)
+        {
+            return RemoteClass.Wan;
+        }
 
         // 10.0.0.0/8
         if (bytes[0] == 10)
@@ -74,7 +84,11 @@ public static class RemoteAddressClassifier
             return RemoteClass.Local;
         }
 
-        var bytes = address.GetAddressBytes();
+        Span<byte> bytes = stackalloc byte[16];
+        if (!address.TryWriteBytes(bytes, out var written) || written != 16)
+        {
+            return RemoteClass.Wan;
+        }
 
         // fc00::/7 — unique local addresses. High 7 bits are 1111 110x.
         if ((bytes[0] & 0xFE) == 0xFC)

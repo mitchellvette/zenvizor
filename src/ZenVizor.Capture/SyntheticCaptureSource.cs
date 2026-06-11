@@ -19,6 +19,23 @@ public sealed class SyntheticCaptureSource : ICaptureSource, IAsyncDisposable
             SingleWriter = false,
         });
 
+    private volatile bool _isFaulted;
+
+    /// <inheritdoc />
+    public bool IsFaulted => _isFaulted;
+
+    /// <summary>
+    /// Test hook: simulate the production "ETW Process loop threw" path so
+    /// CaptureMonitor's health surface is exercisable on CI without an actual
+    /// ETW session. Equivalent to <see cref="EtwCaptureSource"/> setting its
+    /// internal fault flag after <c>Source.Process</c> raised.
+    /// </summary>
+    public void MarkFaulted()
+    {
+        _isFaulted = true;
+        _channel.Writer.TryComplete();
+    }
+
     /// <summary>Write a scripted observation. Returns once the value is in the channel.</summary>
     public ValueTask EmitAsync(NetworkObservation observation, CancellationToken cancellationToken = default)
     {

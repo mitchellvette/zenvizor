@@ -24,4 +24,9 @@
     <ProjectReference Include="..\ZenVizor.Attribution\ZenVizor.Attribution.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZenVizor.Ipc.Tests" />
+    <InternalsVisibleTo Include="ZenVizor.Integration.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -23,6 +23,9 @@
     <ProjectReference Include="..\..\src\ZenVizor.Ipc.Contracts\ZenVizor.Ipc.Contracts.csproj" />
     <ProjectReference Include="..\..\src\ZenVizor.Ipc.Server\ZenVizor.Ipc.Server.csproj" />
     <ProjectReference Include="..\..\src\ZenVizor.Ipc.Client\ZenVizor.Ipc.Client.csproj" />
+    <!-- Host the production ZenVizorIpcHandler in-process for the IPC hardening
+         tests (negotiation gate, validation, error sanitization). -->
+    <ProjectReference Include="..\..\src\ZenVizor.Service\ZenVizor.Service.csproj" />
   </ItemGroup>
 
 </Project>

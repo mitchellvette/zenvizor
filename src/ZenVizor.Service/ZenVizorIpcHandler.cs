@@ -1,4 +1,5 @@
 using System.Reflection;
+using StreamJsonRpc;
 using ZenVizor.Ipc.Contracts;
 using ZenVizor.Ipc.Contracts.Dto;
 
@@ -32,6 +33,15 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     /// <summary>Schema version of the Phase-5 DailyReport payload.</summary>
     private const int DailyReportSchemaVersion = 1;
 
+    /// <summary>
+    /// Default upper bound on how far back <see cref="QueryWindow.FromUnixMs"/>
+    /// is allowed to reach. Set comfortably past the daily-tier retention
+    /// default (365 d) so legitimate "last year" queries pass while
+    /// pathological / nonsense windows (epoch, far-past) get rejected at
+    /// the RPC boundary instead of triggering a full-table scan.
+    /// </summary>
+    private const long DefaultMaxWindowLookbackMs = 400L * 86_400_000L;
+
     private readonly long _startedAtUnixMs;
     private readonly string _dbPath;
     private readonly Func<bool> _isCaptureActive;
@@ -42,6 +52,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private readonly Func<int, QueryWindow, ConnectionListResult> _connectionsProvider;
     private readonly Func<QueryWindow, TrafficGrain, TrafficHistoryResult> _historyProvider;
     private readonly Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult> _dailyReportProvider;
+    private readonly Func<DateTimeOffset> _clock;
+    private readonly long _maxWindowLookbackMs;
     private readonly string _serviceVersion;
 
     public ZenVizorIpcHandler(
@@ -54,7 +66,9 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Func<int, QueryWindow, TrafficGrain, AppDetailResult>? appDetailProvider = null,
         Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
         Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null,
-        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null)
+        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null,
+        Func<DateTimeOffset>? clock = null,
+        long? maxWindowLookbackMs = null)
     {
         _startedAtUnixMs = startedAtUnixMs;
         _dbPath = dbPath;
@@ -72,6 +86,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         // provider is wired (legacy test harnesses), fall back to an empty
         // result rather than mock data.
         _dailyReportProvider = dailyReportProvider ?? EmptyDailyReport;
+        _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _maxWindowLookbackMs = maxWindowLookbackMs ?? DefaultMaxWindowLookbackMs;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
@@ -154,24 +170,32 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 
     public Task<IpcEnvelope<AppListResult>> GetAppListAsync(QueryWindow window)
     {
+        ValidateWindow(window);
         var payload = _appListProvider(window);
         return Task.FromResult(new IpcEnvelope<AppListResult>(QuerySchemaVersion, payload));
     }
 
     public Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain)
     {
+        ValidateAppId(appId);
+        ValidateWindow(window);
+        ValidateGrain(grain);
         var payload = _appDetailProvider(appId, window, grain);
         return Task.FromResult(new IpcEnvelope<AppDetailResult>(QuerySchemaVersion, payload));
     }
 
     public Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window)
     {
+        ValidateAppId(appId);
+        ValidateWindow(window);
         var payload = _connectionsProvider(appId, window);
         return Task.FromResult(new IpcEnvelope<ConnectionListResult>(QuerySchemaVersion, payload));
     }
 
     public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain)
     {
+        ValidateWindow(window);
+        ValidateGrain(grain);
         var payload = _historyProvider(window, grain);
         return Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(QuerySchemaVersion, payload));
     }
@@ -184,4 +208,54 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         var payload = _dailyReportProvider(date, anchor, anchorSpecificDate);
         return Task.FromResult(new IpcEnvelope<DailyReportResult>(DailyReportSchemaVersion, payload));
     }
+
+    // ---- Argument validation ------------------------------------------------
+    //
+    // Every Phase-4 query RPC validates its inputs and returns a typed
+    // IpcErrorCode.InvalidArgument fault on rejection. Throwing
+    // LocalRpcException keeps the failure shape consistent with the negotiation
+    // gate and avoids the sanitizer collapsing a real argument problem into a
+    // generic "internal error" the client can't act on.
+
+    private static void ValidateAppId(int appId)
+    {
+        if (appId <= 0)
+        {
+            throw InvalidArgument($"appId must be positive (received {appId}).");
+        }
+    }
+
+    private void ValidateWindow(QueryWindow window)
+    {
+        if (window is null)
+        {
+            throw InvalidArgument("window is required.");
+        }
+
+        if (window.ToUnixMs < window.FromUnixMs)
+        {
+            throw InvalidArgument(
+                $"window.ToUnixMs ({window.ToUnixMs}) must be >= window.FromUnixMs ({window.FromUnixMs}).");
+        }
+
+        var nowMs = _clock().ToUnixTimeMilliseconds();
+        var earliestAllowedMs = nowMs - _maxWindowLookbackMs;
+        if (window.FromUnixMs < earliestAllowedMs)
+        {
+            throw InvalidArgument(
+                $"window.FromUnixMs ({window.FromUnixMs}) precedes the retention horizon " +
+                $"({earliestAllowedMs}).");
+        }
+    }
+
+    private static void ValidateGrain(TrafficGrain grain)
+    {
+        if (!Enum.IsDefined(typeof(TrafficGrain), grain))
+        {
+            throw InvalidArgument($"TrafficGrain value {(int)grain} is not defined.");
+        }
+    }
+
+    private static LocalRpcException InvalidArgument(string message) =>
+        new(message) { ErrorCode = IpcErrorCode.InvalidArgument };
 }

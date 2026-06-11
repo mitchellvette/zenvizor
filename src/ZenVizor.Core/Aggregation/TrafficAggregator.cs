@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ZenVizor.Core.Attribution;
@@ -35,6 +36,12 @@ public sealed class TrafficAggregator
     // denominator is (now − this).
     private long _partialBucketStartUnixMs;
 
+    // Observation counters live outside _gate so the untrackable-PID path
+    // (an unattributed event) and the trackable path can both increment them
+    // without contending on the accumulator lock.
+    private long _observationsSeen;
+    private long _observationsUnattributed;
+
     public TrafficAggregator(
         SessionTracker sessions,
         PidCorrector corrector,
@@ -60,46 +67,52 @@ public sealed class TrafficAggregator
     }
 
     /// <summary>Total observations seen since process start.</summary>
-    public long ObservationsSeen { get; private set; }
+    public long ObservationsSeen => Interlocked.Read(ref _observationsSeen);
 
     /// <summary>Observations dropped because no PID could be attributed.</summary>
-    public long ObservationsUnattributed { get; private set; }
+    public long ObservationsUnattributed => Interlocked.Read(ref _observationsUnattributed);
 
-    /// <summary>Atomically snapshot both counters under the aggregator lock.</summary>
-    public (long Seen, long Unattributed) SnapshotObservationCounters()
-    {
-        lock (_gate)
-        {
-            return (ObservationsSeen, ObservationsUnattributed);
-        }
-    }
+    /// <summary>
+    /// Snapshot of both counters. Each is read atomically; the pair is NOT
+    /// atomic (Unattributed can advance between the two reads), which is
+    /// fine for an observability surface.
+    /// </summary>
+    public (long Seen, long Unattributed) SnapshotObservationCounters() =>
+        (Interlocked.Read(ref _observationsSeen),
+         Interlocked.Read(ref _observationsUnattributed));
 
     public void Observe(NetworkObservation observation)
     {
         ArgumentNullException.ThrowIfNull(observation);
 
+        Interlocked.Increment(ref _observationsSeen);
+
         var snapshot = _snapshotSource.CurrentSnapshot;
         var pid = _corrector.Correct(observation, snapshot);
 
+        // SessionTracker.TryTrack handles its own locking. Session-open
+        // enrichment (WinVerifyTrust + FileInfo + SCM enumeration) runs
+        // inside TryTrack but OUTSIDE this aggregator's _gate, so per-event
+        // accumulator writes never block on signature verification or file
+        // I/O.
+        bool tracked = pid is int p &&
+                       _sessions.TryTrack(p, observation.TimestampUnixMs);
+
+        if (!tracked)
+        {
+            Interlocked.Increment(ref _observationsUnattributed);
+            return;
+        }
+
+        var correctedPid = (int)pid!;
+
+        // Pure computations stay outside _gate: classification and bucket
+        // alignment touch no shared mutable state.
+        var remoteClass = RemoteAddressClassifier.Classify(observation.RemoteEndpoint.Address);
+        var bucketStart = BucketAligner.AlignToBucket(observation.TimestampUnixMs, _bucketSeconds);
+
         lock (_gate)
         {
-            ObservationsSeen++;
-
-            if (pid is not int correctedPid)
-            {
-                ObservationsUnattributed++;
-                return;
-            }
-
-            if (!_sessions.TryTrack(correctedPid, observation.TimestampUnixMs))
-            {
-                ObservationsUnattributed++;
-                return;
-            }
-
-            var remoteClass = RemoteAddressClassifier.Classify(observation.RemoteEndpoint.Address);
-            var bucketStart = BucketAligner.AlignToBucket(observation.TimestampUnixMs, _bucketSeconds);
-
             var sampleKey = new SampleKey(correctedPid, bucketStart, remoteClass);
             if (!_samples.TryGetValue(sampleKey, out var sampleAcc))
             {
@@ -110,7 +123,7 @@ public sealed class TrafficAggregator
 
             var connectionKey = new ConnectionKey(
                 correctedPid, observation.Protocol,
-                observation.RemoteEndpoint.Address.ToString(),
+                observation.RemoteEndpoint.Address,
                 observation.RemoteEndpoint.Port);
             if (!_connections.TryGetValue(connectionKey, out var connAcc))
             {
@@ -123,9 +136,11 @@ public sealed class TrafficAggregator
 
     /// <summary>
     /// Atomically swap the live accumulators with fresh ones, then hand a
-    /// single <see cref="FlushBatch"/> to the sink. On success, mutate the
-    /// SessionTracker; on sink failure, the tracker stays unchanged so the
-    /// next flush retries.
+    /// single <see cref="FlushBatch"/> to the sink. On success, commit the
+    /// SessionTracker and advance the activity window; on sink failure, the
+    /// tracker stays unchanged AND the swapped-out byte accumulators get
+    /// merged back into the live dictionaries so the next tick retries with
+    /// the data intact (instead of silently dropping it on the floor).
     /// </summary>
     public FlushSummary Flush(long nowUnixMs)
     {
@@ -151,9 +166,6 @@ public sealed class TrafficAggregator
 
             bucketStartUnixMs = _partialBucketStartUnixMs;
             _partialBucketStartUnixMs = nowUnixMs;
-
-            var rollup = BuildPerAppRollup(samplesSnapshot, pidToAppSnapshot);
-            _activityWindow.OnFlush(rollup.Apps, rollup.Breakdown, bucketStartUnixMs, nowUnixMs);
         }
 
         var sampleRows = new List<PendingTrafficSample>(samplesSnapshot.Count);
@@ -170,10 +182,12 @@ public sealed class TrafficAggregator
         var connectionRows = new List<PendingConnection>(connectionsSnapshot.Count);
         foreach (var (key, acc) in connectionsSnapshot)
         {
+            // ToString runs once per unique connection here at flush time, not
+            // once per event in the hot path.
             connectionRows.Add(new PendingConnection(
                 Pid: key.Pid,
                 Protocol: key.Protocol,
-                RemoteAddress: key.RemoteAddress,
+                RemoteAddress: key.RemoteAddress.ToString(),
                 RemotePort: key.RemotePort,
                 RemoteClass: acc.RemoteClass,
                 BytesUpDelta: acc.BytesUp,
@@ -197,13 +211,23 @@ public sealed class TrafficAggregator
         }
         catch
         {
-            // Leave SessionTracker state untouched so the next tick retries.
+            // Sink failed: merge the swapped-out accumulators back into the
+            // live ones so the next Flush() retries them. SessionTracker
+            // stays untouched because we never called OnFlushCommitted, and
+            // the activity-window advance happens AFTER the sink call below
+            // for the same retry-safety reason.
+            lock (_gate)
+            {
+                MergeSnapshotBack(samplesSnapshot, connectionsSnapshot, bucketStartUnixMs);
+            }
             throw;
         }
 
         lock (_gate)
         {
             _sessions.OnFlushCommitted(result.NewPidToSessionId, closedSessionIds);
+            var rollup = BuildPerAppRollup(samplesSnapshot, pidToAppSnapshot);
+            _activityWindow.OnFlush(rollup.Apps, rollup.Breakdown, bucketStartUnixMs, nowUnixMs);
         }
 
         _logger.LogDebug(
@@ -215,6 +239,45 @@ public sealed class TrafficAggregator
             SampleRowsWritten: result.SampleRowsWritten,
             ConnectionUpserts: result.ConnectionUpserts,
             SessionsClosed: result.SessionsClosed);
+    }
+
+    /// <summary>
+    /// Caller MUST hold <see cref="_gate"/>. Folds the swapped-out
+    /// accumulators back into the live dictionaries — keys that re-appeared
+    /// during the failed flush window get their bytes summed; keys that
+    /// didn't get reinserted as-is. Also restores the partial-bucket start
+    /// timestamp so the next snapshot's window span is consistent.
+    /// </summary>
+    private void MergeSnapshotBack(
+        Dictionary<SampleKey, SampleAcc> samplesSnapshot,
+        Dictionary<ConnectionKey, ConnectionAcc> connectionsSnapshot,
+        long bucketStartUnixMs)
+    {
+        foreach (var (key, acc) in samplesSnapshot)
+        {
+            if (_samples.TryGetValue(key, out var live))
+            {
+                live.Merge(acc);
+            }
+            else
+            {
+                _samples[key] = acc;
+            }
+        }
+
+        foreach (var (key, acc) in connectionsSnapshot)
+        {
+            if (_connections.TryGetValue(key, out var live))
+            {
+                live.Merge(acc);
+            }
+            else
+            {
+                _connections[key] = acc;
+            }
+        }
+
+        _partialBucketStartUnixMs = bucketStartUnixMs;
     }
 
     /// <summary>
@@ -295,7 +358,13 @@ public sealed class TrafficAggregator
     public sealed record FlushSummary(int SampleRowsWritten, int ConnectionUpserts, int SessionsClosed);
 
     private readonly record struct SampleKey(int Pid, long BucketStartUnixMs, RemoteClass RemoteClass);
-    private readonly record struct ConnectionKey(int Pid, Protocol Protocol, string RemoteAddress, int RemotePort);
+
+    // RemoteAddress is held as IPAddress (not string) so the per-event hot path
+    // does NOT call IPAddress.ToString() to build the dictionary key. ToString
+    // happens exactly once per unique connection at flush time, where
+    // PendingConnection expects a string for the SQLite text column. IPAddress
+    // overrides Equals/GetHashCode so record-struct field equality is correct.
+    private readonly record struct ConnectionKey(int Pid, Protocol Protocol, IPAddress RemoteAddress, int RemotePort);
 
     private sealed class SampleAcc
     {
@@ -306,6 +375,12 @@ public sealed class TrafficAggregator
         {
             if (direction == Direction.Up) BytesUp += bytes;
             else BytesDown += bytes;
+        }
+
+        public void Merge(SampleAcc other)
+        {
+            BytesUp += other.BytesUp;
+            BytesDown += other.BytesDown;
         }
     }
 
@@ -329,6 +404,14 @@ public sealed class TrafficAggregator
             if (direction == Direction.Up) BytesUp += bytes;
             else BytesDown += bytes;
             if (timestampUnixMs > LastSeenUnixMs) LastSeenUnixMs = timestampUnixMs;
+        }
+
+        public void Merge(ConnectionAcc other)
+        {
+            BytesUp += other.BytesUp;
+            BytesDown += other.BytesDown;
+            if (other.FirstSeenUnixMs < FirstSeenUnixMs) FirstSeenUnixMs = other.FirstSeenUnixMs;
+            if (other.LastSeenUnixMs > LastSeenUnixMs) LastSeenUnixMs = other.LastSeenUnixMs;
         }
     }
 }

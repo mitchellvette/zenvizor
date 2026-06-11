@@ -156,6 +156,68 @@ public sealed class ProcessLifecycleResolverTests
     }
 
     [Fact]
+    public void Resolve_RepeatedMissForSamePid_PopulatesNegativeCache()
+    {
+        // Perf gate: every trailing ETW event from an exited PID used to
+        // re-invoke Process.GetProcessById, which throws ArgumentException
+        // and is expensive. After this fix the first miss is recorded in
+        // a short-TTL negative cache so the rest of the burst short-circuits.
+        var clock = new FakeClock(1_000);
+        var resolver = new ProcessLifecycleResolver(nowProvider: clock.Get);
+        const int ghostPid = 1_999_999_999;
+
+        resolver.Resolve(ghostPid).Should().BeNull();
+        resolver.NegativeCachedCount.Should().Be(1, "first miss seeded the negative cache");
+
+        // Burst of trailing events for the same ghost. All should return null
+        // and the negative cache size stays at 1 (no duplicates).
+        for (var i = 0; i < 10; i++)
+        {
+            resolver.Resolve(ghostPid).Should().BeNull();
+        }
+        resolver.NegativeCachedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void NegativeCache_ExpiresAfterTtl()
+    {
+        var clock = new FakeClock(1_000);
+        var resolver = new ProcessLifecycleResolver(nowProvider: clock.Get);
+        const int ghostPid = 1_999_999_998;
+
+        resolver.Resolve(ghostPid).Should().BeNull();
+        resolver.NegativeCachedCount.Should().Be(1);
+
+        // Past the negative-cache TTL the resolver retries Win32, finds nothing,
+        // and re-seeds the entry. The cache size stays bounded at 1 entry per PID.
+        clock.Set(1_000 + ProcessLifecycleResolver.NegativeCacheTtlMs + 1);
+        resolver.Resolve(ghostPid).Should().BeNull();
+        resolver.NegativeCachedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void OnProcessStart_ClearsNegativeCacheEntryForPid()
+    {
+        // If the negative cache hit BEFORE we got the ETW ProcessStart event
+        // (unlikely but possible with reordered delivery), OnProcessStart
+        // must invalidate the negative entry so the resolver returns the
+        // real image instead of the cached null.
+        var clock = new FakeClock(1_000);
+        var resolver = new ProcessLifecycleResolver(nowProvider: clock.Get);
+        const int pid = 1_999_999_997;
+
+        resolver.Resolve(pid).Should().BeNull();
+        resolver.NegativeCachedCount.Should().Be(1);
+
+        resolver.OnProcessStart(pid, @"C:\Tools\curl.exe", startUnixMs: 1_100);
+        resolver.NegativeCachedCount.Should().Be(0);
+
+        var info = resolver.Resolve(pid);
+        info.Should().NotBeNull();
+        info!.ImagePath.Should().Be(@"C:\Tools\curl.exe");
+    }
+
+    [Fact]
     public void PrimeFromRunningProcesses_PopulatesCache()
     {
         var resolver = new ProcessLifecycleResolver();

@@ -3,6 +3,7 @@ using FluentAssertions;
 using ZenVizor.Core.Aggregation;
 using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Observations;
+using ZenVizor.Core.Storage;
 using ZenVizor.Core.Tests.Fakes;
 using ZenVizor.Ipc.Contracts.Dto;
 
@@ -322,5 +323,174 @@ public sealed class TrafficAggregatorTests
         h.Aggregator.ObservationsUnattributed.Should().Be(1);
         h.Sink.AllSamples.Should().BeEmpty();
         h.Sink.AllNewSessions.Should().BeEmpty();
+    }
+
+    // ---- Bug 2: sink-failure retry semantics ----
+    //
+    // Pre-fix, TrafficAggregator.Flush swapped _samples/_connections to fresh
+    // dictionaries BEFORE calling _sink.Flush. On a sink exception, the
+    // swapped accumulators were dropped on the floor — only SessionTracker
+    // state survived. These tests pin the fix: snapshot is merged back into
+    // the live accumulators on failure, so the next tick retries with the
+    // data intact. Per the determinism rule we assert EXACT rows, not
+    // approximate.
+
+    private sealed class FailingFlushSink : IFlushSink
+    {
+        private readonly FakeFlushSink _underlying = new();
+        private int _failuresRemaining;
+        public Exception FailureException { get; set; } = new InvalidOperationException("sink boom");
+        public int FailedCallCount { get; private set; }
+
+        public FailingFlushSink(int failuresRemaining) => _failuresRemaining = failuresRemaining;
+
+        public IReadOnlyCollection<PendingTrafficSample> AllSamples => _underlying.AllSamples;
+        public IReadOnlyCollection<PendingConnection> AllConnections => _underlying.AllConnections;
+        public IReadOnlyList<FlushBatch> Batches => _underlying.Batches;
+
+        public FlushBatchResult Flush(FlushBatch batch)
+        {
+            if (_failuresRemaining > 0)
+            {
+                _failuresRemaining--;
+                FailedCallCount++;
+                throw FailureException;
+            }
+            return _underlying.Flush(batch);
+        }
+    }
+
+    private sealed class FailingHarness
+    {
+        public InMemoryProcessImageResolver Resolver { get; } = new();
+        public InMemoryPidTableSource SnapshotSource { get; } = new();
+        public FailingFlushSink Sink { get; }
+        public SessionTracker Tracker { get; }
+        public TrafficAggregator Aggregator { get; }
+        public long FakeNowUnixMs { get; set; }
+
+        public FailingHarness(int failuresBeforeSuccess)
+        {
+            Sink = new FailingFlushSink(failuresBeforeSuccess);
+            Tracker = new SessionTracker(Resolver);
+            Aggregator = new TrafficAggregator(
+                Tracker, new PidCorrector(), SnapshotSource, Sink,
+                nowProvider: () => FakeNowUnixMs);
+        }
+    }
+
+    [Fact]
+    public void FailingSink_RetryAfterFailure_PreservesExactSampleBytes()
+    {
+        var h = new FailingHarness(failuresBeforeSuccess: 1);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 200));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 51234);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        h.Aggregator.Observe(Obs(60_500, 100, local, remote, Direction.Up,   700));
+        h.Aggregator.Observe(Obs(61_000, 100, local, remote, Direction.Down, 1_300));
+
+        // First flush throws; sink raised but data must remain pending.
+        FluentActions.Invoking(() => h.Aggregator.Flush(70_000))
+            .Should().Throw<InvalidOperationException>().WithMessage("sink boom");
+        h.Sink.FailedCallCount.Should().Be(1);
+        h.Sink.AllSamples.Should().BeEmpty();
+
+        // Second flush succeeds. The sink should see the SAME bytes — not
+        // zero (the bug), and not doubled.
+        h.Aggregator.Flush(75_000);
+
+        h.Sink.AllSamples.Should().ContainSingle();
+        var sample = h.Sink.AllSamples.Single();
+        sample.Pid.Should().Be(100);
+        sample.BucketStartUnixMs.Should().Be(60_000);
+        sample.BytesUp.Should().Be(700);
+        sample.BytesDown.Should().Be(1_300);
+    }
+
+    [Fact]
+    public void FailingSink_NewObservationsBetweenFailures_AreSummedExactly()
+    {
+        var h = new FailingHarness(failuresBeforeSuccess: 1);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 200));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 51234);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        // Pre-failure observations in bucket [60_000, 120_000).
+        h.Aggregator.Observe(Obs(60_500, 100, local, remote, Direction.Up,   100));
+        h.Aggregator.Observe(Obs(61_000, 100, local, remote, Direction.Down, 200));
+
+        FluentActions.Invoking(() => h.Aggregator.Flush(70_000))
+            .Should().Throw<InvalidOperationException>();
+
+        // More bytes arrive in the SAME bucket between failure and retry.
+        // Merge-back semantics must sum them into the surviving snapshot.
+        h.Aggregator.Observe(Obs(62_000, 100, local, remote, Direction.Up,   50));
+        h.Aggregator.Observe(Obs(63_000, 100, local, remote, Direction.Down, 700));
+
+        // Retry succeeds.
+        h.Aggregator.Flush(80_000);
+
+        h.Sink.AllSamples.Should().ContainSingle();
+        var sample = h.Sink.AllSamples.Single();
+        sample.BucketStartUnixMs.Should().Be(60_000);
+        sample.BytesUp.Should().Be(150);    // 100 + 50
+        sample.BytesDown.Should().Be(900);  // 200 + 700
+    }
+
+    [Fact]
+    public void FailingSink_RetryAfterFailure_PreservesConnectionsExactly()
+    {
+        var h = new FailingHarness(failuresBeforeSuccess: 1);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 200));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 51234);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+
+        h.Aggregator.Observe(Obs(60_500, 100, local, remote, Direction.Up,   400));
+        h.Aggregator.Observe(Obs(61_500, 100, local, remote, Direction.Down, 1_600));
+
+        FluentActions.Invoking(() => h.Aggregator.Flush(70_000))
+            .Should().Throw<InvalidOperationException>();
+
+        // Another byte event on the same connection between failure + retry.
+        h.Aggregator.Observe(Obs(65_000, 100, local, remote, Direction.Up,   100));
+        h.Aggregator.Flush(80_000);
+
+        var conn = h.Sink.AllConnections.Should().ContainSingle().Subject;
+        conn.Pid.Should().Be(100);
+        conn.RemoteAddress.Should().Be("8.8.8.8");
+        conn.RemotePort.Should().Be(443);
+        conn.BytesUpDelta.Should().Be(500);     // 400 + 100
+        conn.BytesDownDelta.Should().Be(1_600);
+        conn.FirstSeenUnixMs.Should().Be(60_500);
+        conn.LastSeenUnixMs.Should().Be(65_000);
+    }
+
+    [Fact]
+    public void FailingSink_NewSessionRetriedOnce_NotDuplicated()
+    {
+        // SessionTracker was already retry-safe pre-fix: a failed flush leaves
+        // the tracker in its pre-flush state. Belt-and-braces: re-verify that
+        // a NewSession entry shows up exactly once after the retry succeeds,
+        // not in both the failed batch's NewSessions and the retry's.
+        var h = new FailingHarness(failuresBeforeSuccess: 1);
+        h.Resolver.Set(new ProcessImageInfo(100, @"C:\a\a.exe", "a.exe", 200));
+
+        var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 51234);
+        var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"), 443);
+        h.Aggregator.Observe(Obs(60_500, 100, local, remote, Direction.Up, 500));
+
+        FluentActions.Invoking(() => h.Aggregator.Flush(70_000))
+            .Should().Throw<InvalidOperationException>();
+        h.Aggregator.Flush(75_000);
+
+        // Sink only sees the retried batch (the failed one threw before
+        // anything was recorded). NewSessions appears in the surviving batch.
+        h.Sink.Batches.Should().HaveCount(1);
+        h.Sink.Batches[0].NewSessions.Should().ContainSingle()
+            .Which.Pid.Should().Be(100);
     }
 }

@@ -14,4 +14,8 @@
     <ProjectReference Include="..\ZenVizor.Ipc.Contracts\ZenVizor.Ipc.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZenVizor.Ipc.Tests" />
+  </ItemGroup>
+
 </Project>

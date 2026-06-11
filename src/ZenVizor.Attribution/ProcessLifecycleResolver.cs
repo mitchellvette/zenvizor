@@ -26,7 +26,9 @@ namespace ZenVizor.Attribution;
 ///         retains it for <see cref="GraceMs"/> ms so trailing ETW events
 ///         still resolve. This is critical for short-lived processes.</item>
 ///   <item>Entries are evicted opportunistically on <see cref="Resolve"/>
-///         once the grace window has elapsed.</item>
+///         once the grace window has elapsed. The full <c>_byPid</c> scan is
+///         amortized via <c>_nextEvictAtUnixMs</c>: scans run only after the
+///         earliest pending exit's grace expires, not on every observation.</item>
 ///   <item>PID reuse: a new <see cref="OnProcessStart"/> for a PID that is
 ///         already in the cache overwrites the entry (correct attribution
 ///         to the new process).</item>
@@ -35,7 +37,13 @@ namespace ZenVizor.Attribution;
 /// <para>
 /// <see cref="Resolve"/> falls back to a Win32 <see cref="Process.GetProcessById"/>
 /// lookup for PIDs not in the cache (covers processes that started before
-/// ZenVizor was running or any miss due to ETW buffer overrun).
+/// ZenVizor was running or any miss due to ETW buffer overrun). A short-TTL
+/// negative cache (<c>_negativeCache</c>) absorbs the per-event repeat cost
+/// of <see cref="Process.GetProcessById"/> throwing <see cref="ArgumentException"/>
+/// for an exited PID — without it, every trailing event from a phantom PID
+/// re-pays the same exception.
+/// </para>
+/// <para>
 /// <see cref="PrimeFromRunningProcesses"/> seeds the cache at startup to
 /// reduce the fallback rate to near-zero.
 /// </para>
@@ -44,6 +52,22 @@ namespace ZenVizor.Attribution;
 public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLifecycleSink
 {
     public const long DefaultGraceMs = 60_000;
+
+    /// <summary>
+    /// How long a failed <c>GetProcessById</c> result is remembered before
+    /// the resolver retries. Short enough that a genuinely-started process
+    /// resolves on its next event; long enough to absorb a burst of trailing
+    /// events for the same phantom PID.
+    /// </summary>
+    public const long NegativeCacheTtlMs = 5_000;
+
+    /// <summary>
+    /// Hard cap on the negative cache. Bounds the worst case where many
+    /// distinct PIDs miss in close succession. When full, the oldest entry
+    /// is evicted FIFO.
+    /// </summary>
+    private const int NegativeCacheCapacity = 256;
+
     private const int SystemPid = 4;
 
     private static readonly ProcessImageInfo SystemImage = new(
@@ -53,9 +77,16 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
         StartTimeUnixMs: 0);
 
     private readonly Dictionary<int, CacheEntry> _byPid = new();
+    private readonly Dictionary<int, long> _negativeCache = new();
+    private readonly Queue<int> _negativeCacheInsertionOrder = new();
     private readonly object _gate = new();
     private readonly ILogger _logger;
     private readonly Func<long> _now;
+
+    // Eviction is amortized: full _byPid scan runs only when we know at
+    // least one pending-exit entry's grace window has expired. Init to
+    // long.MaxValue (no scan needed).
+    private long _nextEvictAtUnixMs = long.MaxValue;
 
     public ProcessLifecycleResolver(
         ILogger<ProcessLifecycleResolver>? logger = null,
@@ -74,6 +105,12 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
     public int CachedCount
     {
         get { lock (_gate) return _byPid.Count; }
+    }
+
+    /// <summary>Negative-cache size, for diagnostics/tests.</summary>
+    internal int NegativeCachedCount
+    {
+        get { lock (_gate) return _negativeCache.Count; }
     }
 
     public void OnProcessStart(int pid, string imagePath, long startUnixMs)
@@ -95,6 +132,13 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
             // attributed correctly under its session; the new entry takes over
             // from this point.
             _byPid[pid] = new CacheEntry(info, ExitedAtUnixMs: null);
+            // ETW saw the process; flush any stale negative cache hit for it.
+            if (_negativeCache.Remove(pid))
+            {
+                // Don't bother repacking _negativeCacheInsertionOrder — the
+                // queue is allowed to contain dead PIDs; we re-check on
+                // dequeue.
+            }
         }
     }
 
@@ -107,6 +151,11 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
             if (_byPid.TryGetValue(pid, out var entry))
             {
                 _byPid[pid] = entry with { ExitedAtUnixMs = stopUnixMs };
+                var scheduledEvictAt = stopUnixMs + GraceMs + 1;
+                if (scheduledEvictAt < _nextEvictAtUnixMs)
+                {
+                    _nextEvictAtUnixMs = scheduledEvictAt;
+                }
             }
         }
     }
@@ -120,19 +169,42 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
 
         lock (_gate)
         {
-            EvictStale(now);
+            if (now >= _nextEvictAtUnixMs)
+            {
+                EvictStale(now);
+                _nextEvictAtUnixMs = ComputeNextEvictAt();
+            }
 
             if (_byPid.TryGetValue(pid, out var entry))
             {
                 return entry.Image;
             }
+
+            // Short-circuit if we already know this PID is dead.
+            if (_negativeCache.TryGetValue(pid, out var negExpiry))
+            {
+                if (negExpiry > now)
+                {
+                    return null;
+                }
+                _negativeCache.Remove(pid);
+            }
         }
 
         // Cache miss: PID we didn't see start (started before ZenVizor, or we
-        // missed the start event). Fall back to a one-shot Win32 lookup and
-        // populate the cache with whatever we learn so future calls hit.
+        // missed the start event). Fall back to a one-shot Win32 lookup.
         var resolved = TryResolveViaWin32(pid);
-        if (resolved is null) return null;
+        if (resolved is null)
+        {
+            // Remember the miss for a short window so subsequent trailing
+            // events from this PID don't each re-throw ArgumentException
+            // inside Process.GetProcessById.
+            lock (_gate)
+            {
+                AddNegativeCacheEntry(pid, now + NegativeCacheTtlMs);
+            }
+            return null;
+        }
 
         lock (_gate)
         {
@@ -206,6 +278,50 @@ public sealed class ProcessLifecycleResolver : IProcessImageResolver, IProcessLi
         {
             _byPid.Remove(pid);
         }
+    }
+
+    /// <summary>
+    /// Caller MUST hold _gate. Returns the earliest Unix-ms at which a
+    /// pending-exit entry's grace window will expire, or
+    /// <see cref="long.MaxValue"/> if no entries have an exit timestamp.
+    /// </summary>
+    private long ComputeNextEvictAt()
+    {
+        var earliestExit = long.MaxValue;
+        foreach (var (_, entry) in _byPid)
+        {
+            if (entry.ExitedAtUnixMs is long exited && exited < earliestExit)
+            {
+                earliestExit = exited;
+            }
+        }
+        return earliestExit == long.MaxValue
+            ? long.MaxValue
+            : earliestExit + GraceMs + 1;
+    }
+
+    /// <summary>
+    /// Caller MUST hold _gate. Adds a negative-cache entry, evicting the
+    /// oldest one (FIFO) if the cache is at capacity. The insertion-order
+    /// queue may contain stale entries (e.g. a PID that was later seen via
+    /// ETW); those are skipped on dequeue.
+    /// </summary>
+    private void AddNegativeCacheEntry(int pid, long expiryUnixMs)
+    {
+        if (_negativeCache.Count >= NegativeCacheCapacity)
+        {
+            while (_negativeCacheInsertionOrder.Count > 0)
+            {
+                var oldest = _negativeCacheInsertionOrder.Dequeue();
+                if (_negativeCache.Remove(oldest))
+                {
+                    break;
+                }
+                // queue had a stale entry; keep dequeueing
+            }
+        }
+        _negativeCache[pid] = expiryUnixMs;
+        _negativeCacheInsertionOrder.Enqueue(pid);
     }
 
     private ProcessImageInfo? TryResolveViaWin32(int pid)

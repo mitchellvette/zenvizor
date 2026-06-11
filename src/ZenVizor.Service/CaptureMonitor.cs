@@ -11,7 +11,7 @@ namespace ZenVizor.Service;
 /// Phase 1's first <see cref="IMonitor"/>. Owns the capture-source → aggregator
 /// pipeline plus the periodic flush tick. Starting the monitor:
 /// <list type="number">
-///   <item>Starts the ETW capture source.</item>
+///   <item>Starts the capture source.</item>
 ///   <item>Spawns a reader loop that feeds observations into the aggregator.</item>
 ///   <item>Starts a <see cref="PeriodicTimer"/> firing every <c>flush.interval_ms</c>
 ///         that calls <see cref="TrafficAggregator.Flush"/>.</item>
@@ -20,7 +20,7 @@ namespace ZenVizor.Service;
 [SupportedOSPlatform("windows")]
 internal sealed class CaptureMonitor : IMonitor, IAsyncDisposable
 {
-    private readonly EtwCaptureSource _captureSource;
+    private readonly ICaptureSource _captureSource;
     private readonly TrafficAggregator _aggregator;
     private readonly TimeSpan _flushInterval;
     private readonly ILogger _logger;
@@ -28,9 +28,11 @@ internal sealed class CaptureMonitor : IMonitor, IAsyncDisposable
     private CancellationTokenSource? _cts;
     private Task? _readerLoop;
     private Task? _flushLoop;
+    private volatile bool _started;
+    private volatile bool _stopRequested;
 
     public CaptureMonitor(
-        EtwCaptureSource captureSource,
+        ICaptureSource captureSource,
         TrafficAggregator aggregator,
         TimeSpan flushInterval,
         ILogger<CaptureMonitor> logger)
@@ -43,11 +45,34 @@ internal sealed class CaptureMonitor : IMonitor, IAsyncDisposable
 
     public string Name => "Capture";
 
-    public bool IsRunning { get; private set; }
+    /// <summary>
+    /// True iff the monitor was started, has not been stopped, AND the
+    /// underlying capture path is still alive. Captures three failure modes
+    /// the old "settable bool" surface masked:
+    /// <list type="bullet">
+    ///   <item>Source flipped its <see cref="ICaptureSource.IsFaulted"/> flag
+    ///         (e.g. ETW Process loop threw).</item>
+    ///   <item>Reader loop completed without a stop being requested — the
+    ///         channel closed under us, no more observations will arrive.</item>
+    /// </list>
+    /// The IPC handler's <c>CaptureActive</c> field is wired straight to this,
+    /// so a dead capture path now correctly reports as inactive.
+    /// </summary>
+    public bool IsRunning
+    {
+        get
+        {
+            if (!_started || _stopRequested) return false;
+            if (_captureSource.IsFaulted) return false;
+            var reader = _readerLoop;
+            if (reader is not null && reader.IsCompleted) return false;
+            return true;
+        }
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (IsRunning)
+        if (_started)
         {
             return Task.CompletedTask;
         }
@@ -58,32 +83,51 @@ internal sealed class CaptureMonitor : IMonitor, IAsyncDisposable
         _readerLoop = Task.Run(() => ReaderLoopAsync(_cts.Token));
         _flushLoop = Task.Run(() => FlushLoopAsync(_cts.Token));
 
-        IsRunning = true;
+        _started = true;
         _logger.LogInformation("Capture monitor started. Flush interval = {Interval}.", _flushInterval);
         return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (!IsRunning)
+        if (!_started || _stopRequested)
         {
             return;
         }
 
-        _cts?.Cancel();
+        _stopRequested = true;
 
+        // 1. Close the source first. Its writer completes the channel, so
+        //    whatever observations are still buffered get drained by the
+        //    reader instead of being silently dropped.
+        if (_captureSource is IAsyncDisposable asyncDisposable)
+        {
+            try { await asyncDisposable.DisposeAsync().ConfigureAwait(false); } catch { /* best-effort */ }
+        }
+        else if (_captureSource is IDisposable disposable)
+        {
+            try { disposable.Dispose(); } catch { /* best-effort */ }
+        }
+
+        // 2. Drain the reader loop. We deliberately do NOT cancel _cts before
+        //    this — cancellation would short-circuit ObserveAsync and drop
+        //    in-flight observations that the just-completed source already
+        //    wrote into the channel. The reader exits naturally when the
+        //    channel completes.
         if (_readerLoop is not null)
         {
             try { await _readerLoop.ConfigureAwait(false); } catch { /* best-effort */ }
         }
+
+        // 3. Now stop the flush ticker. The final flush below will catch
+        //    whatever the reader handed off after the last tick fired.
+        _cts?.Cancel();
         if (_flushLoop is not null)
         {
             try { await _flushLoop.ConfigureAwait(false); } catch { /* best-effort */ }
         }
 
-        await _captureSource.DisposeAsync().ConfigureAwait(false);
-
-        // Final flush so in-memory observations aren't lost on shutdown.
+        // 4. Final flush so the just-drained observations land in storage.
         try
         {
             _aggregator.Flush(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -93,7 +137,6 @@ internal sealed class CaptureMonitor : IMonitor, IAsyncDisposable
             _logger.LogWarning(ex, "Final flush on shutdown failed.");
         }
 
-        IsRunning = false;
         _cts?.Dispose();
         _cts = null;
         _logger.LogInformation("Capture monitor stopped.");
