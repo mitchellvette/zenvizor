@@ -1,6 +1,4 @@
-using System.Data;
 using System.Globalization;
-using System.Reflection;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +15,9 @@ public sealed class Migrator
     private const string MigrationResourcePrefix =
         "ZenVizor.Storage.Migrations.";
 
+    /// <summary>Connection-level busy timeout for the migrator's own open.</summary>
+    private const int BusyTimeoutMs = 5000;
+
     private readonly ILogger _logger;
 
     public Migrator(ILogger<Migrator>? logger = null)
@@ -29,9 +30,27 @@ public sealed class Migrator
     /// and apply all pending migrations. Idempotent.
     /// </summary>
     /// <returns>The list of migration versions newly applied during this call.</returns>
-    public IReadOnlyList<int> Migrate(string databasePath)
+    /// <exception cref="SchemaDowngradeException">
+    /// Thrown when the database already records a migration version higher than
+    /// the highest embedded in this binary — i.e. this binary is older than the
+    /// database it's being pointed at. We refuse to start in that case so we
+    /// can't run on a schema with shapes we don't know about.
+    /// </exception>
+    public IReadOnlyList<int> Migrate(string databasePath) =>
+        MigrateUsingScripts(databasePath, LoadEmbeddedMigrations());
+
+    /// <summary>
+    /// Test seam. Production callers use <see cref="Migrate(string)"/>; tests
+    /// inject crafted migrations via this overload to exercise edge cases
+    /// (failed migrations, downgrades) without polluting the embedded resource
+    /// set.
+    /// </summary>
+    internal IReadOnlyList<int> MigrateUsingScripts(
+        string databasePath,
+        IReadOnlyList<MigrationScript> migrations)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        ArgumentNullException.ThrowIfNull(migrations);
 
         var directory = Path.GetDirectoryName(databasePath);
         if (!string.IsNullOrEmpty(directory))
@@ -50,6 +69,11 @@ public sealed class Migrator
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
+        // busy_timeout MUST be set per-connection (not persisted in the DB
+        // file). Without it, two writers contending — the migrator vs. an
+        // already-running flush sink — would surface SQLITE_BUSY immediately.
+        SetBusyTimeout(connection, BusyTimeoutMs);
+
         // WAL must be set OUTSIDE any transaction — SQLite rejects the pragma
         // from inside one. Persistent: setting once leaves the file in WAL mode.
         using (var pragma = connection.CreateCommand())
@@ -59,8 +83,28 @@ public sealed class Migrator
         }
 
         EnsureSchemaMigrationsTable(connection);
+
+        // Downgrade guard. If the DB records a version we don't ship, refuse
+        // to start. Silently ignoring those versions (as the previous behavior
+        // did) risks running the service binary against a schema it doesn't
+        // understand — at best query failures, at worst silent data damage if
+        // a future migration changed column semantics under us.
         var applied = GetAppliedVersions(connection);
-        var pending = LoadEmbeddedMigrations()
+        var maxEmbedded = migrations.Count == 0 ? 0 : migrations.Max(m => m.Version);
+        var maxApplied = applied.Count == 0 ? 0 : applied.Max();
+        if (maxApplied > maxEmbedded)
+        {
+            var unknown = applied.Where(v => v > maxEmbedded).OrderBy(v => v);
+            var msg =
+                $"Schema downgrade detected: database '{databasePath}' has migration " +
+                $"version(s) {string.Join(",", unknown)} that this binary doesn't ship " +
+                $"(highest known: {maxEmbedded}). Refusing to start. Reinstall a build " +
+                "that includes the newer migration(s), or restore an older database backup.";
+            _logger.LogError("{Message}", msg);
+            throw new SchemaDowngradeException(msg, maxApplied, maxEmbedded);
+        }
+
+        var pending = migrations
             .Where(m => !applied.Contains(m.Version))
             .OrderBy(m => m.Version)
             .ToList();
@@ -85,6 +129,13 @@ public sealed class Migrator
         }
 
         return newlyApplied;
+    }
+
+    private static void SetBusyTimeout(SqliteConnection connection, int milliseconds)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA busy_timeout = {milliseconds};";
+        cmd.ExecuteNonQuery();
     }
 
     private static void EnsureSchemaMigrationsTable(SqliteConnection connection)
@@ -193,5 +244,23 @@ public sealed class Migrator
         return (version, name);
     }
 
-    private sealed record MigrationScript(int Version, string Name, string Sql);
+    internal sealed record MigrationScript(int Version, string Name, string Sql);
+}
+
+/// <summary>
+/// Thrown by <see cref="Migrator"/> when the target database records a
+/// migration version higher than any embedded in this binary. The service
+/// refuses to start rather than risk operating on an unknown schema.
+/// </summary>
+public sealed class SchemaDowngradeException : InvalidOperationException
+{
+    public SchemaDowngradeException(string message, int databaseVersion, int binaryVersion)
+        : base(message)
+    {
+        DatabaseVersion = databaseVersion;
+        BinaryVersion = binaryVersion;
+    }
+
+    public int DatabaseVersion { get; }
+    public int BinaryVersion { get; }
 }

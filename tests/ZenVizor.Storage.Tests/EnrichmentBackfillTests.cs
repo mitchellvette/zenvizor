@@ -187,6 +187,52 @@ public sealed class EnrichmentBackfillTests : IDisposable
         count.Should().Be(25);
     }
 
+    [Fact]
+    public void Run_RespectsMaxRowsPerRun_LeavesRemainderForNextStart()
+    {
+        // 20 Unchecked rows but cap to 7. The cap exists so a pathological
+        // backlog can't pin the backfill worker — remaining rows are picked
+        // up on subsequent service starts.
+        var entries = Enumerable.Range(0, 20)
+            .Select(i => new NewSessionEntry(
+                Pid: 2000 + i,
+                App: Unchecked($@"C:\bin\cap{i:D2}.exe"),
+                StartTimeUnixMs: 500 + i,
+                HostedServices: null))
+            .ToList();
+        _sink.Flush(new FlushBatch(
+            NewSessions: entries,
+            KnownPidToSessionId: new Dictionary<int, int>(),
+            Samples: Array.Empty<PendingTrafficSample>(),
+            Connections: Array.Empty<PendingConnection>(),
+            ClosedSessionIds: Array.Empty<int>(),
+            FlushTimeUnixMs: 1000));
+
+        var enricher = new ScriptedEnricher();
+        for (var i = 0; i < 20; i++)
+        {
+            enricher.SetByImageName($"cap{i:D2}.exe",
+                new EnrichmentResult($"Acme {i}", "Signed", false));
+        }
+
+        var result = new EnrichmentBackfill(_connections, enricher,
+            interBatchDelay: TimeSpan.Zero,
+            batchSize: 5,
+            maxRowsPerRun: 7).Run();
+
+        result.Updated.Should().Be(7);
+        var stillUnchecked = (long)Query("SELECT COUNT(*) FROM apps WHERE signature_status='Unchecked';")!;
+        stillUnchecked.Should().Be(13);
+
+        // A follow-up run picks up where we left off.
+        var second = new EnrichmentBackfill(_connections, enricher,
+            interBatchDelay: TimeSpan.Zero,
+            batchSize: 5,
+            maxRowsPerRun: 7).Run();
+        second.Updated.Should().Be(7);
+        ((long)Query("SELECT COUNT(*) FROM apps WHERE signature_status='Unchecked';")!).Should().Be(6);
+    }
+
     private sealed class ScriptedEnricher : IAppEnricher
     {
         private readonly Dictionary<string, EnrichmentResult> _byImageName = new();

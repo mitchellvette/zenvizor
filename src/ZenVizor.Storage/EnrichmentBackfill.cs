@@ -14,10 +14,13 @@ namespace ZenVizor.Storage;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Invoked from <c>ZenVizorHostedService.StartAsync</c> AFTER the migrator
-/// runs and BEFORE the capture monitor starts. That ordering eliminates the
-/// race where a fresh session insert (with the enriched publisher) and a
-/// backfill UPDATE both target the same <c>(image_path, publisher)</c> key.
+/// Invoked from <c>ZenVizorHostedService.StartAsync</c> as a background task
+/// AFTER the capture monitor starts, so a large backlog of Unchecked rows
+/// can't delay capture startup. The race with new-session inserts that this
+/// implies is bounded: backfill never inserts apps rows — only UPDATEs
+/// existing ones — and any constraint conflict from a concurrent session
+/// insert hitting the same <c>(image_path, publisher)</c> key is caught and
+/// the row is skipped (logged at warning).
 /// </para>
 /// <para>
 /// Batched at <see cref="DefaultBatchSize"/> with a
@@ -26,15 +29,23 @@ namespace ZenVizor.Storage;
 /// sleep is not a concurrency-safety mechanism. Idempotent: re-runs on a clean
 /// DB do nothing.
 /// </para>
+/// <para>
+/// Capped at <see cref="DefaultMaxRowsPerRun"/> rows per service start so a
+/// pathological backlog can't pin a worker thread indefinitely; remaining
+/// rows are picked up on subsequent restarts. The SELECT itself uses LIMIT
+/// to avoid materializing the whole pending set into memory.
+/// </para>
 /// </remarks>
 public sealed class EnrichmentBackfill
 {
     public const int DefaultBatchSize = 10;
+    public const int DefaultMaxRowsPerRun = 10_000;
     public static readonly TimeSpan DefaultInterBatchDelay = TimeSpan.FromMilliseconds(100);
 
     private readonly ConnectionFactory _connections;
     private readonly IAppEnricher _enricher;
     private readonly int _batchSize;
+    private readonly int _maxRowsPerRun;
     private readonly TimeSpan _interBatchDelay;
     private readonly ILogger _logger;
 
@@ -43,101 +54,157 @@ public sealed class EnrichmentBackfill
         IAppEnricher enricher,
         ILogger<EnrichmentBackfill>? logger = null,
         int batchSize = DefaultBatchSize,
-        TimeSpan? interBatchDelay = null)
+        TimeSpan? interBatchDelay = null,
+        int maxRowsPerRun = DefaultMaxRowsPerRun)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _enricher = enricher ?? throw new ArgumentNullException(nameof(enricher));
         _batchSize = batchSize <= 0 ? DefaultBatchSize : batchSize;
+        _maxRowsPerRun = maxRowsPerRun <= 0 ? DefaultMaxRowsPerRun : maxRowsPerRun;
         _interBatchDelay = interBatchDelay ?? DefaultInterBatchDelay;
         _logger = (ILogger?)logger ?? NullLogger.Instance;
     }
 
-    public EnrichmentBackfillResult Run()
+    public EnrichmentBackfillResult Run(CancellationToken cancellationToken = default)
     {
-        var pending = LoadPendingApps();
-        if (pending.Count == 0)
-        {
-            _logger.LogInformation("Enrichment backfill: no Unchecked apps rows.");
-            return new EnrichmentBackfillResult(Updated: 0, Skipped: 0);
-        }
-
-        _logger.LogInformation(
-            "Enrichment backfill starting: {Count} apps with signature_status='Unchecked'.",
-            pending.Count);
-
         var updated = 0;
         var skipped = 0;
-        for (var batchStart = 0; batchStart < pending.Count; batchStart += _batchSize)
+        var processed = 0;
+        var lastSeenAppId = 0;
+
+        while (processed < _maxRowsPerRun)
         {
-            var batchEnd = Math.Min(batchStart + _batchSize, pending.Count);
-            for (var i = batchStart; i < batchEnd; i++)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Page through pending rows by app_id so we never materialize the
+            // full backlog at once. We also use the order-by cursor to skip
+            // rows that an earlier batch failed to update (constraint
+            // conflicts), so they don't re-appear in the next SELECT and
+            // create an infinite loop.
+            var remainingRoom = _maxRowsPerRun - processed;
+            var pageSize = Math.Min(_batchSize, remainingRoom);
+            var page = LoadPendingApps(lastSeenAppId, pageSize);
+            if (page.Count == 0) break;
+
+            lastSeenAppId = page[^1].AppId;
+
+            // Enrich (off-DB) before opening the connection so we don't hold
+            // a write connection while WinVerifyTrust runs.
+            var batch = new List<(int AppId, EnrichmentResult Result)>(page.Count);
+            foreach (var row in page)
             {
-                var (appId, imagePath, imageName) = pending[i];
+                cancellationToken.ThrowIfCancellationRequested();
                 var image = new ProcessImageInfo(
                     Pid: 0,
-                    ImagePath: imagePath,
-                    ImageName: imageName,
+                    ImagePath: row.ImagePath,
+                    ImageName: row.ImageName,
                     StartTimeUnixMs: 0);
                 var enrichment = _enricher.Enrich(image);
+                processed++;
                 if (enrichment.SignatureStatus == "Unchecked")
                 {
                     skipped++;
                     continue;
                 }
-
-                try
-                {
-                    UpdateAppRow(appId, enrichment);
-                    updated++;
-                }
-                catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT
-                {
-                    // Defense in depth: a concurrent session-open inserted
-                    // (image_path, publisher=X) before us. Should not happen
-                    // because backfill runs before capture starts, but we don't
-                    // crash service startup if it does.
-                    _logger.LogWarning(ex,
-                        "Backfill UPDATE conflicted for app_id={AppId} path={Path}; leaving Unchecked.",
-                        appId, imagePath);
-                    skipped++;
-                }
+                batch.Add((row.AppId, enrichment));
             }
 
-            if (batchEnd < pending.Count && _interBatchDelay > TimeSpan.Zero)
+            if (batch.Count == 0)
             {
-                Thread.Sleep(_interBatchDelay);
+                if (page.Count < pageSize) break;
+                continue;
+            }
+
+            var (batchUpdated, batchSkipped) = ApplyBatch(batch);
+            updated += batchUpdated;
+            skipped += batchSkipped;
+
+            if (page.Count < pageSize) break;
+
+            if (_interBatchDelay > TimeSpan.Zero
+                && cancellationToken.WaitHandle.WaitOne(_interBatchDelay))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
-        _logger.LogInformation(
-            "Enrichment backfill done. Updated={Updated} Skipped={Skipped}.",
-            updated, skipped);
+        if (updated == 0 && skipped == 0)
+        {
+            _logger.LogInformation("Enrichment backfill: no Unchecked apps rows.");
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Enrichment backfill done. Updated={Updated} Skipped={Skipped} Cap={Cap}.",
+                updated, skipped, _maxRowsPerRun);
+        }
         return new EnrichmentBackfillResult(updated, skipped);
     }
 
-    private List<(int AppId, string ImagePath, string ImageName)> LoadPendingApps()
+    /// <summary>
+    /// Apply a batch of enrichment updates inside ONE connection + ONE
+    /// transaction. Fast path: all rows commit together. Slow path: if a
+    /// concurrent session insert won the race on <c>(image_path, publisher)</c>
+    /// and surfaced SQLITE_CONSTRAINT, the whole transaction aborts and we
+    /// re-apply the batch row-by-row, skipping just the conflicting rows.
+    /// </summary>
+    private (int Updated, int Skipped) ApplyBatch(IReadOnlyList<(int AppId, EnrichmentResult Result)> batch)
     {
-        var rows = new List<(int, string, string)>();
         using var conn = _connections.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT app_id, image_path, image_name
-            FROM apps
-            WHERE signature_status = 'Unchecked'
-            ORDER BY app_id;
-            """;
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        using var transaction = conn.BeginTransaction();
+        try
         {
-            rows.Add((reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
+            var written = 0;
+            foreach (var (appId, result) in batch)
+            {
+                WriteUpdate(conn, transaction, appId, result);
+                written++;
+            }
+            transaction.Commit();
+            return (written, 0);
         }
-        return rows;
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT
+        {
+            transaction.Rollback();
+            return ApplyBatchPerRow(conn, batch);
+        }
     }
 
-    private void UpdateAppRow(int appId, EnrichmentResult enrichment)
+    private (int Updated, int Skipped) ApplyBatchPerRow(
+        SqliteConnection conn,
+        IReadOnlyList<(int AppId, EnrichmentResult Result)> batch)
     {
-        using var conn = _connections.Open();
+        var updated = 0;
+        var skipped = 0;
+        foreach (var (appId, result) in batch)
+        {
+            try
+            {
+                WriteUpdate(conn, transaction: null, appId, result);
+                updated++;
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT
+            {
+                _logger.LogWarning(ex,
+                    "Backfill UPDATE conflicted for app_id={AppId}; leaving Unchecked.",
+                    appId);
+                skipped++;
+            }
+        }
+        return (updated, skipped);
+    }
+
+    private static void WriteUpdate(
+        SqliteConnection conn,
+        SqliteTransaction? transaction,
+        int appId,
+        EnrichmentResult enrichment)
+    {
         using var cmd = conn.CreateCommand();
+        if (transaction is not null)
+        {
+            cmd.Transaction = transaction;
+        }
         cmd.CommandText = """
             UPDATE apps
             SET publisher = $publisher,
@@ -152,6 +219,29 @@ public sealed class EnrichmentBackfill
         cmd.Parameters.AddWithValue("$pathClass", enrichment.PathClass.ToStorageString());
         cmd.Parameters.AddWithValue("$id", appId);
         cmd.ExecuteNonQuery();
+    }
+
+    private List<(int AppId, string ImagePath, string ImageName)> LoadPendingApps(int afterAppId, int limit)
+    {
+        var rows = new List<(int, string, string)>(limit);
+        using var conn = _connections.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT app_id, image_path, image_name
+            FROM apps
+            WHERE signature_status = 'Unchecked'
+              AND app_id > $after
+            ORDER BY app_id
+            LIMIT $limit;
+            """;
+        cmd.Parameters.AddWithValue("$after", afterAppId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add((reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
+        }
+        return rows;
     }
 }
 

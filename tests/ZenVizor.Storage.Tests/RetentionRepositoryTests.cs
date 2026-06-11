@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
+using ZenVizor.Core.Aggregation;
 using ZenVizor.Storage.Repositories;
 
 namespace ZenVizor.Storage.Tests;
@@ -150,6 +151,45 @@ public sealed class RetentionRepositoryTests : IDisposable
         result.SamplesDeleted.Should().Be(0);
         result.OrphanSessionsDeleted.Should().Be(0);
         QueryAll("SELECT 1 FROM process_sessions;").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void PurgeOlderThan_ChunkedDelete_RemovesAllEligibleRowsAcrossMultipleChunks()
+    {
+        // Drives a tiny chunk size against more rows than fit in one chunk, so
+        // the implementation must iterate. Asserts every eligible row is gone.
+        SeedAppAndSession(1, 1);
+        for (var i = 0; i < 25; i++)
+        {
+            InsertSample(sessionId: 1, bucketStart: Now - (31 + i) * Day, bytesUp: 1, bytesDown: 0);
+        }
+
+        var retention = new RetentionRepository(_connections, chunkSize: 4);
+        var result = retention.PurgeOlderThan(Now);
+
+        result.SamplesDeleted.Should().Be(25);
+        QueryAll("SELECT 1 FROM traffic_samples;").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void PurgeOlderThan_AlignsCutoffsSoBucketSurvivalIsTimeOfDayIndependent()
+    {
+        // Sample sits in the 60s bucket ending at 30d-23:59:00 ago. At 30d
+        // exactly it should be on the keep side of the cutoff. The aligned
+        // cutoff makes that determination identical regardless of the
+        // wall-clock seconds component of the purge time.
+        SeedAppAndSession(1, 1);
+        var bucketStart = BucketAligner.AlignToBucket(Now) - 30 * Day;
+        InsertSample(sessionId: 1, bucketStart: bucketStart, bytesUp: 1, bytesDown: 0);
+
+        // Same now drifted by 47 seconds — without alignment, the cutoff
+        // wobbles and the same bucket survives one call but not another.
+        var resultEarly = _retention.PurgeOlderThan(Now);
+        var resultLate  = _retention.PurgeOlderThan(Now + 47_000);
+
+        resultEarly.SamplesDeleted.Should().Be(0);
+        resultLate.SamplesDeleted.Should().Be(0);
+        QueryAll("SELECT 1 FROM traffic_samples;").Should().ContainSingle();
     }
 
     [Fact]

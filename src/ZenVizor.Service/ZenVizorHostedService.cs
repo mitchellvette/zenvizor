@@ -39,6 +39,8 @@ internal sealed class ZenVizorHostedService : IHostedService
     private EtwCaptureSource? _captureSource;
     private CancellationTokenSource? _retentionCts;
     private Task? _retentionLoop;
+    private CancellationTokenSource? _backfillCts;
+    private Task? _backfillTask;
 
     public ZenVizorHostedService(
         ILogger<ZenVizorHostedService> logger,
@@ -112,14 +114,18 @@ internal sealed class ZenVizorHostedService : IHostedService
         var serviceHostResolver = new ScmServiceHostResolver(
             _loggerFactory.CreateLogger<ScmServiceHostResolver>());
 
-        // One-shot enrichment of any pre-Phase-2 'Unchecked' apps rows. Runs
-        // BEFORE the capture monitor starts so it cannot race with new-session
-        // inserts. Idempotent: re-runs are no-ops once all rows are enriched.
+        // One-shot enrichment of any pre-Phase-2 'Unchecked' apps rows.
+        // Previously synchronous in front of capture startup; a large backlog
+        // (a user upgrading from Phase 1 with many months of history) would
+        // delay capture by tens of seconds. Now dispatched as a background
+        // task AFTER capture starts. The race with new-session inserts is
+        // bounded — backfill never INSERTs apps rows, only UPDATEs existing
+        // ones, and SQLITE_CONSTRAINT on the (image_path, publisher) unique
+        // index is caught per row.
         var backfill = new EnrichmentBackfill(
             connections,
             appEnricher,
             _loggerFactory.CreateLogger<EnrichmentBackfill>());
-        backfill.Run();
 
         var sessionTracker = new SessionTracker(imageResolver, appEnricher, serviceHostResolver);
         var aggregator = new TrafficAggregator(
@@ -175,6 +181,10 @@ internal sealed class ZenVizorHostedService : IHostedService
         _retentionCts = new CancellationTokenSource();
         _retentionLoop = Task.Run(() => RunRetentionLoopAsync(retention, _retentionCts.Token));
 
+        // ---- Enrichment backfill: fire-and-forget after capture is up. ----
+        _backfillCts = new CancellationTokenSource();
+        _backfillTask = Task.Run(() => RunBackfillSafelyAsync(backfill, _backfillCts.Token));
+
         _logger.LogInformation(
             "ZenVizor service started. DbPath={DbPath} Pipe=\\\\.\\pipe\\ZenVizor.Ipc.v1 CaptureActive={Active}",
             dbPath, _captureMonitor.IsRunning);
@@ -213,9 +223,42 @@ internal sealed class ZenVizorHostedService : IHostedService
         }
     }
 
+    private Task RunBackfillSafelyAsync(EnrichmentBackfill backfill, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            try
+            {
+                backfill.Run(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: capture continues. Remaining Unchecked rows get
+                // another chance on the next service start.
+                _logger.LogWarning(ex, "Enrichment backfill failed; will retry on next service start.");
+            }
+        }, cancellationToken);
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("ZenVizor service stopping.");
+
+        if (_backfillCts is not null)
+        {
+            _backfillCts.Cancel();
+            if (_backfillTask is not null)
+            {
+                try { await _backfillTask.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+            _backfillCts.Dispose();
+            _backfillCts = null;
+            _backfillTask = null;
+        }
 
         if (_retentionCts is not null)
         {

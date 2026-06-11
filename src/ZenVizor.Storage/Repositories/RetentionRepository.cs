@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ZenVizor.Core.Aggregation;
 
 namespace ZenVizor.Storage.Repositories;
 
@@ -26,15 +27,27 @@ public sealed class RetentionRepository
         public const string AlertsDaysAfterAck = "retention.alerts_days_after_ack";
     }
 
+    /// <summary>
+    /// Per-chunk DELETE size. The first purge after long uptime can touch
+    /// many days of samples — an unchunked DELETE holds the write lock for
+    /// the full sweep, which collides with the 5 s flush tick. Chunking
+    /// bounds the time any single statement holds the lock and lets WAL
+    /// checkpoint between chunks.
+    /// </summary>
+    private const int DefaultChunkSize = 5000;
+
     private readonly ConnectionFactory _connections;
     private readonly ILogger _logger;
+    private readonly int _chunkSize;
 
     public RetentionRepository(
         ConnectionFactory connections,
-        ILogger<RetentionRepository>? logger = null)
+        ILogger<RetentionRepository>? logger = null,
+        int chunkSize = DefaultChunkSize)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _logger = (ILogger?)logger ?? NullLogger.Instance;
+        _chunkSize = chunkSize <= 0 ? DefaultChunkSize : chunkSize;
     }
 
     /// <summary>
@@ -46,15 +59,28 @@ public sealed class RetentionRepository
         using var connection = _connections.Open();
         var policy = LoadPolicy(connection);
 
+        // Align each tier's cutoff to that tier's bucket boundary. Without
+        // alignment, the raw nowUnixMs - DaysToMs cutoff drifts with the
+        // wall-clock time of the purge tick: a sample bucket whose start is
+        // exactly retention.days ago survives a 03:00 purge but not an 04:00
+        // purge, which makes the visible "oldest data" wobble across runs.
+        var samplesCutoff = BucketAligner.AlignToBucket(nowUnixMs) - DaysToMs(policy.SamplesDays);
+        var hourlyCutoff  = BucketAligner.AlignToHour(nowUnixMs)   - DaysToMs(policy.HourlyDays);
+        var dailyCutoff   = BucketAligner.AlignToDay(nowUnixMs)    - DaysToMs(policy.DailyDays);
+        // connections / alerts use raw timestamps (last_seen, acknowledged_at)
+        // rather than aligned buckets, so no bucket alignment applies.
+        var connsCutoff   = nowUnixMs - DaysToMs(policy.ConnectionsDays);
+        var alertsCutoff  = nowUnixMs - DaysToMs(policy.AlertsDaysAfterAck);
+
         // Each DELETE runs in its own implicit transaction; we don't wrap the
         // whole thing because long DELETEs would hold a write-lock against the
         // capture flush. Individual tiers are independent — partial progress is fine.
-        var samplesDeleted   = DeleteBefore(connection, "traffic_samples", "bucket_start",   nowUnixMs - DaysToMs(policy.SamplesDays));
-        var connsDeleted     = DeleteBefore(connection, "connections",    "last_seen",       nowUnixMs - DaysToMs(policy.ConnectionsDays));
-        var hourlyDeleted    = DeleteBefore(connection, "traffic_hourly", "bucket_start",    nowUnixMs - DaysToMs(policy.HourlyDays));
-        var dailyDeleted     = DeleteBefore(connection, "traffic_daily",  "bucket_start",    nowUnixMs - DaysToMs(policy.DailyDays));
-        var alertsDeleted    = DeleteAcknowledgedAlertsBefore(connection,                    nowUnixMs - DaysToMs(policy.AlertsDaysAfterAck));
-        var orphanSessions   = DeleteOrphanSessions(connection);
+        var samplesDeleted   = DeleteBeforeChunked(connection, "traffic_samples", "bucket_start", samplesCutoff);
+        var connsDeleted     = DeleteBeforeChunked(connection, "connections",    "last_seen",    connsCutoff);
+        var hourlyDeleted    = DeleteBeforeChunked(connection, "traffic_hourly", "bucket_start", hourlyCutoff);
+        var dailyDeleted     = DeleteBeforeChunked(connection, "traffic_daily",  "bucket_start", dailyCutoff);
+        var alertsDeleted    = DeleteAcknowledgedAlertsBeforeChunked(connection, alertsCutoff);
+        var orphanSessions   = DeleteOrphanSessionsChunked(connection);
 
         _logger.LogInformation(
             "Retention purge: samples={S} connections={C} hourly={H} daily={D} alerts={A} orphan_sessions={O}",
@@ -69,26 +95,62 @@ public sealed class RetentionRepository
             OrphanSessionsDeleted: orphanSessions);
     }
 
-    private static int DeleteBefore(SqliteConnection connection, string table, string column, long boundaryUnixMs)
+    private int DeleteBeforeChunked(SqliteConnection connection, string table, string column, long boundaryUnixMs)
     {
         if (boundaryUnixMs <= 0) return 0;
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"DELETE FROM {table} WHERE {column} < $boundary;";
-        cmd.Parameters.AddWithValue("$boundary", boundaryUnixMs);
-        return cmd.ExecuteNonQuery();
+
+        // DELETE ... LIMIT requires SQLITE_ENABLE_UPDATE_DELETE_LIMIT, which
+        // the e_sqlite3 build shipped with Microsoft.Data.Sqlite does NOT
+        // enable. We get the same effect via "WHERE rowid IN (SELECT rowid
+        // ... LIMIT chunk)" without needing the compile option.
+        var sql = $"""
+            DELETE FROM {table}
+            WHERE rowid IN (
+                SELECT rowid FROM {table}
+                WHERE {column} < $boundary
+                LIMIT $chunk
+            );
+            """;
+
+        var total = 0;
+        while (true)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$boundary", boundaryUnixMs);
+            cmd.Parameters.AddWithValue("$chunk", _chunkSize);
+            var deleted = cmd.ExecuteNonQuery();
+            total += deleted;
+            if (deleted < _chunkSize) break;
+        }
+        return total;
     }
 
-    private static int DeleteAcknowledgedAlertsBefore(SqliteConnection connection, long boundaryUnixMs)
+    private int DeleteAcknowledgedAlertsBeforeChunked(SqliteConnection connection, long boundaryUnixMs)
     {
         if (boundaryUnixMs <= 0) return 0;
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
+        var sql = """
             DELETE FROM alerts
-            WHERE acknowledged_at IS NOT NULL
-              AND acknowledged_at < $boundary;
+            WHERE rowid IN (
+                SELECT rowid FROM alerts
+                WHERE acknowledged_at IS NOT NULL
+                  AND acknowledged_at < $boundary
+                LIMIT $chunk
+            );
             """;
-        cmd.Parameters.AddWithValue("$boundary", boundaryUnixMs);
-        return cmd.ExecuteNonQuery();
+
+        var total = 0;
+        while (true)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$boundary", boundaryUnixMs);
+            cmd.Parameters.AddWithValue("$chunk", _chunkSize);
+            var deleted = cmd.ExecuteNonQuery();
+            total += deleted;
+            if (deleted < _chunkSize) break;
+        }
+        return total;
     }
 
     /// <summary>
@@ -96,16 +158,30 @@ public sealed class RetentionRepository
     /// traffic_samples or connections rows referencing them (those rows aged out).
     /// Keeps the sessions table from growing unbounded.
     /// </summary>
-    private static int DeleteOrphanSessions(SqliteConnection connection)
+    private int DeleteOrphanSessionsChunked(SqliteConnection connection)
     {
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
+        var sql = """
             DELETE FROM process_sessions
-            WHERE end_time IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM traffic_samples WHERE session_id = process_sessions.session_id)
-              AND NOT EXISTS (SELECT 1 FROM connections    WHERE session_id = process_sessions.session_id);
+            WHERE session_id IN (
+                SELECT session_id FROM process_sessions
+                WHERE end_time IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM traffic_samples WHERE session_id = process_sessions.session_id)
+                  AND NOT EXISTS (SELECT 1 FROM connections    WHERE session_id = process_sessions.session_id)
+                LIMIT $chunk
+            );
             """;
-        return cmd.ExecuteNonQuery();
+
+        var total = 0;
+        while (true)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$chunk", _chunkSize);
+            var deleted = cmd.ExecuteNonQuery();
+            total += deleted;
+            if (deleted < _chunkSize) break;
+        }
+        return total;
     }
 
     private static long DaysToMs(int days) => days * 86_400_000L;

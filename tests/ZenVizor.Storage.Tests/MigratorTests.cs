@@ -164,6 +164,57 @@ public sealed class MigratorTests : IDisposable
     }
 
     [Fact]
+    public void Migrate_FailingMigration_LeavesNoVersionRowAndNoPartialDdl()
+    {
+        // Two migrations: the first succeeds (creates t1). The second creates
+        // t2 then runs a deliberately broken statement so the migration
+        // transaction must roll back. After the throw we expect:
+        //   - t1 exists and its version row is recorded.
+        //   - t2 does NOT exist (DDL rolled back).
+        //   - no schema_migrations row for version 2.
+        var migrator = new Migrator();
+        var scripts = new List<Migrator.MigrationScript>
+        {
+            new(1, "create_t1", "CREATE TABLE t1 (id INTEGER PRIMARY KEY);"),
+            new(2, "broken_t2",
+                "CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n" +
+                "INSERT INTO no_such_table VALUES (1);"),
+        };
+
+        Action act = () => migrator.MigrateUsingScripts(_dbPath, scripts);
+
+        act.Should().Throw<SqliteException>();
+
+        var tables = GetTableNames(_dbPath).ToHashSet(StringComparer.Ordinal);
+        tables.Should().Contain("t1", "migration 1 must have committed");
+        tables.Should().NotContain("t2", "migration 2's CREATE must roll back atomically with its broken INSERT");
+
+        var versions = Query(_dbPath,
+            "SELECT version FROM schema_migrations ORDER BY version;",
+            r => r.GetInt32(0));
+        versions.Should().Equal(new[] { 1 },
+            "version 2 must NOT be recorded — partial migrations must not appear applied");
+    }
+
+    [Fact]
+    public void Migrate_DatabaseAheadOfBinary_RefusesToStart()
+    {
+        // Seed a DB with a fake migration version higher than anything this
+        // binary ships. The downgrade guard must refuse rather than silently
+        // ignore — a binary running against a schema it doesn't understand
+        // risks data damage.
+        new Migrator().Migrate(_dbPath);
+        Execute(_dbPath,
+            "INSERT INTO schema_migrations (version, name, applied_at) " +
+            "VALUES (9999, 'future', 0);");
+
+        Action act = () => new Migrator().Migrate(_dbPath);
+
+        act.Should().Throw<SchemaDowngradeException>()
+            .Which.DatabaseVersion.Should().Be(9999);
+    }
+
+    [Fact]
     public void Migrate_AppsTable_DedupKeyTreatsNullPublisherAsBucket()
     {
         new Migrator().Migrate(_dbPath);
