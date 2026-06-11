@@ -1,7 +1,5 @@
 using System.ComponentModel;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ZenVizor.Ui.Services;
@@ -108,6 +106,12 @@ public partial class MainWindow : FluentWindow
     {
         if (_exiting)
         {
+            // UnWatch must happen here, NOT in OnClosed: OnClosed runs after
+            // WM_DESTROY, when the window handle is already IntPtr.Zero, and
+            // UnWatch throws InvalidOperationException without a live HWND —
+            // which historically skipped Application.Current.Shutdown() and
+            // left the process (and tray popup) stranded.
+            try { SystemThemeWatcher.UnWatch(this); } catch { }
             return;
         }
 
@@ -117,9 +121,8 @@ public partial class MainWindow : FluentWindow
 
     private void OnClosed(object? sender, EventArgs e)
     {
-        SystemThemeWatcher.UnWatch(this);
-        _poller.Dispose();
-        _activityPoller.Dispose();
+        try { _poller.Dispose(); } catch { }
+        try { _activityPoller.Dispose(); } catch { }
         // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
         // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
         // disposes the tray AFTER the dispatcher fully drains. Calling
@@ -143,47 +146,6 @@ public partial class MainWindow : FluentWindow
     private void OnTrayExitClicked(object sender, RoutedEventArgs e)
     {
         _exiting = true;
-
-        // The lingering tray popup is caused by ContextMenu inheriting the
-        // system menu fade animation via SetResourceReference on its inner
-        // Popup (SystemParameters.MenuPopupAnimationKey). That fade delays
-        // the Popup's _asyncDestroy DispatcherTimer, so the popup HWND
-        // stays on screen until the animation elapses — visible for "a
-        // few seconds" if Windows has slow menu animations enabled.
-        //
-        // Two fixes layered:
-        //   1. Override PopupAnimation on the inner Popup so dismissal is
-        //      HWND-immediate (local value beats SetResourceReference).
-        //      The inner Popup is the LOGICAL parent of the ContextMenu.
-        //   2. Wait for ContextMenu.Closed — which fires from the
-        //      _asyncDestroy tick AFTER DestroyWindow — before calling
-        //      Close on the main window, so the popup HWND is genuinely
-        //      gone before tearing down.
-        //
-        // Fully qualified MenuItem — Wpf.Ui.Controls also has a MenuItem
-        // type, but the tray ContextMenu uses the stock WPF one.
-        if (sender is System.Windows.Controls.MenuItem mi
-            && ContextMenuService.GetContextMenu(mi) is { } cm)
-        {
-            if (LogicalTreeHelper.GetParent(cm) is Popup popup)
-            {
-                popup.PopupAnimation = PopupAnimation.None;
-            }
-            cm.Closed += OnTrayMenuClosed;
-            cm.IsOpen = false;
-        }
-        else
-        {
-            Close();
-        }
-    }
-
-    private void OnTrayMenuClosed(object sender, RoutedEventArgs e)
-    {
-        if (sender is ContextMenu cm)
-        {
-            cm.Closed -= OnTrayMenuClosed;
-        }
         Close();
     }
 
