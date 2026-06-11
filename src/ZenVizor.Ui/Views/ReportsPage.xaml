@@ -288,10 +288,12 @@
               category color.
 
               Card chrome: metal.card + border.card + shadow.sm + radius.md.
-              Slightly tighter than the full Top Apps card (radius.md = 10,
-              not radius.card = 8 — wait, those are inverted) — actually
-              radius.md is one tier softer. Phase 3 keeps the same recipe
-              the brief calls out.  -->
+              radius.md and radius.card both resolve to 10 px in the brand
+              scale; the mini-card uses the SCALE token (radius.md) while
+              the surrounding primary surfaces use the ROLE token
+              (radius.card). Same value today; the role/scale split keeps
+              that explicit so a future card-radius tune doesn't drag the
+              mini-cards along.  -->
         <!--  Notable card template — data-bound, driven by the
               NotableCardViewModel records the page-code-behind builds in
               ApplyResult. The DataTemplate carries default-tone (Info)
@@ -328,7 +330,7 @@
                     <Border x:Name="SevBar"
                             Grid.Column="0"
                             Background="{DynamicResource status.neutral}"
-                            CornerRadius="8,0,0,8" />
+                            CornerRadius="10,0,0,10" />
                     <Border x:Name="IconTile"
                             Grid.Column="1"
                             Width="40" Height="40"
@@ -1150,13 +1152,14 @@
                   data surfaces.
                 * 4-column Grid inside:
                   - Sevbar — 3 px column, Background=status.{sev}, with
-                    asymmetric CornerRadius="8,0,0,8" so its top-left and
-                    bottom-left arc with the outer card's radius.card=8.
-                    (WPF Border CornerRadius clips its own paint only,
-                    not child geometry; without the matching inner
-                    corners the sevbar paints square over the rounded
-                    card. Literal Thickness — token binding doesn't work
-                    on CornerRadius any more than on Margin.)
+                    asymmetric CornerRadius="10,0,0,10" so its top-left
+                    and bottom-left arc with the outer card's
+                    radius.card (10). (WPF Border CornerRadius clips its
+                    own paint only, not child geometry; without the
+                    matching inner corners the sevbar paints square over
+                    the rounded card. Literal value because CornerRadius
+                    can't bind a Double StaticResource any more than
+                    Margin can.)
                   - 40 px tinted icon tile (status.{sev}.background) with
                     glyph in status.{sev}.
                   - body: title (text.body.strong, text.primary) + detail

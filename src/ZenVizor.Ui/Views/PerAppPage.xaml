@@ -295,11 +295,14 @@
             </ui:TextBox>
         </Grid>
 
-        <!--  Row 2 — DataGrid card. Opaque surface.card so text legibility
-              on Mica isn't wallpaper-dependent. The DataGrid carries the
-              compact density style (row 32, padding 12,8). Alternating rows
-              pick up surface.subtle.alt (token rename — was the raw
-              SubtleFillColorTertiaryBrush key).
+        <!--  Row 2 — DataGrid card. Canonical card recipe per
+              project_canonical_card_treatment memory + design-system §9:
+              metal.card + border.card + radius.card + shadow.card.
+              metal.card is opaque (LinearGradientBrush, never translucent)
+              so text legibility on Mica isn't wallpaper-dependent. The
+              DataGrid carries the compact density style (row 32,
+              padding 12,8). Alternating rows pick up surface.subtle.alt
+              (token rename — was the raw SubtleFillColorTertiaryBrush key).
 
               Bottom Padding=4 gives a small buffer so the last row's text
               doesn't visually clip the rounded bottom corner. WPF's Border
@@ -307,7 +310,7 @@
               true content-clip would need an OpacityMask + VisualBrush
               (perf cost). The buffer is visually equivalent and free.  -->
         <Border Grid.Row="2"
-                Background="{DynamicResource surface.card}"
+                Background="{DynamicResource metal.card}"
                 BorderBrush="{DynamicResource border.card}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource radius.card}"

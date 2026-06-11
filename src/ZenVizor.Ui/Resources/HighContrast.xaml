@@ -5,14 +5,23 @@
     <!--
         ZenVizor — Windows High Contrast token overrides.
 
-        WHEN MERGED: only when SystemParameters.HighContrast == true. The HC
-        ResourceDictionary is added as the LAST entry in
-        Application.Current.Resources.MergedDictionaries so its keys win over
-        DesignTokens.xaml. App startup must subscribe to
-        SystemParameters.StaticPropertyChanged (or SystemEvents.UserPreferenceChanged
-        with category=Color) and merge/unmerge this dictionary as HC flips.
-        See the verification gate in docs/design-system.md for the toggle
-        recipe (settings: Accessibility -> Contrast themes -> Aquatic, etc).
+        ⚠ STATUS: NOT YET WIRED INTO THE APP. The intended lifecycle (described
+        below) is the design contract; the actual subscribe / merge / unmerge
+        is tracked as design-system.md §11 item 9 ("HC merge wiring"). App.xaml
+        currently merges DesignTokens.xaml + BrandAccent.{Light,Dark}.xaml but
+        NOT this dictionary, so an OS HC flip today doesn't change anything
+        the app paints. This file is kept current with the brand-token set so
+        the eventual wiring is a one-line merge plus the subscribe.
+
+        INTENDED LIFECYCLE (post-wiring): merge only when
+        SystemParameters.HighContrast == true. The HC ResourceDictionary
+        becomes the LAST entry in Application.Current.Resources.MergedDictionaries
+        so its keys win over DesignTokens.xaml + BrandAccent.*. App startup
+        subscribes to SystemParameters.StaticPropertyChanged (or
+        SystemEvents.UserPreferenceChanged with category=Color) and
+        merges/unmerges as HC flips. See the verification gate in
+        docs/design-system.md for the toggle recipe (Settings ->
+        Accessibility -> Contrast themes -> Aquatic, etc).
 
         WHY THIS EXISTS: ZenVizor hard-overrides every brush. WPF normally
         yields to SystemColors for the controls it touches — but only when

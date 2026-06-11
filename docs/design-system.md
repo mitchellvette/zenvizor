@@ -45,20 +45,27 @@ What ships today, walked from `src/ZenVizor.Ui/`:
 - 3-row Grid (`Margin="24"`): header row / chart row / talkers row.
 - Header: `ui:TextBlock FontTypography="Subtitle"` "Current Activity" with
   inline `WarmingBanner` and `DisconnectedBanner` (both `Visibility="Collapsed"` until needed).
-- Chart card: `<Border CornerRadius="6">` wrapping `lvc:CartesianChart x:Name="RatesChart"`,
+- Chart card: canonical recipe (`metal.card` + `border.card` +
+  `radius.card` + `shadow.card`) wrapping `lvc:CartesianChart x:Name="RatesChart"`,
   two `LineSeries<DateTimePoint>` (Up B/s, Down B/s), 60-point trailing
   window, 2s poll cadence.
-- Talkers card: header strip + `ListView x:Name="TalkersList"` (top 10
-  by total bytes). Card uses `CardBackgroundFillColorDefaultBrush`.
+- Talkers card: same canonical recipe — header strip + `ListView x:Name="TalkersList"`
+  (top 10 by total bytes). Talkers rows are intentionally NOT drillable —
+  AppActivity carries no app_id (in-memory snapshot path) so the canonical
+  drill would require an extra IPC lookup or piercing the capture
+  pipeline; Phase 6 scope.
 
 ### `Views/PerAppPage.xaml` — apps over a window
 
 - 3-row Grid: header / picker row / DataGrid card.
 - Window preset combo (1h/24h/7d/30d/90d, default 24h) + Refresh button.
 - `DataGrid x:Name="AppsGrid"` with virtualization on; `MaxHeight`
-  enforced in code via `EnforceAppsGridBound` (`PerAppPage.xaml.cs:43`)
-  because `ui:NavigationView` wraps pages in a `DynamicScrollViewer` that
-  gives infinite vertical extent. Double-click navigates to App Detail.
+  enforced in code via `EnforceAppsGridBound`
+  (`PerAppPage.xaml.cs` `OnLoaded` + `SizeChanged`) because
+  `ui:NavigationView` wraps pages in a `DynamicScrollViewer` that gives
+  infinite vertical extent. **Single-click** navigates to App Detail (hover
+  chevron + `Cursor=Hand` + single click is the canonical drill
+  affordance — never double-click).
 - 5 columns: App / Publisher / Signature / Up / Down.
 
 ### `Views/AppDetailPage.xaml` — drill-down
@@ -87,12 +94,29 @@ What ships today, walked from `src/ZenVizor.Ui/`:
 - Chart card: `lvc:CartesianChart x:Name="HistoryChart"` with the same
   `ChartBuilder.BuildSeries` flow as App Detail; `NoDataOverlay` likewise.
 
-### `Views/PlaceholderPage.xaml` + `AlertsPage.cs` / `ReportsPage.cs` / `SettingsPage.cs`
+### `Views/ReportsPage.xaml` — daily report (full page, post-Phase 5)
+
+- Date picker + anchor menu (`Avg7d` default / `Avg30d` / `Avg90d` /
+  `SpecificDate` placeholder). Refresh + Export CSV/HTML actions.
+- Hero card (Up/Down/Total/WAN-ratio with delta-vs-anchor chips),
+  24-hour sparkline chart (`SparklineChart`), Top Apps DataGrid
+  (`TopAppsGrid`), Uncommon Talkers mini-card row, Notable section by
+  severity (Critical/Warning/Info).
+- Top Apps row: single-click drill → `AppDetailPage` carrying
+  `AppDetailNavParams(appId, reportDate)`. Uncommon Talker mini-card:
+  same drill semantics (`Cursor=Hand` on the card root).
+- `TopAppsGrid` `MaxHeight` enforced in code (`EnforceTopAppsGridBound`,
+  Loaded before first IPC + SizeChanged) for the same NavigationView
+  reason as PerApp; wheel forwarder is conditional — forwards to
+  PageScroll only when the inner ScrollViewer has no headroom in the
+  requested direction.
+
+### `Views/PlaceholderPage.xaml` + `AlertsPage.cs` / `SettingsPage.cs`
 
 - Centered `ui:TextBlock FontTypography="TitleLarge"` title + secondary
-  subtitle. Three subclasses populate title/subtitle constructor args.
-- Subjects: Alerts → Phase 6 alert feed; Reports → Phase 5 daily reports;
-  Settings → Phase 6 autostart/retention.
+  subtitle. Two subclasses populate title/subtitle constructor args.
+- Subjects: Alerts → Phase 6 alert feed; Settings → Phase 6
+  autostart/retention.
 - **Polish-interlude scope:** placeholder treatment is fine for now —
   these pages get real content in their phase. But the placeholder
   *visual* should match the design system once it lands (typography
@@ -431,8 +455,16 @@ LineHeight** values computed from the brand line-height ratios. Apply via
 | `text.body.strong`  | `font.display`  | 14       | SemiBold   | 21         |
 | `text.body`         | `font.display`  | 14       | Regular    | 21         |
 | `text.caption`      | `font.display`  | 12       | Regular    | 17 (Foreground = `text.secondary`) |
-| `text.eyebrow`      | `font.display`  | 12       | SemiBold   | 17 (uppercase the source string; CharacterSpacing=40; Foreground = accent) |
+| `text.eyebrow`      | `font.display`  | 12       | SemiBold   | 17 (uppercase the source string at call sites; Foreground = `accent.text`) |
 | `text.mono`         | `font.mono`     | 14       | Regular    | 21         |
+
+> **Letter-spacing limit.** WPF has no `letter-spacing` / `CharacterSpacing`
+> on `TextBlock` / `TextElement`. The brand's `tracking-wide` (`0.04em` on
+> eyebrows, `0.05em` on Nuqun display) cannot be applied to a plain
+> `TextBlock` without splitting the text into per-character `Run`s — which
+> we deliberately don't do for eyebrows. Accepted limitation; visually
+> tolerable because eyebrows are small, short, and always uppercase.
+> Captured inline in `DesignTokens.xaml` on the `text.eyebrow` Style.
 
 `LineStackingStrategy="BlockLineHeight"` is set on every style so
 LineHeight is authoritative — without it, ascender/descender overshoot
@@ -459,9 +491,20 @@ pushes lines apart and the rhythm drifts page-to-page.
 
 4-based scale, named by pixel value. The app set {4,8,12,16,24,32,48} is
 a clean subset of the brand scale; brand adds {20,40,64}. Use `space.12`
-(not `space.10`) for medium spacing — keeps rhythm. Tokens are `Double`
-resources so they slot directly into `Margin`/`Padding` via
-`{StaticResource space.16}`.
+(not `space.10`) for medium spacing — keeps rhythm.
+
+> ⚠ **DO NOT** write `Margin="{StaticResource space.16}"` or
+> `Padding="{StaticResource space.16}"`. The `space.*` tokens are
+> `sys:Double` resources (`DesignTokens.xaml:239-248`), and WPF's
+> ThicknessConverter only converts from **String** — a boxed Double
+> can't be coerced to Thickness and the page fails to load at runtime.
+> Write the **literal pixel value** at call sites (`Margin="16"`,
+> `Padding="16"`); XAML's string TypeConverter handles it. The token
+> values in the table below are the documentation of the canonical
+> values — match them by hand at call sites. (CornerRadius has the
+> same constraint — write literals there too, never `{StaticResource}`
+> a Double into a CornerRadius.) This is captured in user memory as
+> `project_wpf_spacing_token_thickness`.
 
 | Token        | px |
 |--------------|----|
@@ -535,26 +578,33 @@ polish-pass call-site sweep, so the visual jump is auditable in one diff.
 ## 8. Density
 
 ZenVizor's data-dense surfaces (Per-App grid, Connections grid, Sessions
-grid) feel too airy at default Fluent spacing. The **compact** variant
-is the one to apply on those grids.
+grid, Reports' Top Apps grid) feel too airy at default Fluent spacing.
+The **compact** variant is the one to apply on those grids.
 
 | Token                    | Value | Use                                |
 |--------------------------|-------|------------------------------------|
 | `density.row.default`    | 28 px | Standard DataGrid rows             |
-| `density.row.compact`    | 22 px | Data-dense DataGrid rows           |
+| `density.row.compact`    | 32 px | Data-dense DataGrid rows           |
+
+The compact row was originally 22 px; bumped to 32 in the Per-App polish
+(June 2026) because 22 was too tight at 14 px body — text crowded the
+cell edges and headers had no visible breathing room. Cell padding
+matched: was `6,2`, now `12,8`.
 
 A pre-built compact style is exported as `style.datagrid.compact` and sets
-`RowHeight`, `MinRowHeight`, `FontSize`, and cell `Padding="6,2"`:
+`RowHeight`, `MinRowHeight`, `FontSize`, and cell `Padding="12,8"`:
 
 ```xml
 <DataGrid Style="{StaticResource style.datagrid.compact}" ... />
 ```
 
 Apply on `AppsGrid` (PerAppPage), `ConnectionsGrid` and `SessionsGrid`
-(AppDetailPage). Do **not** apply on the `TalkersList` ListView — it
-already uses 8,4 padding (`DashboardPage.xaml:75`) which sits between
-`default` and `compact` and reads well at the Dashboard's larger
-typographic rhythm.
+(AppDetailPage). The Reports' `TopAppsGrid` uses the same compact style
+but overrides `RowHeight`/`MinRowHeight` to 56 to host the two-line
+App-cell layout (image name + mono path on unsigned rows). Do **not**
+apply on the `TalkersList` ListView — it already uses 8,4 padding which
+sits between `default` and `compact` and reads well at the Dashboard's
+larger typographic rhythm.
 
 ---
 
@@ -576,22 +626,26 @@ The recurring visual elements and which tokens they should pull from.
   templates; do not restyle without a strong reason.
 
 ### Status banner
-- `<Border CornerRadius="{StaticResource radius.sm}" Padding="{StaticResource space.8}">`
-  wrapping a `<TextBlock>`.
+- `<Border CornerRadius="{StaticResource radius.control}" Padding="8,4">`
+  wrapping a `<TextBlock>`. CornerRadius uses the role token because the
+  banner is a control-class surface (`radius.control` → 6). Padding and
+  Margin are **literals** matching the `space.*` scale (see §6 warning).
 - Background: `status.caution.background` (warming / query failure) or
   `status.critical.background` (disconnected); Foreground:
-  `status.caution` / `status.critical`.
-- Current XAML pattern (DashboardPage warming banner):
+  `status.caution.text` for caution banners (AA-safe on the tint) and
+  `status.critical` for critical banners.
+- Reference XAML pattern (DashboardPage warming banner):
   ```xml
-  <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}"
-          Padding="8,4" CornerRadius="4">
-      <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                 Text="warming up — first flush bucket lands within ~5 s" />
+  <Border Background="{DynamicResource status.warming.background}"
+          Padding="8,4"
+          CornerRadius="{StaticResource radius.control}">
+      <TextBlock Style="{StaticResource text.caption}"
+                 Foreground="{DynamicResource status.caution.text}"
+                 Text="Warming up. First flush bucket lands within ~5 s." />
   </Border>
   ```
-  After tokenization the literal `SubtleFillColorSecondaryBrush` →
-  `surface.subtle`, `TextFillColorSecondaryBrush` → `text.secondary`,
-  `4` → `{StaticResource radius.sm}`, `8,4` → `{StaticResource space.8},{StaticResource space.4}`.
+  Note the literal `Padding="8,4"` — the `space.*` tokens are `sys:Double`
+  and can't be bound into Thickness (see §6).
 
 ### Card surface — canonical treatment
 

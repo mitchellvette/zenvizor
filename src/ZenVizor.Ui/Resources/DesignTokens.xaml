@@ -66,6 +66,16 @@
     <SolidColorBrush x:Key="surface.layer"      Color="{DynamicResource LayerFillColorDefault}" />
     <SolidColorBrush x:Key="surface.subtle"     Color="{DynamicResource SubtleFillColorSecondary}" />
     <SolidColorBrush x:Key="surface.subtle.alt" Color="{DynamicResource SubtleFillColorTertiary}" />
+    <!--  surface.tooltip.scrim — base fallback. Brand value is the dark
+          text.primary at 84% alpha and lives in
+          BrandAccent.{Light,Dark}.xaml (light: #D61A1C26, dark:
+          #D6F1F2F8). The fallback here aliases Wpf.Ui's
+          SubtleFillColorSecondary so the popover still paints a
+          contrasting surface if the brand dict is unmerged — without
+          this entry a stray DynamicResource lookup returned null and
+          the tooltip background dropped to literal black, swallowing
+          the text. -->
+    <SolidColorBrush x:Key="surface.tooltip.scrim" Color="{DynamicResource SubtleFillColorSecondary}" />
 
     <!--  Text  ================================================================
           Wpf.Ui's TextFillColor* keys are auto-tinted per theme. -->
@@ -566,6 +576,38 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!--  Metallic-card + elevation base fallbacks  ===============================
+          metal.card / metal.control / edge.light / shadow.sm / shadow.card
+          carry their REAL brand values in BrandAccent.{Light,Dark}.xaml
+          (metal.card and metal.control are LinearGradientBrushes; the
+          shadows are tuned DropShadowEffects). Views DynamicResource them
+          on every data-bearing card — without a base entry, an unmerged
+          brand dict (HC mode, future test harnesses, a debugging session
+          with the brand dict commented out) resolved to null and the
+          card silently lost its surface entirely (transparent over Mica).
+          The fallbacks here paint a clean opaque card so the surface
+          degrades gracefully:
+            - metal.card → surface.card (flat opaque card brush)
+            - metal.control → surface.card (flat control surface)
+            - edge.light → border.subtle (lighter divider stroke;
+              invisible on white-on-white in light theme, faint top
+              catch-light in dark — same visual character the brand dict
+              composites into metal.card itself)
+            - shadow.sm / shadow.card → null effect (no shadow rather
+              than a guessed wrong one; views still render correctly).
+          HighContrast.xaml overrides every key on this list to its
+          SystemColors equivalent. -->
+
+    <SolidColorBrush x:Key="metal.card"    Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    <SolidColorBrush x:Key="metal.control" Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    <SolidColorBrush x:Key="edge.light"    Color="{DynamicResource CardStrokeColorDefaultSolid}" />
+    <!-- Inert DropShadowEffect fallbacks. Opacity=0 means cards render
+         without elevation if the brand dict is unmerged; better than a
+         non-fallback (would crash the view trying to resolve the missing
+         resource on Effect={DynamicResource ...}). -->
+    <DropShadowEffect x:Key="shadow.sm"   Opacity="0" />
+    <DropShadowEffect x:Key="shadow.card" Opacity="0" />
 
     <!--  Implicit base-TextBlock style  ===========================================
           WPF's plain <TextBlock>.Foreground defaults to literal Brushes.Black

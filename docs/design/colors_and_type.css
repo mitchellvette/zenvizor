@@ -31,36 +31,100 @@
    keep running. Aliases follow the theme automatically.
 
    ----------------------------------------------------------------------------
-   RECONCILIATION CROSSWALK  (brand values win; app is the placeholder)
+   RECONCILIATION CROSSWALK  (current value deltas, both directions)
    ----------------------------------------------------------------------------
-   Tokens whose VALUE differs from the as-built native app. These are NOT
-   mock-only — they are buildable in XAML (a StaticResource value swap in the
-   theme dictionary). The table is a MIGRATION MAP: it records the delta the
-   native side still needs to apply so a developer knows which resources to
-   update. "Current XAML" = stock Wpf.Ui value shipping today.
+   Tokens whose value differs between this CSS and the as-built native app.
+   Read as a bidirectional ledger: when either source changes, this table
+   records the delta until the other side catches up. "App (XAML)" = value
+   shipping in src/ZenVizor.Ui/Resources/{DesignTokens,BrandAccent.*}.xaml
+   today; "Mock (CSS)" = value declared in this file.
 
-     Token                  Current XAML   Reconciled (brand)   Status
-     --------------------   ------------   ------------------   --------------
-     radius.sm              4px            6px                  needs-migration
-     radius.md   (cards)    6px            10px                 needs-migration
-     radius.lg              8px            14px                 needs-migration
-     font.size.subtitle     16px           20px                 needs-migration
-     font.size.title        20px           28px                 needs-migration
-     font.size.title.large  24px           40px                 needs-migration
-     font.size.display      32px           68px                 needs-migration
-     chart.upSeries         #56B4E9 fixed  brand violet, swaps  intentional dev.
-     chart.downSeries       #E69F00 fixed  brand teal, swaps    intentional dev.
+   STATUS column legend:
+     • app-leads      — CSS pending update to match app
+     • mock-leads     — XAML pending update to match CSS
+     • intentional    — value-difference is by design (documented inline)
 
-   Identical in both (no migration): space.4/8/12/16/24/32/48, font.size.body
-   (14), font.size.caption (12), radius.xs (4). The app spacing set is a clean
-   SUBSET of the brand scale — brand only ADDS space.20/40/64.
+     Token                  App (XAML)         Mock (CSS)            Status
+     --------------------   ----------------   ------------------    -----------
+     ── Radius ──
+     radius.sm              6                  6                     synced (2026-06)
+     radius.md  (cards)     10                 10                    synced (2026-06)
+     radius.lg              14                 14                    synced (2026-06)
+     radius.xl              20                 20                    synced (2026-06)
+     radius.control (role)  6                  (n/a — see note)      synced
+     radius.card    (role)  10                 (n/a — see note)      synced
+     radius.overlay (role)  14                 (n/a — see note)      synced
+       (CSS uses --radius-sm/md/lg directly; XAML adds semantic role tokens
+        radius.control/card/overlay that point at sm/md/lg. Same VALUES, the
+        roles are an indirection so a future card-radius tune doesn't drag
+        button radius along. CSS may grow role tokens later — not needed
+        for static mock surfaces today.)
+     ── Type scale ──
+     font.size.subtitle     20                 20                    synced (2026-06)
+     font.size.title        28                 28                    synced (2026-06)
+     font.size.title.large  40                 40                    synced (2026-06)
+     font.size.display      68                 68                    synced (2026-06)
+     font.size.body.large   18                 18                    synced
+     font.size.metric       24                 24                    synced
+     ── Density ──
+     density.row.default    28                 28                    synced
+     density.row.compact    32                 22                    app-leads
+       (CSS still ships the original 22 px compact target; XAML bumped to 32
+        in the Per-App polish 2026-06-06 because 22 was too tight at 14px
+        body. CSS update needed.)
+     style.datagrid.compact
+        cell Padding         12,8              6,2                   app-leads
+       (Same Per-App polish round; CSS still documents 6,2.)
+     ── Chart series ──
+     chart.upSeries         #6D3FD1 light /    #6D3FD1 light /       synced (brand)
+                            #9A72F0 dark       #9A72F0 dark
+     chart.downSeries       #20B6C6 light /    #20B6C6 light /       synced (brand)
+                            #34D0E0 dark       #34D0E0 dark
+       (Both theme-swap via BrandAccent.{Light,Dark}.xaml — intentional brand
+        deviation from the fixed-Okabe-Ito categorical palette. claude-design-primer.md
+        previously documented the unswapped Okabe-Ito values here and was wrong;
+        it has been regenerated. chart.series.1..8 / chart.wan / chart.local
+        remain fixed Okabe-Ito in both sources.)
+     ── Metallic materials ──
+     metal.card             opaque gradient    opaque gradient       synced (intentional)
+       (Light: white → cool-steel #F6F8FC. Dark: 3-stop with baked-in
+        edge.light catch-light. Both opaque so text-bearing cards keep
+        contrast over Mica.)
+     metal.control          opaque gradient    translucent rgba()    intentional
+       (XAML opaque to match metal.card's opaque convention so control
+        surfaces read cleanly over Mica without depending on what's beneath;
+        CSS keeps the translucent form for the mock viewer's flat backdrop.
+        Documented divergence — do not "fix".)
+     edge.light             0x8C alpha light / 0.55 light /          synced
+                            0x17 alpha dark    0.09 dark
+     ── Shadows ──
+     shadow.sm              Opacity 0.06 lt /  per CSS               synced
+                            0.40 dk
+     shadow.card            Opacity 0.08 lt /  Opacity 0.45 dark     app-leads (dark)
+                            0.25 dk            (CSS shadow-lg-ish)
+       (Dark shadow.card XAML at 0.25 reads softer than CSS's reference 0.45.
+        Decision pending: update CSS down OR XAML up. Both are visually
+        defensible — CSS spec is the brand reference, XAML value tuned to
+        avoid the dark drop dominating busy cards. Track here until decided.)
+     ── Status text ──
+     status.caution.text    #8A5A00 (light)    #8A5A00 (light)       synced
+                            mirror caution     mirror caution
+                            (dark)             (dark)
 
-   MIGRATION CAVEATS (native feasibility — buildable, but real work):
-     • Larger type inside 22–28px compact DataGrid rows needs a row-height /
-       line-height pass so dense grids don't clip.
-     • Wpf.Ui shares some CornerRadius resources across control + card; pushing
-       cards to 10px may pull button/input radius unless the resource keys are
-       split first.
+   Identical in both (no delta to track): space.4/8/12/16/20/24/32/40/48/64,
+   font.size.body (14), font.size.caption (12), radius.xs (4), radius.pill,
+   surface.tooltip.scrim, every accent.* / status.* / text.* / border.* /
+   surface.* semantic colour token.
+
+   MIGRATION CAVEATS (when reconciling app or CSS values):
+     • Larger type inside compact DataGrid rows needs a row-height /
+       line-height pass so dense grids don't clip. Compact row is 32 in
+       XAML for that reason.
+     • Wpf.Ui shares one CornerRadius resource across some control + card
+       paths. The XAML radius.control / radius.card / radius.overlay split
+       protects against drift; future Wpf.Ui ControlCornerRadius override
+       should point at radius.control unambiguously
+       (design-system.md §11 item 10).
 
    CHART NOTE: per product decision the up/down series use the brand violet/teal
    and theme-swap (overriding the app's fixed Okabe-Ito blue/orange). Tradeoff:
