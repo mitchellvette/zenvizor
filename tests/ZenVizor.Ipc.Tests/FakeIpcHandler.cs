@@ -22,7 +22,10 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
     public int ActivitySnapshotCount { get; private set; }
     public string? LastNegotiatedClientVersion { get; private set; }
 
-    public int SnapshotSchemaVersion { get; set; } = 1;
+    // Default to the shared schema-version constant so a future server bump
+    // doesn't leave this fake stamping a stale version (which is exactly the
+    // drift the previous "Be(1)" assertion let through).
+    public int SnapshotSchemaVersion { get; set; } = IpcSchemaVersion.ActivitySnapshot;
 
     public void SetSnapshot(ActivitySnapshot snapshot) => _snapshotProvider = () => snapshot;
     public void SetSnapshotProvider(Func<ActivitySnapshot> provider) => _snapshotProvider = provider;
@@ -69,7 +72,7 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
     public Task<IpcEnvelope<CaptureStats>> GetCaptureStatsAsync()
     {
         return Task.FromResult(new IpcEnvelope<CaptureStats>(
-            SchemaVersion: 1,
+            SchemaVersion: IpcSchemaVersion.CaptureStats,
             Payload: Stats));
     }
 
@@ -87,16 +90,16 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         new(new QueryWindow(0, 0), TrafficGrain.Samples, Array.Empty<TrafficPoint>());
 
     public Task<IpcEnvelope<AppListResult>> GetAppListAsync(QueryWindow window) =>
-        Task.FromResult(new IpcEnvelope<AppListResult>(1, AppList));
+        Task.FromResult(new IpcEnvelope<AppListResult>(IpcSchemaVersion.Query, AppList));
 
     public Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain) =>
-        Task.FromResult(new IpcEnvelope<AppDetailResult>(1, AppDetail));
+        Task.FromResult(new IpcEnvelope<AppDetailResult>(IpcSchemaVersion.Query, AppDetail));
 
     public Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window) =>
-        Task.FromResult(new IpcEnvelope<ConnectionListResult>(1, Connections));
+        Task.FromResult(new IpcEnvelope<ConnectionListResult>(IpcSchemaVersion.Query, Connections));
 
     public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain) =>
-        Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(1, History));
+        Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(IpcSchemaVersion.Query, History));
 
     // ---- Phase 5 Reports surface: scriptable stub for contract tests ----
     public DailyReportResult DailyReport { get; set; } = new(
@@ -113,7 +116,7 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         DateOnly date,
         AnchorMode anchor,
         DateOnly? anchorSpecificDate) =>
-        Task.FromResult(new IpcEnvelope<DailyReportResult>(1, DailyReport));
+        Task.FromResult(new IpcEnvelope<DailyReportResult>(IpcSchemaVersion.DailyReport, DailyReport));
 
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>
         ProtocolVersion.IsCompatible(clientVersion)

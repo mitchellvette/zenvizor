@@ -347,8 +347,10 @@ public sealed class DailyReportRepositoryTests : IDisposable
 
         var result = Run(AnchorMode.Avg7d);
 
-        // 10M vs 5M baseline = +100%.
-        result.Hero.TotalDeltaPct.Should().BeApproximately(100.0, 0.5);
+        // 10M vs 5M baseline = +100%. The fixture is exact integers — no
+        // floating slop justifies BeApproximately here; assert the exact value
+        // so a drift in the delta math doesn't silently slide under 0.5%.
+        result.Hero.TotalDeltaPct.Should().Be(100.0);
     }
 
     // ─── Path abbreviation helper ──────────────────────────────────────────

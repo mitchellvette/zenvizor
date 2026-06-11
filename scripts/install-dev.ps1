@@ -54,9 +54,31 @@ $existing = & sc.exe query $serviceName 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Existing $serviceName service found -- stopping and removing..." -ForegroundColor Yellow
     & sc.exe stop $serviceName | Out-Null
-    Start-Sleep -Milliseconds 500
+
+    # Poll sc query for STOPPED instead of a fixed Start-Sleep: a long-running
+    # service (e.g. waiting on its capture pipeline tear-down) can outlast 500ms
+    # and produce a spurious "Service cannot be stopped at this time" on the
+    # following sc delete. Bound the wait so we don't hang here if Windows
+    # gets stuck.
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $query = & sc.exe query $serviceName 2>$null
+        if ($LASTEXITCODE -ne 0) { break }                  # service already gone
+        if ($query -match 'STATE\s*:\s*\d+\s+STOPPED') { break }
+        Start-Sleep -Milliseconds 200
+    }
+
     & sc.exe delete $serviceName | Out-Null
-    Start-Sleep -Milliseconds 500
+
+    # Poll for the SCM to drop the entry. sc delete is async on names with an
+    # open handle: a fast follow-up sc create lands on the same name and fails
+    # with 1072 ERROR_SERVICE_MARKED_FOR_DELETE.
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        & sc.exe query $serviceName 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { break }
+        Start-Sleep -Milliseconds 200
+    }
 }
 
 Write-Host "Registering $serviceName from $serviceExe..." -ForegroundColor Cyan

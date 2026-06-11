@@ -16,19 +16,25 @@ internal static class ProductionHandlerFactory
     public static IZenVizorIpc CreateDefault(
         Func<DateTimeOffset>? clock = null,
         long? maxWindowLookbackMs = null,
+        Func<ActivitySnapshot>? snapshotProvider = null,
+        Func<CaptureStats>? statsProvider = null,
         Func<QueryWindow, AppListResult>? appListProvider = null,
         Func<int, QueryWindow, TrafficGrain, AppDetailResult>? appDetailProvider = null,
         Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
-        Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null)
+        Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null,
+        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null)
     {
         var startedAt = (clock ?? (() => DateTimeOffset.UtcNow))().ToUnixTimeMilliseconds();
         return new ZenVizorIpcHandler(
             startedAtUnixMs: startedAt,
             dbPath: @"C:\fake\zenvizor.db",
+            snapshotProvider: snapshotProvider,
+            statsProvider: statsProvider,
             appListProvider: appListProvider,
             appDetailProvider: appDetailProvider,
             connectionsProvider: connectionsProvider,
             historyProvider: historyProvider,
+            dailyReportProvider: dailyReportProvider,
             clock: clock,
             maxWindowLookbackMs: maxWindowLookbackMs);
     }

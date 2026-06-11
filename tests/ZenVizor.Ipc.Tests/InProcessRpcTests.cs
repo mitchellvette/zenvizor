@@ -106,7 +106,10 @@ public sealed class InProcessRpcTests
 
         var envelope = await session.Proxy.GetCurrentActivitySnapshotAsync();
 
-        envelope.SchemaVersion.Should().Be(1);
+        // FakeIpcHandler stamps IpcSchemaVersion.ActivitySnapshot (the same
+        // constant production uses) so any future bump of the schema version
+        // forces this assertion to update alongside the producer.
+        envelope.SchemaVersion.Should().Be(IpcSchemaVersion.ActivitySnapshot);
         envelope.Payload.CapturedAtUnixMs.Should().Be(1_700_000_005_000L);
         envelope.Payload.WindowSeconds.Should().Be(7.5);
         envelope.Payload.Apps.Should().HaveCount(2);
@@ -157,7 +160,7 @@ public sealed class InProcessRpcTests
 
         var envelope = await session.Proxy.GetAppListAsync(new QueryWindow(1_000, 7_000));
 
-        envelope.SchemaVersion.Should().Be(1);
+        envelope.SchemaVersion.Should().Be(IpcSchemaVersion.Query);
         envelope.Payload.Window.FromUnixMs.Should().Be(1_000);
         envelope.Payload.Apps.Should().ContainSingle()
             .Which.Publisher.Should().Be("Google LLC");

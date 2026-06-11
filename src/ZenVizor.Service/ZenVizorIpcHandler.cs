@@ -11,27 +11,10 @@ namespace ZenVizor.Service;
 /// </summary>
 internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 {
-    /// <summary>
-    /// Schema version of the <see cref="ActivitySnapshot"/> payload. Bump on
-    /// incompatible changes.
-    /// <para>
-    /// v2 (this revision): adds <see cref="ActivitySnapshot.WanLocalBreakdown"/>
-    /// as a required field. Positional ctor means an old client can't
-    /// deserialize a v2 payload, hence the bump. Service+UI ship together
-    /// so there is no real version skew window — the bump is a discipline
-    /// marker, not a deprecation hook.
-    /// </para>
-    /// </summary>
-    private const int ActivitySnapshotSchemaVersion = 2;
-
-    /// <summary>Schema version of the <see cref="CaptureStats"/> payload.</summary>
-    private const int CaptureStatsSchemaVersion = 1;
-
-    /// <summary>Schema version of the Phase-4 query result payloads.</summary>
-    private const int QuerySchemaVersion = 1;
-
-    /// <summary>Schema version of the Phase-5 DailyReport payload.</summary>
-    private const int DailyReportSchemaVersion = 1;
+    // Schema versions live in ZenVizor.Ipc.Contracts.IpcSchemaVersion so the
+    // server, the UI HistoryQueryClient floor-check, and zvctl all reference
+    // a single source of truth — when a payload's shape bumps, only that
+    // constant changes and every consumer's expectation tracks it.
 
     /// <summary>
     /// Default upper bound on how far back <see cref="QueryWindow.FromUnixMs"/>
@@ -156,7 +139,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     {
         var payload = _snapshotProvider();
         return Task.FromResult(new IpcEnvelope<ActivitySnapshot>(
-            SchemaVersion: ActivitySnapshotSchemaVersion,
+            SchemaVersion: IpcSchemaVersion.ActivitySnapshot,
             Payload: payload));
     }
 
@@ -164,7 +147,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     {
         var payload = _statsProvider();
         return Task.FromResult(new IpcEnvelope<CaptureStats>(
-            SchemaVersion: CaptureStatsSchemaVersion,
+            SchemaVersion: IpcSchemaVersion.CaptureStats,
             Payload: payload));
     }
 
@@ -172,7 +155,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     {
         ValidateWindow(window);
         var payload = _appListProvider(window);
-        return Task.FromResult(new IpcEnvelope<AppListResult>(QuerySchemaVersion, payload));
+        return Task.FromResult(new IpcEnvelope<AppListResult>(IpcSchemaVersion.Query, payload));
     }
 
     public Task<IpcEnvelope<AppDetailResult>> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain)
@@ -181,7 +164,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         ValidateWindow(window);
         ValidateGrain(grain);
         var payload = _appDetailProvider(appId, window, grain);
-        return Task.FromResult(new IpcEnvelope<AppDetailResult>(QuerySchemaVersion, payload));
+        return Task.FromResult(new IpcEnvelope<AppDetailResult>(IpcSchemaVersion.Query, payload));
     }
 
     public Task<IpcEnvelope<ConnectionListResult>> GetConnectionsAsync(int appId, QueryWindow window)
@@ -189,7 +172,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         ValidateAppId(appId);
         ValidateWindow(window);
         var payload = _connectionsProvider(appId, window);
-        return Task.FromResult(new IpcEnvelope<ConnectionListResult>(QuerySchemaVersion, payload));
+        return Task.FromResult(new IpcEnvelope<ConnectionListResult>(IpcSchemaVersion.Query, payload));
     }
 
     public Task<IpcEnvelope<TrafficHistoryResult>> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain)
@@ -197,7 +180,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         ValidateWindow(window);
         ValidateGrain(grain);
         var payload = _historyProvider(window, grain);
-        return Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(QuerySchemaVersion, payload));
+        return Task.FromResult(new IpcEnvelope<TrafficHistoryResult>(IpcSchemaVersion.Query, payload));
     }
 
     public Task<IpcEnvelope<DailyReportResult>> GetDailyReportAsync(
@@ -206,7 +189,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         DateOnly? anchorSpecificDate)
     {
         var payload = _dailyReportProvider(date, anchor, anchorSpecificDate);
-        return Task.FromResult(new IpcEnvelope<DailyReportResult>(DailyReportSchemaVersion, payload));
+        return Task.FromResult(new IpcEnvelope<DailyReportResult>(IpcSchemaVersion.DailyReport, payload));
     }
 
     // ---- Argument validation ------------------------------------------------

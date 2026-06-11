@@ -25,33 +25,41 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
     private ZenVizorPipeClient? _client;
 
     public Task<AppListResult> GetAppListAsync(QueryWindow window, CancellationToken cancellationToken = default)
-        => CallAsync(p => p.GetAppListAsync(window), cancellationToken);
+        => CallAsync(p => p.GetAppListAsync(window), nameof(AppListResult), IpcSchemaVersion.Query, cancellationToken);
 
     public Task<AppDetailResult> GetAppDetailAsync(int appId, QueryWindow window, TrafficGrain grain, CancellationToken cancellationToken = default)
-        => CallAsync(p => p.GetAppDetailAsync(appId, window, grain), cancellationToken);
+        => CallAsync(p => p.GetAppDetailAsync(appId, window, grain), nameof(AppDetailResult), IpcSchemaVersion.Query, cancellationToken);
 
     public Task<ConnectionListResult> GetConnectionsAsync(int appId, QueryWindow window, CancellationToken cancellationToken = default)
-        => CallAsync(p => p.GetConnectionsAsync(appId, window), cancellationToken);
+        => CallAsync(p => p.GetConnectionsAsync(appId, window), nameof(ConnectionListResult), IpcSchemaVersion.Query, cancellationToken);
 
     public Task<TrafficHistoryResult> GetTrafficHistoryAsync(QueryWindow window, TrafficGrain grain, CancellationToken cancellationToken = default)
-        => CallAsync(p => p.GetTrafficHistoryAsync(window, grain), cancellationToken);
+        => CallAsync(p => p.GetTrafficHistoryAsync(window, grain), nameof(TrafficHistoryResult), IpcSchemaVersion.Query, cancellationToken);
 
     public Task<DailyReportResult> GetDailyReportAsync(
         DateOnly date,
         AnchorMode anchor,
         DateOnly? anchorSpecificDate,
         CancellationToken cancellationToken = default)
-        => CallAsync(p => p.GetDailyReportAsync(date, anchor, anchorSpecificDate), cancellationToken);
+        => CallAsync(p => p.GetDailyReportAsync(date, anchor, anchorSpecificDate),
+            nameof(DailyReportResult), IpcSchemaVersion.DailyReport, cancellationToken);
 
     private async Task<T> CallAsync<T>(
         Func<IZenVizorIpc, Task<IpcEnvelope<T>>> work,
+        string payloadName,
+        int expectedMinSchemaVersion,
         CancellationToken cancellationToken)
     {
         var proxy = await EnsureProxyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var envelope = await work(proxy).ConfigureAwait(false);
-            return envelope.Payload;
+            // Floor-check the schema version: a service older than this UI
+            // build would return a v1 payload the v2 record can't deserialize
+            // cleanly. Surfacing IpcSchemaVersionException here lets the
+            // page's catch block render a "service mismatch" banner instead
+            // of a confusing "deserialization failed" stack.
+            return envelope.UnwrapWithSchemaCheck(payloadName, expectedMinSchemaVersion);
         }
         catch (Exception ex) when (IsConnectionLost(ex))
         {
