@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace ZenVizor.Attribution.Services;
 
@@ -15,7 +16,7 @@ internal static class NativeMethods
     public const int  ERROR_MORE_DATA              = 234;
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = false, SetLastError = true)]
-    public static extern IntPtr OpenSCManagerW(
+    public static extern SafeScmHandle OpenSCManagerW(
         string? lpMachineName,
         string? lpDatabaseName,
         uint dwDesiredAccess);
@@ -27,7 +28,7 @@ internal static class NativeMethods
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = false, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool EnumServicesStatusExW(
-        IntPtr hSCManager,
+        SafeScmHandle hSCManager,
         int InfoLevel,
         uint dwServiceType,
         uint dwServiceState,
@@ -58,5 +59,21 @@ internal static class NativeMethods
         public IntPtr lpServiceName;
         public IntPtr lpDisplayName;
         public SERVICE_STATUS_PROCESS ServiceStatusProcess;
+    }
+
+    /// <summary>
+    /// Deterministically closes an SCM handle via <c>CloseServiceHandle</c>.
+    /// Wrapping the raw <c>IntPtr</c> in a <see cref="SafeHandle"/> means an
+    /// exception between <c>OpenSCManager</c> and the manual close path can
+    /// no longer leak the handle.
+    /// </summary>
+    public sealed class SafeScmHandle : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        public SafeScmHandle() : base(ownsHandle: true) { }
+
+        protected override bool ReleaseHandle()
+        {
+            return CloseServiceHandle(handle);
+        }
     }
 }

@@ -84,78 +84,96 @@ public sealed class ScmServiceHostResolver : IServiceHostResolver
 
     private static Dictionary<int, IReadOnlyList<string>> EnumerateServiceHosts()
     {
-        var scm = OpenSCManagerW(null, null, SC_MANAGER_ENUMERATE_SERVICE);
-        if (scm == IntPtr.Zero)
+        using var scm = OpenSCManagerW(null, null, SC_MANAGER_ENUMERATE_SERVICE);
+        if (scm.IsInvalid)
         {
             throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenSCManager failed.");
         }
 
+        // Aggregate results across paginated calls. SCM returns ERROR_MORE_DATA
+        // when its buffer fills before draining the snapshot; we resume from
+        // lpResumeHandle until the last call returns success. Previously the
+        // resolver discarded the partial first page on the second probe call,
+        // losing services for high-PID machines (many concurrent services).
+        var result = new Dictionary<int, List<string>>();
+
+        uint bufferSize = 0;
+        IntPtr buffer = IntPtr.Zero;
+        uint resumeHandle = 0;
         try
         {
-            // First call to size the buffer.
-            uint bytesNeeded = 0;
-            uint servicesReturned = 0;
-            uint resumeHandle = 0;
-            var probed = EnumServicesStatusExW(
-                scm,
-                SC_ENUM_PROCESS_INFO,
-                SERVICE_WIN32,
-                SERVICE_STATE_ALL,
-                IntPtr.Zero,
-                0,
-                out bytesNeeded,
-                out servicesReturned,
-                ref resumeHandle,
-                null);
-
-            if (probed)
+            while (true)
             {
-                return new Dictionary<int, IReadOnlyList<string>>();
-            }
-            var err = Marshal.GetLastWin32Error();
-            if (err != ERROR_MORE_DATA)
-            {
-                throw new Win32Exception(err, "EnumServicesStatusEx sizing probe failed.");
-            }
-
-            var bufferSize = (int)bytesNeeded;
-            var buffer = Marshal.AllocHGlobal(bufferSize);
-            try
-            {
-                resumeHandle = 0;
+                uint bytesNeeded = 0;
+                uint servicesReturned = 0;
                 var ok = EnumServicesStatusExW(
                     scm,
                     SC_ENUM_PROCESS_INFO,
                     SERVICE_WIN32,
                     SERVICE_STATE_ALL,
                     buffer,
-                    (uint)bufferSize,
+                    bufferSize,
                     out bytesNeeded,
                     out servicesReturned,
                     ref resumeHandle,
                     null);
-                if (!ok)
+
+                var lastError = Marshal.GetLastWin32Error();
+
+                if (servicesReturned > 0)
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(),
-                        "EnumServicesStatusEx enumeration failed.");
+                    AppendPage(result, buffer, (int)servicesReturned);
                 }
 
-                return ParseServiceEntries(buffer, (int)servicesReturned);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                if (ok)
+                {
+                    // Drained: no more entries.
+                    break;
+                }
+
+                if (lastError == ERROR_MORE_DATA)
+                {
+                    // More entries waiting. Grow the buffer if SCM is telling
+                    // us this page needs more space (bytesNeeded > current
+                    // bufferSize); otherwise keep the same buffer and let the
+                    // resume handle move us forward.
+                    if (bytesNeeded > bufferSize)
+                    {
+                        if (buffer != IntPtr.Zero)
+                        {
+                            Marshal.FreeHGlobal(buffer);
+                            buffer = IntPtr.Zero;
+                        }
+                        bufferSize = bytesNeeded;
+                        buffer = Marshal.AllocHGlobal((int)bufferSize);
+                    }
+                    continue;
+                }
+
+                throw new Win32Exception(lastError, "EnumServicesStatusEx enumeration failed.");
             }
         }
         finally
         {
-            CloseServiceHandle(scm);
+            if (buffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
+
+        var sealed_ = new Dictionary<int, IReadOnlyList<string>>(result.Count);
+        foreach (var (pid, list) in result)
+        {
+            list.Sort(StringComparer.Ordinal);
+            sealed_[pid] = list;
+        }
+        return sealed_;
     }
 
-    private static Dictionary<int, IReadOnlyList<string>> ParseServiceEntries(IntPtr buffer, int count)
+    private static void AppendPage(Dictionary<int, List<string>> result, IntPtr buffer, int count)
     {
-        var result = new Dictionary<int, List<string>>();
+        if (buffer == IntPtr.Zero || count <= 0) return;
+
         var entrySize = Marshal.SizeOf<ENUM_SERVICE_STATUS_PROCESS>();
         for (var i = 0; i < count; i++)
         {
@@ -183,13 +201,5 @@ public sealed class ScmServiceHostResolver : IServiceHostResolver
             }
             list.Add(name);
         }
-
-        var sealed_ = new Dictionary<int, IReadOnlyList<string>>(result.Count);
-        foreach (var (pid, list) in result)
-        {
-            list.Sort(StringComparer.Ordinal);
-            sealed_[pid] = list;
-        }
-        return sealed_;
     }
 }

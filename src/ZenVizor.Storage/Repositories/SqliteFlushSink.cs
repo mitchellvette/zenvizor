@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using ZenVizor.Core.Aggregation;
+using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Observations;
 using ZenVizor.Core.Storage;
 
@@ -144,9 +145,9 @@ public sealed class SqliteFlushSink : IFlushSink
         insert.CommandText = """
             INSERT INTO apps
                 (image_path, image_name, publisher, signature_status, is_user_writable_path,
-                 first_seen, last_seen)
+                 path_class, first_seen, last_seen)
             VALUES
-                ($path, $name, $publisher, $sig, $userWritable, $now, $now);
+                ($path, $name, $publisher, $sig, $userWritable, $pathClass, $now, $now);
             SELECT last_insert_rowid();
             """;
         insert.Parameters.AddWithValue("$path", identity.ImagePath);
@@ -154,6 +155,7 @@ public sealed class SqliteFlushSink : IFlushSink
         insert.Parameters.AddWithValue("$publisher", (object?)identity.Publisher ?? DBNull.Value);
         insert.Parameters.AddWithValue("$sig", identity.SignatureStatus);
         insert.Parameters.AddWithValue("$userWritable", identity.IsUserWritablePath ? 1 : 0);
+        insert.Parameters.AddWithValue("$pathClass", identity.PathClass.ToStorageString());
         insert.Parameters.AddWithValue("$now", nowUnixMs);
         var newId = (int)(long)insert.ExecuteScalar()!;
         cache[cacheKey] = newId;

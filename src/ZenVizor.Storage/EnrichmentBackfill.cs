@@ -142,12 +142,14 @@ public sealed class EnrichmentBackfill
             UPDATE apps
             SET publisher = $publisher,
                 signature_status = $sig,
-                is_user_writable_path = $userWritable
+                is_user_writable_path = $userWritable,
+                path_class = $pathClass
             WHERE app_id = $id;
             """;
         cmd.Parameters.AddWithValue("$publisher", (object?)enrichment.Publisher ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$sig", enrichment.SignatureStatus);
         cmd.Parameters.AddWithValue("$userWritable", enrichment.IsUserWritablePath ? 1 : 0);
+        cmd.Parameters.AddWithValue("$pathClass", enrichment.PathClass.ToStorageString());
         cmd.Parameters.AddWithValue("$id", appId);
         cmd.ExecuteNonQuery();
     }

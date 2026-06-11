@@ -3,6 +3,9 @@ using ZenVizor.Attribution;
 using ZenVizor.Attribution.Paths;
 using ZenVizor.Core.Attribution;
 
+// Pull the PathClassification enum into the test namespace for terse usage.
+using static ZenVizor.Core.Attribution.PathClassification;
+
 namespace ZenVizor.Attribution.Tests;
 
 /// <summary>
@@ -76,8 +79,14 @@ public sealed class AppEnricherTests : IDisposable
         var first = enricher.Enrich(ImageFor(missing));
         var second = enricher.Enrich(ImageFor(missing));
 
-        first.Should().BeEquivalentTo(EnrichmentResult.Unchecked);
-        second.Should().BeEquivalentTo(EnrichmentResult.Unchecked);
+        // Signature is Unchecked (no file to verify) but the path classification
+        // is preserved — a rooted-but-missing path is still classified by the
+        // prefix matcher. Only basename-only paths (Bug 2) collapse to Unknown.
+        first.SignatureStatus.Should().Be("Unchecked");
+        first.Publisher.Should().BeNull();
+        first.IsUserWritablePath.Should().BeFalse();
+        first.PathClass.Should().Be(PathClassification.System);
+        second.Should().BeEquivalentTo(first);
         verifier.CallCount.Should().Be(0); // never even invoked
         enricher.CacheCount.Should().Be(0);
     }

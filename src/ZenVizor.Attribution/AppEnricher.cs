@@ -74,11 +74,27 @@ public sealed class AppEnricher : IAppEnricher
     {
         ArgumentNullException.ThrowIfNull(image);
 
+        // Classify the path BEFORE we try to stat it. A basename-only image
+        // (e.g. ETW handed us "svchost.exe" with no directory) is
+        // PathClassification.Unknown, which must survive even when we can't
+        // verify the signature. Otherwise the Phase-6 alert reads the
+        // legacy is_user_writable_path=0 column as "safe".
+        var pathClass = _pathClassifier.Classify(image.ImagePath);
+
         var key = TryReadCacheKey(image.ImagePath);
         if (key is null)
         {
-            // Can't stat the file — Unchecked, don't cache so a retry next time succeeds.
-            return EnrichmentResult.Unchecked;
+            // Can't stat the file — Unchecked signature, but the path
+            // classification is preserved (Unknown for basename-only,
+            // System / UserWritable for stat-denied rooted paths).
+            // Not cached so a retry next time can succeed.
+            return new EnrichmentResult(
+                Publisher: null,
+                SignatureStatus: "Unchecked",
+                IsUserWritablePath: pathClass == PathClassification.UserWritable)
+            {
+                PathClass = pathClass,
+            };
         }
 
         lock (_gate)
@@ -90,11 +106,14 @@ public sealed class AppEnricher : IAppEnricher
         }
 
         var sig = _signatureVerifier.Verify(image.ImagePath);
-        var isUserWritable = _pathClassifier.IsUserWritable(image.ImagePath);
+        var isUserWritable = pathClass == PathClassification.UserWritable;
         var result = new EnrichmentResult(
             Publisher: sig.Publisher,
             SignatureStatus: sig.Status,
-            IsUserWritablePath: isUserWritable);
+            IsUserWritablePath: isUserWritable)
+        {
+            PathClass = pathClass,
+        };
 
         // Don't cache Unchecked results — those are transient (file locked etc.)
         // and we want a retry on the next session-open for that binary.

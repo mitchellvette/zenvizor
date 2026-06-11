@@ -44,7 +44,7 @@ public sealed class MigratorTests : IDisposable
 
         var applied = migrator.Migrate(_dbPath);
 
-        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4 });
+        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5 });
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class MigratorTests : IDisposable
             "SELECT version, name FROM schema_migrations ORDER BY version;",
             r => (Version: r.GetInt32(0), Name: r.GetString(1)));
 
-        rows.Should().HaveCount(4);
+        rows.Should().HaveCount(5);
         rows[0].Version.Should().Be(1);
         rows[0].Name.Should().Be("initial");
         rows[1].Version.Should().Be(2);
@@ -90,6 +90,8 @@ public sealed class MigratorTests : IDisposable
         rows[2].Name.Should().Be("phase4_rollup_unique");
         rows[3].Version.Should().Be(4);
         rows[3].Name.Should().Be("phase4_rollup_backfill");
+        rows[4].Version.Should().Be(5);
+        rows[4].Name.Should().Be("phase2_path_class");
     }
 
     [Fact]

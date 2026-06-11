@@ -269,6 +269,62 @@ public sealed class WritePathRepositoriesTests : IDisposable
     }
 
     [Fact]
+    public void Flush_PathClass_DefaultIsSystem_WhenIdentityDoesNotOverride()
+    {
+        // Positional-ctor AppIdentity (Phase 2 tests + back-compat callers)
+        // produces PathClass=System. Persisted accordingly.
+        var identity = new AppIdentity(@"C:\Programs\sys.exe", "sys.exe", null, "Signed", false);
+        _sink.Flush(Batch(newSessions: new[] { new NewSessionEntry(100, identity, 500, null) }));
+
+        var apps = QueryAll("SELECT path_class FROM apps;");
+        apps.Should().ContainSingle();
+        apps[0]["path_class"].Should().Be("System");
+    }
+
+    [Fact]
+    public void Flush_PathClass_PersistsUnknownForBasenameOnlyAttribution()
+    {
+        // Bug-2 regression gate. A basename-only image (ETW gave us only
+        // "svchost.exe", no full path) must land with path_class='Unknown'
+        // so the Phase-6 alert can't read it as a safe System folder.
+        var identity = new AppIdentity(
+            ImagePath: "svchost.exe",
+            ImageName: "svchost.exe",
+            Publisher: null,
+            SignatureStatus: "Unchecked",
+            IsUserWritablePath: false)
+        {
+            PathClass = ZenVizor.Core.Attribution.PathClassification.Unknown,
+        };
+
+        _sink.Flush(Batch(newSessions: new[] { new NewSessionEntry(100, identity, 500, null) }));
+
+        var apps = QueryAll("SELECT path_class, signature_status FROM apps;");
+        apps.Should().ContainSingle();
+        apps[0]["path_class"].Should().Be("Unknown");
+        apps[0]["signature_status"].Should().Be("Unchecked");
+    }
+
+    [Fact]
+    public void Flush_PathClass_PersistsUserWritableExplicitly()
+    {
+        var identity = new AppIdentity(
+            ImagePath: @"C:\Users\alice\AppData\Local\Temp\dropper.exe",
+            ImageName: "dropper.exe",
+            Publisher: null,
+            SignatureStatus: "Unsigned",
+            IsUserWritablePath: true)
+        {
+            PathClass = ZenVizor.Core.Attribution.PathClassification.UserWritable,
+        };
+
+        _sink.Flush(Batch(newSessions: new[] { new NewSessionEntry(100, identity, 500, null) }));
+
+        var apps = QueryAll("SELECT path_class FROM apps;");
+        apps[0]["path_class"].Should().Be("UserWritable");
+    }
+
+    [Fact]
     public void Flush_UnsignedFromUserWritablePath_StoresAlertWorthyShape()
     {
         // The exact data shape Phase 6's alert rule will read. Phase 2's job is

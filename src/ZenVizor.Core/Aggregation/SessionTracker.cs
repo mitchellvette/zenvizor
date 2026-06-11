@@ -338,7 +338,10 @@ public sealed class SessionTracker
             ImageName: image.ImageName,
             Publisher: enrichment.Publisher,
             SignatureStatus: enrichment.SignatureStatus,
-            IsUserWritablePath: enrichment.IsUserWritablePath);
+            IsUserWritablePath: enrichment.IsUserWritablePath)
+        {
+            PathClass = enrichment.PathClass,
+        };
 
     private static string? FormatHostedServices(IReadOnlyList<string>? services)
     {

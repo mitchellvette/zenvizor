@@ -1,3 +1,5 @@
+using ZenVizor.Core.Attribution;
+
 namespace ZenVizor.Core.Storage;
 
 /// <summary>
@@ -15,4 +17,16 @@ public sealed record AppIdentity(
     string ImageName,
     string? Publisher,
     string SignatureStatus,
-    bool IsUserWritablePath);
+    bool IsUserWritablePath)
+{
+    /// <summary>
+    /// Three-state path classification persisted to <c>apps.path_class</c>.
+    /// Init-only with a <see cref="PathClassification.System"/> default so
+    /// positional-ctor callers (mostly tests) keep compiling; the AppEnricher
+    /// / SessionTracker pipeline sets it explicitly via <c>with</c>.
+    /// Bug-2 follow-up: distinguishes "we know this is in a system folder"
+    /// from "we have no idea where this binary lives" (basename-only ETW
+    /// attribution). The latter MUST NOT collapse to <c>System</c> downstream.
+    /// </summary>
+    public PathClassification PathClass { get; init; } = PathClassification.System;
+}
