@@ -226,7 +226,7 @@ Expand the page Grid to 6 rows:
 
 - Card on canonical metal-card recipe: `metal.card` + `border.card` + `shadow.card` + `radius.card`.
 - Card header strip: `"Top apps"` (left, `text.body.strong`) + right-aligned caption `"ranked by total bytes · top 10"` (`text.caption text.secondary`).
-- DataGrid carries `style.datagrid.compact` (row 32, padding 12,8) — same vocabulary as Per-App.
+- DataGrid carries `style.datagrid.compact` (row 32, padding 12,0 since the 2026-06-11 descender fix) — same vocabulary as Per-App.
 - Columns: App / Publisher / Signature / Up / Down + a trailing zero-width hover-chevron column.
 - App cell: small icon tile (`accent.subtle` background) + glyph (Globe24 / Home24 / Shield20 — placeholder until app-icon IPC field lands) + `ImageName` text.
 - Publisher: `cell.body.secondary.trim`.

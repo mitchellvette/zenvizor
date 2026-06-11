@@ -290,7 +290,9 @@ spacing feels too airy.
 | `density.row.default`  | 28 px | Standard DataGrid rows         |
 | `density.row.compact`  | 32 px | Data-dense DataGrid rows       |
 
-Compact cell padding: `12,8`. Compact font size: `font.size.body` (14).
+Compact cell padding: `12,0` (horizontal-only — vertical padding in a
+fixed-height row shrinks the content slot and WPF layout-clips
+descenders). Compact font size: `font.size.body` (14).
 
 Apply compact on: Per-App `AppsGrid`, App Detail `ConnectionsGrid`,
 App Detail `SessionsGrid`, Reports `TopAppsGrid` (the Top Apps grid

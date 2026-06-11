@@ -588,11 +588,22 @@ The **compact** variant is the one to apply on those grids.
 
 The compact row was originally 22 px; bumped to 32 in the Per-App polish
 (June 2026) because 22 was too tight at 14 px body — text crowded the
-cell edges and headers had no visible breathing room. Cell padding
-matched: was `6,2`, now `12,8`.
+cell edges and headers had no visible breathing room.
+
+Cell padding is **horizontal-only** (`12,0`, June 2026 descender fix).
+Rows are fixed-height, so vertical centering comes from the cell
+template's `ContentPresenter`; vertical cell padding only shrinks the
+content slot, and once the slot is smaller than the cell TextBlock's
+desired height WPF layout-clips the text (ink sheared at the slot edge —
+this was the recurring Per-App descender-clipping bug). Cell text styles
+pair with this via `LineHeight="Auto"` (natural font metrics, not the
+21 px rhythm box); the mono cell style adds `Padding="0,3,0,0"` to align
+Overpass Mono's baseline with Urbanist's across a row. See the comments
+on `style.datagrid.compact` in `DesignTokens.xaml` and `cell.body.trim`
+in `PerAppPage.xaml` for the measured numbers.
 
 A pre-built compact style is exported as `style.datagrid.compact` and sets
-`RowHeight`, `MinRowHeight`, `FontSize`, and cell `Padding="12,8"`:
+`RowHeight`, `MinRowHeight`, `FontSize`, and cell `Padding="12,0"`:
 
 ```xml
 <DataGrid Style="{StaticResource style.datagrid.compact}" ... />

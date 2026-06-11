@@ -73,8 +73,10 @@
         in the Per-App polish 2026-06-06 because 22 was too tight at 14px
         body. CSS update needed.)
      style.datagrid.compact
-        cell Padding         12,8              6,2                   app-leads
-       (Same Per-App polish round; CSS still documents 6,2.)
+        cell Padding         12,0              6,2                   app-leads
+       (Per-App polish set 12,8; the 2026-06-11 descender fix dropped the
+        vertical component — vertical cell padding shrinks the content slot
+        and WPF layout-clips descenders. CSS still documents 6,2.)
      ── Chart series ──
      chart.upSeries         #6D3FD1 light /    #6D3FD1 light /       synced (brand)
                             #9A72F0 dark       #9A72F0 dark

@@ -16,45 +16,50 @@
               Publisher overrides Foreground to text.secondary via the derived
               style below. Both carry ellipsis trimming.
 
-              LineStackingStrategy=MaxHeight overrides text.body's
-              BlockLineHeight setting. BlockLineHeight treats LineHeight (21)
-              as the exact line-box height and aligns the font's declared
-              descender metric to the bottom of that box — but Urbanist's
-              actual ink for g/p/y/q extends a couple px past the declared
-              descender, so the bottom of those glyphs gets clipped inside
-              the TextBlock itself (independent of cell padding or row
-              height). MaxHeight uses the font's natural baseline math,
-              which leaves the ink fully within the line box. Overridden
-              per-style here (not on text.body globally) so the rhythm
-              guarantee elsewhere — Dashboard talkers, status cards, page
-              titles — is unchanged.  -->
+              LineHeight=Auto (NaN) overrides text.body's LineHeight=21 so
+              the line box collapses to Urbanist's natural metrics: 16.8px
+              line box, baseline 13.3px from line-box top, descender ink
+              ending at exactly 16.8px (flush with the line-box bottom).
+              Grid cells beat to the fixed row height, not to text rhythm,
+              so the 21px rhythm guarantee is meaningless here — and forcing
+              it required compensating Padding hacks that repeatedly clipped
+              descenders. With Auto, the centered 16.8px block in the 32px
+              row puts the baseline at y≈20.9, which centers the cap-height
+              band exactly (matches how the eye judges "vertically
+              centered": descenders are perceived as hanging below the
+              text, not as part of its body) and leaves ~7.6px of real
+              clearance above and below the ink.
+
+              The historical clipping was never the line box being too
+              short — it was the cell's old vertical Padding (12,8)
+              shrinking the ContentPresenter slot to 16px while the
+              TextBlock wanted 27px, which triggers WPF's layout clip
+              (applies whenever desiredSize > arrange slot, regardless of
+              ClipToBounds). See style.datagrid.compact in
+              DesignTokens.xaml. Keep cell TextBlock desired height ≤
+              rowHeight − 2·cellPadV or descenders die at the slot edge.  -->
         <Style x:Key="cell.body.trim" TargetType="TextBlock" BasedOn="{StaticResource text.body}">
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
-            <!--  Asymmetric Padding (top 5, bottom 1) compensates for the
-                  visual offset MaxHeight strategy introduces: the line box
-                  is top-anchored inside the TextBlock (baseline at natural
-                  ascent measured from line-box top), so symmetric padding
-                  would leave the visible ink sitting ~2 px above the
-                  TextBlock's center. Top=5 / bottom=1 nudges the line box
-                  down so the visible text reads centered in the cell. Top
-                  still gives 5 px above for ascender ink overshoot; 5 px
-                  slack inside the line box + 1 px below covers descender
-                  overshoot.  -->
-            <Setter Property="Padding" Value="0,5,0,1" />
+            <Setter Property="LineHeight" Value="Auto" />
         </Style>
         <Style x:Key="cell.body.secondary.trim" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
             <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
         </Style>
         <!--  Up/Down cells: monospaced digit alignment, right-aligned within
-              the column. text.mono sets FontFamily only; size comes from the
-              compact DataGrid style. MaxHeight strategy: see cell.body.trim.  -->
+              the column. LineHeight=Auto: see cell.body.trim. Padding top 3
+              aligns BASELINES across the row's two fonts: Overpass Mono's
+              natural metrics (17.7px line, baseline 12.36px from top)
+              differ from Urbanist's (16.8 / 13.3), so centered with no
+              padding the mono baseline lands at row y≈19.5 while the
+              Urbanist columns sit at ≈20.9 — visibly misaligned within a
+              single row. Top=3 shifts the mono baseline to ≈21.0, aligning
+              it with the text columns and centering the digit band.  -->
         <Style x:Key="cell.mono.right" TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
-            <Setter Property="Padding" Value="0,5,0,1" />
+            <Setter Property="LineHeight" Value="Auto" />
+            <Setter Property="Padding" Value="0,3,0,0" />
         </Style>
         <!--  Column header — BasedOn Wpf.Ui's default so the sort-direction
               indicator (the brand-violet arrow that flips Asc/Desc) is
@@ -301,7 +306,7 @@
               metal.card is opaque (LinearGradientBrush, never translucent)
               so text legibility on Mica isn't wallpaper-dependent. The
               DataGrid carries the compact density style (row 32,
-              padding 12,8). Alternating rows pick up surface.subtle.alt
+              padding 12,0). Alternating rows pick up surface.subtle.alt
               (token rename — was the raw SubtleFillColorTertiaryBrush key).
 
               Bottom Padding=4 gives a small buffer so the last row's text

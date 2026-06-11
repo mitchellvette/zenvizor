@@ -72,15 +72,17 @@
 
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
-        <!--  Padding asymmetry + LineStackingStrategy explained in the
-              PerAppPage equivalents — Urbanist's ink overshoots the
-              declared descender slightly, and BlockLineHeight + symmetric
-              padding leaves glyphs clipping the cell's bottom edge.  -->
+        <!--  LineHeight=Auto + the mono baseline-alignment Padding are
+              explained in the PerAppPage equivalents: natural font metrics
+              instead of the 21px rhythm line box (grid cells beat to row
+              height, not text rhythm), and never any vertical cell padding
+              — a content slot smaller than the TextBlock's desired height
+              triggers WPF's layout clip and shears descenders (see
+              style.datagrid.compact in DesignTokens.xaml).  -->
         <Style x:Key="cell.body.trim" TargetType="TextBlock" BasedOn="{StaticResource text.body}">
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
-            <Setter Property="Padding" Value="0,5,0,1" />
+            <Setter Property="LineHeight" Value="Auto" />
         </Style>
         <Style x:Key="cell.body.secondary.trim" TargetType="TextBlock" BasedOn="{StaticResource cell.body.trim}">
             <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
@@ -88,8 +90,8 @@
         <Style x:Key="cell.mono.right" TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="LineStackingStrategy" Value="MaxHeight" />
-            <Setter Property="Padding" Value="0,5,0,1" />
+            <Setter Property="LineHeight" Value="Auto" />
+            <Setter Property="Padding" Value="0,3,0,0" />
         </Style>
         <!--  Foreground-only treatment for Signature — never pills, never
               backgrounds (brief §8.2 lock). Unsigned + Invalid both signal
@@ -1335,15 +1337,14 @@
                 <!--  RowHeight=56 + MinRowHeight=56 override style.datagrid.compact's
                       32 px floor specifically for Reports. Sized to the
                       tallest case: the App cell's two-line layout (name +
-                      mono secondary path for unsigned rows) needs
-                      21 + 2 + 17 = 40 px content area, and CellStyle
-                      Padding=12,8 adds 16 px vertical → 56 fits exactly.
-                      Single-line rows at 56 carry a 28 px tile in a 40 px
-                      content area (6 px breathing top/bottom) — still
-                      reads compact, not airy. Fixed height (not variable
-                      RowHeight=NaN) keeps the grid visually uniform.
-                      PerApp keeps its 32 px row — the global style is
-                      untouched.  -->
+                      mono secondary path for unsigned rows, ~36 px at
+                      natural line metrics) plus breathing room around the
+                      28 px icon tile. Cell padding is horizontal-only (see
+                      style.datagrid.compact), so content centers in the
+                      full 56 px via the cell's ContentPresenter. Fixed
+                      height (not variable RowHeight=NaN) keeps the grid
+                      visually uniform. PerApp keeps its 32 px row — the
+                      global style is untouched.  -->
                 <DataGrid x:Name="TopAppsGrid"
                           Style="{StaticResource style.datagrid.compact}"
                           RowHeight="56"

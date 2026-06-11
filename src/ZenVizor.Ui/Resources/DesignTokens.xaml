@@ -461,9 +461,26 @@
 
           Row height tuning (Per-App polish, 2026-06-06): the original 22px
           compact target was too tight at 14px body — text crowded the cell
-          edges and headers needed visible breathing room. Bumped to 32px;
-          cell Padding bumped from 6,2 to 12,8. Default stays at 28 — not
-          currently used at any call-site, kept as a reference value.
+          edges and headers needed visible breathing room. Bumped to 32px.
+          Default stays at 28 — not currently used at any call-site, kept
+          as a reference value.
+
+          Cell Padding is HORIZONTAL-ONLY (12,0) — never add vertical
+          padding here. Rows are fixed-height, so vertical placement comes
+          entirely from the ContentPresenter's VerticalAlignment=Center;
+          vertical padding buys nothing visually but SHRINKS the content
+          slot (rowHeight − 2·padV). The moment that slot drops below the
+          cell TextBlock's desired height, WPF applies its layout clip
+          (ArrangeCore sets NeedsClipBounds whenever desiredSize > arrange
+          slot — ClipToBounds="False" does NOT opt out of this) and glyph
+          ink is sheared off at the slot edge. The recurring Per-App
+          descender clipping (bottom of g/p/q/y missing; fixed 2026-06-11)
+          was exactly this: Padding=12,8 left a 16px slot for a 27px-tall
+          TextBlock, and the clip plane landed mid-descender. Measured
+          Urbanist@14px facts for future tuning: natural line box 16.8px,
+          baseline 13.3px from line-box top, descender ink ends at exactly
+          16.8px — flush with the line-box bottom, zero slack — so ANY
+          clip plane at or above the line-box bottom eats descenders.
 
           IMPORTANT: the RowStyle + CellStyle below own the hover /
           selection / pill chrome explicitly. Earlier attempts to BasedOn
@@ -493,7 +510,7 @@
         <Setter Property="CellStyle">
             <Setter.Value>
                 <Style TargetType="DataGridCell">
-                    <Setter Property="Padding" Value="12,8" />
+                    <Setter Property="Padding" Value="12,0" />
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="BorderBrush" Value="Transparent" />
                     <Setter Property="BorderThickness" Value="0" />
