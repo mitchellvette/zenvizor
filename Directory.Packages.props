@@ -5,6 +5,35 @@
     <PackageVersion Include="Nerdbank.Streams" Version="2.11.79" />
   </ItemGroup>
 
+  <ItemGroup Label="IPC transitive vulnerability pins">
+    <!-- CORRECTION (not suppression) for GHSA-hv8m-jj95-wg3x: MessagePack
+         2.5.187 has a CVSS 8.2 high-severity LZ4 decompression OOB read
+         vulnerability. StreamJsonRpc 2.21.10's .nuspec declares
+         "MessagePack >= 2.5.187" unconditionally for its optional
+         MessagePack formatter path; we don't construct that formatter
+         (our wire is HeaderDelimitedMessageHandler JSON via
+         ZenVizorRpcHost.Host / ZenVizorRpcClient.Attach) and don't import
+         a single MessagePack API anywhere in the codebase, so the
+         vulnerable code path (Lz4Block / Lz4BlockArray decompression) is
+         unreachable today — but the package version in the graph still
+         carries the patch obligation.
+
+         Pin to MessagePack 2.5.301 (the patched 2.x release per the
+         advisory) via Central Package Management + transitive pinning
+         (CentralPackageTransitivePinningEnabled in Directory.Build.props).
+         Stays on the same minor as StreamJsonRpc's floor — ABI-compatible
+         with the assembly StreamJsonRpc loads at runtime. v3.x is not used
+         because it crosses a major boundary and the LZ4 codec moved to a
+         separate package; staying on 2.5.x is the conservative diff.
+
+         MessagePack.Annotations is pinned in lockstep — same release train,
+         compile-time-only attribute carriers, but kept aligned so a future
+         analyzer query against the assets graph reports a single coherent
+         MessagePack version. -->
+    <PackageVersion Include="MessagePack" Version="2.5.301" />
+    <PackageVersion Include="MessagePack.Annotations" Version="2.5.301" />
+  </ItemGroup>
+
   <ItemGroup Label="Storage">
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
   </ItemGroup>
