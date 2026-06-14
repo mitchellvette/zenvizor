@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
     <!--
         ZenVizor design tokens. The semantic-name keys (e.g. surface.card,
@@ -127,6 +128,44 @@
          here renders as a translucent accent fallback for non-brand-dict
          sessions. -->
     <SolidColorBrush x:Key="accent.subtle"    Color="{DynamicResource SystemAccentColorPrimary}" Opacity="0.10" />
+
+    <!--  Accent fill gradient (filled primary buttons)  ======================
+          Metallic violet button face — three-stop pattern: catch-light edge
+          band at top (violet-400), main face below (violet-600 = accent.fill),
+          darker bottom shade (violet-700). Constant in BOTH themes because
+          accent.fill is constant brand violet (violet-600) AA-safe for white
+          text on either theme. Paired with .hover and .pressed variants that
+          shift one stop lighter / darker respectively, mirroring the brand
+          CSS accent-grad / accent-grad-hover variables.
+
+          USAGE: apply via Style="{StaticResource style.button.accent.fill}"
+          on a ui:Button. The Style sets Background = metal.accent.fill,
+          Foreground = text.on-accent, BorderThickness = 0, and via
+          Style.Resources re-publishes ButtonBackgroundPointerOver /
+          ButtonBackgroundPressed / ButtonForegroundPointerOver / Pressed /
+          ButtonBorderBrushPointerOver so the Wpf.Ui button template picks
+          them up at hover/press without any call-site Resources block.
+
+          Two consumers today: ReportsPage Export button (the original
+          author of these stops) and AlertsPage filtered-empty Reset CTA.
+          Lifted from page-local to canonical per the original ReportsPage
+          comment ("promoted to DesignTokens.xaml if it spreads to a second
+          consumer"). -->
+    <LinearGradientBrush x:Key="metal.accent.fill" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0"   Color="#9A72F0" />
+        <GradientStop Offset="0.1" Color="#6D3FD1" />
+        <GradientStop Offset="1"   Color="#561FB0" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="metal.accent.fill.hover" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0"   Color="#B59AF4" />
+        <GradientStop Offset="0.1" Color="#8254E6" />
+        <GradientStop Offset="1"   Color="#6D3FD1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="metal.accent.fill.pressed" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0"   Color="#8254E6" />
+        <GradientStop Offset="0.1" Color="#561FB0" />
+        <GradientStop Offset="1"   Color="#461D7C" />
+    </LinearGradientBrush>
 
     <!--  Status  ==============================================================
           Generic status semantics (success/caution/critical/neutral) plus
@@ -447,6 +486,76 @@
         <Setter Property="LineHeight" Value="21" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <!--  Motion  ===============================================================
+          Animation primitives — durations and easing functions. Theme-
+          invariant (motion is not a visual surface), so StaticResource at
+          call-sites is fine; HighContrast.xaml does NOT override these
+          (consumers gate animation on SystemParameters.ClientAreaAnimation
+          at the code-behind layer, which is the canonical Windows path).
+
+          motion.duration.arrival (600ms) — the one-shot pulse-ring duration
+          for nav-rail badge arrival cues. Long enough to read across the
+          full nav rail at the badge's small size; dur.slow (320ms) is too
+          quick to track at that scale. Source: alerts mockup page 14.
+
+          motion.duration.fast (200ms) — the item-level ring-glow cue when
+          a new alert inserts at the top of the Alerts feed. Light-and-fast
+          per the primer; one-shot, never looped.
+
+          motion.ease.glide (CubicEase EaseOut) — the brand-aerodynamic
+          ease curve. Matches the CSS ease-glide variable cubic-bezier(0.22,
+          0.61, 0.36, 1) closely enough at audit-level; CubicEase EaseOut
+          is the closest stock WPF easing to that curve.
+
+          USAGE: durations are sys:TimeSpan (Storyboard.Duration takes a
+          Duration struct, but C# implicit conversion from TimeSpan does
+          the right thing when assigning in code-behind:
+            var dur = (TimeSpan)Application.Current.Resources["motion.duration.arrival"];
+            anim.Duration = dur;  // implicit TimeSpan -> Duration). -->
+
+    <sys:TimeSpan x:Key="motion.duration.arrival">0:0:0.6</sys:TimeSpan>
+    <sys:TimeSpan x:Key="motion.duration.fast">0:0:0.2</sys:TimeSpan>
+    <CubicEase x:Key="motion.ease.glide" EasingMode="EaseOut" />
+
+    <!--  style.button.accent.fill  ============================================
+          Canonical Style for filled primary (accent) buttons. Background
+          paints metal.accent.fill (the violet three-stop gradient);
+          hover/pressed states paint the matching .hover / .pressed
+          gradients via Style.Resources override of Wpf.Ui's WinUI 3 brush
+          keys (ButtonBackgroundPointerOver / Pressed). Foreground locks
+          to text.on-accent (white) across base / hover / pressed so the
+          label stays readable on every violet face.
+
+          BasedOn the implicit ui:Button style so Wpf.Ui's button chrome
+          (corner radius, padding defaults, focus visuals) is inherited;
+          only the brush-key overrides + background/foreground/border
+          setters change.
+
+          Consumers: ReportsPage ExportButton; AlertsPage filtered-empty
+          Reset CTA (Phase 6). Promoted from ReportsPage local Resources
+          on 2026-06-13 per its original author's "second-consumer
+          promotion" note. -->
+    <Style x:Key="style.button.accent.fill" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+        <Style.Resources>
+            <LinearGradientBrush x:Key="ButtonBackgroundPointerOver" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0"   Color="#B59AF4" />
+                <GradientStop Offset="0.1" Color="#8254E6" />
+                <GradientStop Offset="1"   Color="#6D3FD1" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="ButtonBackgroundPressed" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0"   Color="#8254E6" />
+                <GradientStop Offset="0.1" Color="#561FB0" />
+                <GradientStop Offset="1"   Color="#461D7C" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+            <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+        </Style.Resources>
+        <Setter Property="Background" Value="{DynamicResource metal.accent.fill}" />
+        <Setter Property="Foreground" Value="{DynamicResource text.on-accent}" />
+        <Setter Property="BorderThickness" Value="0" />
     </Style>
 
     <!--  Density  =============================================================

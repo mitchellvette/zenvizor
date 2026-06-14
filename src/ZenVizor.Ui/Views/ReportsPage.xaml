@@ -29,22 +29,11 @@
               ships the same value (radius.pill).  -->
         <CornerRadius x:Key="delta.chip.radius">9999</CornerRadius>
 
-        <!--  Metallic violet button surface — same three-stop pattern as
-              metal.control (highlight catch-light at top, main face below,
-              darker bottom), shifted into the brand violet ramp. Constant in
-              both themes because accent.fill is constant brand violet
-              (violet-600) AA-safe for white text on either theme. Page-local
-              rather than a global token: this is the Export button's
-              treatment; if it spreads to a second consumer it can be
-              promoted to DesignTokens.xaml + BrandAccent.{Light,Dark}.xaml.
-                * #9A72F0 (violet-400) — catch-light edge band at offset 0
-                * #6D3FD1 (violet-600 / accent.fill) — main face at offset 0.10
-                * #561FB0 (violet-700) — bottom shade at offset 1.00  -->
-        <LinearGradientBrush x:Key="metal.accent.fill" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Offset="0"   Color="#9A72F0" />
-            <GradientStop Offset="0.1" Color="#6D3FD1" />
-            <GradientStop Offset="1"   Color="#561FB0" />
-        </LinearGradientBrush>
+        <!--  metal.accent.fill (the violet button face gradient) lifted to
+              DesignTokens.xaml on 2026-06-13 when the AlertsPage Reset CTA
+              became the second consumer. The Style now lives canonically as
+              style.button.accent.fill; this page's Export button references
+              it directly via Style="{StaticResource ...}". -->
 
         <!--  Brand menu-item Style. BasedOn the implicit MenuItem type style
               so Wpf.Ui's hover / selection / focus chrome is inherited
@@ -702,64 +691,29 @@
                     </ui:Button>
                 </StackPanel>
 
-                <!--  Export button — metallic violet face (metal.accent.fill,
-                      page-local LinearGradientBrush). Icons inherit
-                      Foreground from the button (text.on-accent → white).
-                      The inline TextBlock needs EXPLICIT Foreground because
+                <!--  Export button — canonical filled-accent treatment via
+                      style.button.accent.fill (DesignTokens.xaml). The Style
+                      carries the violet metal.accent.fill gradient, the
+                      hover/pressed state brush overrides, and the
+                      Foreground / BorderThickness setters. The inline
+                      TextBlock still needs EXPLICIT Foreground because
                       DesignTokens.xaml's implicit `<Style TargetType="TextBlock">`
-                      hard-sets Foreground=TextFillColorPrimaryBrush; that
-                      style wins over inherited Foreground and would render
-                      the label black on the violet face. ArrowDownload24 is
-                      the brief-aligned export glyph (the original
-                      ArrowExportLtr24 reads as a less obvious export icon).
-                      The flyout is right-anchored via Placement=Custom +
-                      RightAnchoredBelow callback (set in code-behind) so the
-                      menu's right edge aligns with the button's right edge,
-                      keeping it inside the window when the chrome cluster
-                      sits near the right edge.  -->
+                      hard-sets Foreground=TextFillColorPrimaryBrush; the
+                      Style on the button doesn't reach descendant TextBlocks
+                      via inheritance through that implicit style.
+                      ArrowDownload24 is the brief-aligned export glyph (the
+                      original ArrowExportLtr24 reads as a less obvious
+                      export icon). The flyout is right-anchored via
+                      Placement=Custom + RightAnchoredBelow callback (set
+                      in code-behind) so the menu's right edge aligns with
+                      the button's right edge.  -->
                 <ui:Button x:Name="ExportButton"
+                           Style="{StaticResource style.button.accent.fill}"
                            Margin="0,12,0,0"
                            Height="32"
                            Padding="14,0"
                            HorizontalAlignment="Right"
-                           Background="{DynamicResource metal.accent.fill}"
-                           Foreground="{DynamicResource text.on-accent}"
-                           BorderThickness="0"
                            Click="OnExportClick">
-                    <!--  WinUI 3 brush-key overrides — Wpf.Ui's ui:Button
-                          template binds its hover/pressed state Background
-                          to ButtonBackgroundPointerOver / Pressed (DynamicResource
-                          in the template, precedence level 4 — beats Style
-                          triggers at level 6). Overriding the keys at the
-                          element's local Resources scope wins via WPF
-                          property precedence and re-tunes the hover + pressed
-                          fills without touching the template. This is the
-                          documented WinUI 3 / Wpf.Ui pattern for state-brush
-                          retuning.
-
-                          Stops mirror the brand CSS:
-                            accent-grad-hover  = violet-300 → violet-500 → violet-600
-                            accent-grad-pressed = violet-500 → violet-700 → violet-800
-
-                          ButtonForegroundPointerOver / Pressed locked to white
-                          so the label + icons stay readable on the violet hover/
-                          pressed faces. ButtonBorderBrushPointerOver
-                          transparent — the gradient is the only visual edge.  -->
-                    <ui:Button.Resources>
-                        <LinearGradientBrush x:Key="ButtonBackgroundPointerOver" StartPoint="0,0" EndPoint="0,1">
-                            <GradientStop Offset="0"   Color="#B59AF4" />
-                            <GradientStop Offset="0.1" Color="#8254E6" />
-                            <GradientStop Offset="1"   Color="#6D3FD1" />
-                        </LinearGradientBrush>
-                        <LinearGradientBrush x:Key="ButtonBackgroundPressed" StartPoint="0,0" EndPoint="0,1">
-                            <GradientStop Offset="0"   Color="#8254E6" />
-                            <GradientStop Offset="0.1" Color="#561FB0" />
-                            <GradientStop Offset="1"   Color="#461D7C" />
-                        </LinearGradientBrush>
-                        <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
-                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
-                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
-                    </ui:Button.Resources>
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" />
                         <TextBlock Text="Export"

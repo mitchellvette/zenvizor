@@ -1,0 +1,89 @@
+<Page x:Class="ZenVizor.Ui.Views.AlertsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Background="{DynamicResource ApplicationBackgroundBrush}"
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+
+    <!--  Interim placeholder — brief §18a. Ships in the polish interlude
+          between now and Phase 6 so the Alerts nav-rail item doesn't open
+          to an unfinished surface next to the four polished screens
+          (Dashboard, Per-App, History, Reports).
+
+          Layout (centered, no scroll):
+            * 96px metal-recipe medallion (metal.control + border.card +
+              shadow.sm + radius.md — the Per-App "info-card" recipe per
+              memory project_canonical_card_treatment.md, established
+              2026-06-06). The metal.control gradient already carries a
+              baked-in catch-light at offset 0.05 — no separate sheen
+              overlay needed, matching the mockup-vs-tokens reconciliation
+              for this brief.
+            * Alert48 SymbolIcon centered, text.tertiary foreground (a
+              deliberately de-emphasized hero glyph that says "ready for
+              content, not the content").
+            * Title — text.title.large "Alerts".
+            * Body — text.body.large, text.secondary, the "Coming in
+              Phase 6" framing copy verbatim from the brief.
+            * Caption — text.caption, text.tertiary, the additional
+              "first alert wired up" sentence.
+
+          Tone: deliberate "this is coming," not a working layout with
+          dummy data. The full Phase 6 functional layout (six-type
+          heterogeneous feed, filter bar, dismiss flow, live arrival)
+          replaces this XAML when Phase 6 lands.  -->
+    <Grid>
+        <StackPanel VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    MaxWidth="480">
+
+            <!--  Medallion: canonical info-card recipe (metal.control +
+                  border.card + shadow.sm + radius.md). 96px square so
+                  the Alert48 glyph (48px font-size SymbolIcon) sits in
+                  a comfortable 24px gutter all round. -->
+            <Border Width="96"
+                    Height="96"
+                    HorizontalAlignment="Center"
+                    Background="{DynamicResource metal.control}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.md}"
+                    Effect="{DynamicResource shadow.sm}">
+                <ui:SymbolIcon Symbol="Alert48"
+                               FontSize="48"
+                               Foreground="{DynamicResource text.tertiary}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+            </Border>
+
+            <!--  Title — page identity. 24px Margin between medallion and
+                  title (space.24) matches the page outer margin rhythm. -->
+            <ui:TextBlock Style="{StaticResource text.title.large}"
+                          Text="Alerts"
+                          HorizontalAlignment="Center"
+                          Margin="0,24,0,0" />
+
+            <!--  Body — the "coming in Phase 6" framing. text.body.large
+                  for legible long-form prose; text.secondary so the body
+                  doesn't compete with the title. TextWrapping so the copy
+                  wraps cleanly inside the MaxWidth=480 envelope. -->
+            <ui:TextBlock Style="{StaticResource text.body.large}"
+                          Foreground="{DynamicResource text.secondary}"
+                          Text="Coming in Phase 6. A feed of observations ZenVizor flagged, with a way to mark each one as handled."
+                          HorizontalAlignment="Center"
+                          TextAlignment="Center"
+                          TextWrapping="Wrap"
+                          Margin="0,12,0,0" />
+
+            <!--  Caption — the additional "first alert wired up" sentence
+                  from brief §18a. text.caption + text.tertiary so it reads
+                  as supporting detail beneath the body, not part of it. -->
+            <ui:TextBlock Style="{StaticResource text.caption}"
+                          Foreground="{DynamicResource text.tertiary}"
+                          Text="The first alert wired up is for unsigned programs from user-writable folders making network connections."
+                          HorizontalAlignment="Center"
+                          TextAlignment="Center"
+                          TextWrapping="Wrap"
+                          Margin="0,16,0,0" />
+        </StackPanel>
+    </Grid>
+</Page>

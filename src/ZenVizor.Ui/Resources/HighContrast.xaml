@@ -124,6 +124,39 @@
     <DropShadowEffect x:Key="shadow.sm"    Opacity="0" />
     <DropShadowEffect x:Key="shadow.card"  Opacity="0" />
 
+    <!--  Alerts brief additions (June 2026). metal.accent.fill is the
+          violet button face gradient; in HC it collapses to HighlightColor
+          (the OS accent) so accent buttons remain visibly accent without
+          the brand gradient. The .hover / .pressed variants collapse to
+          the same Highlight — HC has no separate hover/pressed accent
+          colours; the OS-level focus visual is what cues state.
+
+          Known limitation: style.button.accent.fill's Style.Resources
+          block inlines the WinUI 3 brush keys (ButtonBackgroundPointerOver
+          / Pressed) as gradients. Those inline values DO NOT collapse in
+          HC because Style.Resources are scoped inside the Style, not on
+          the app resource surface. When HC merge wiring lands
+          (design-system.md §11 item 9), the Style will need an HC variant
+          override, or the inline brushes will need to be lifted to the
+          app resource surface so this HC dict can swap them. For now
+          this matches the pattern other Style-internal templates use
+          (style.datagrid.compact has the same boundary). -->
+    <SolidColorBrush x:Key="metal.accent.fill"         Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="metal.accent.fill.hover"   Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="metal.accent.fill.pressed" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+
+    <!--  Motion tokens are theme-invariant and HC-invariant. Animation
+          enable/disable in HC is handled at the code-behind layer via
+          SystemParameters.ClientAreaAnimation (the canonical Windows
+          gate), so the duration and easing values can stay constant
+          across themes. NOT overridden here. -->
+
+    <!--  status.neutral (Info severity) — brand value is the cool blue-
+          violet (#4d5fd0 light / #7e8ef7 dark), set in BrandAccent.{Light,
+          Dark}.xaml. The existing collapse to WindowText / Control above
+          (lines 98-99) handles HC. No change needed. -->
+
+
     <!--  Charts — series collapse to WindowText / GrayText / Highlight for
           line/column distinction. The categorical 8-slot palette only has
           three meaningfully-distinct values in HC; that's a known and

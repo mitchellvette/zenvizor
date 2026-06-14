@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ZenVizor.Ui.Services;
 using ZenVizor.Ui.Views;
@@ -9,11 +10,35 @@ using Wpf.Ui.Controls;
 
 namespace ZenVizor.Ui;
 
+/// <summary>
+/// Severity vocabulary for the Alerts nav-rail badge. Phase 2 placeholder
+/// pending unification with the Phase 6 IPC contract severity enum
+/// (ZenVizor.Ipc.Contracts.Dto.Severity, not yet defined). Locked mapping
+/// per the catalog §1.4: Info → status.neutral, Warning → status.caution,
+/// Critical → status.critical.
+/// </summary>
+public enum AlertSeverity
+{
+    Info,
+    Warning,
+    Critical,
+}
+
 public partial class MainWindow : FluentWindow
 {
     private readonly ServiceStatusPoller _poller;
     private readonly ActivitySnapshotPoller _activityPoller;
     private bool _exiting;
+
+    // Alerts nav-rail badge — one-shot pulse storyboard built in code-behind
+    // because the motion tokens are sys:TimeSpan / IEasingFunction resources,
+    // and Storyboard.Duration is the WPF `Duration` struct that XAML
+    // attribute parsing recognizes for string literals but NOT for typed
+    // resource lookups (TimeSpan does not implicitly convert to Duration
+    // during the resource-binding's set accessor). Built once in OnLoaded
+    // when the target element is in the visual tree; Begin() restarts on
+    // each PulseAlertsBadge call.
+    private Storyboard? _alertsBadgePulseStoryboard;
 
     /// <summary>
     /// Fires on every <see cref="ActivitySnapshotPoller"/> tick (~2 s).
@@ -53,11 +78,11 @@ public partial class MainWindow : FluentWindow
         // survives navigation away and back. Without this, each nav rail click
         // constructs a fresh page and resets every picker to its default.
         NavDashboard.NavigationCacheMode = NavigationCacheMode.Enabled;
-        NavPerApp.NavigationCacheMode    = NavigationCacheMode.Enabled;
-        NavHistory.NavigationCacheMode   = NavigationCacheMode.Enabled;
-        NavReports.NavigationCacheMode   = NavigationCacheMode.Enabled;
-        NavAlerts.NavigationCacheMode    = NavigationCacheMode.Enabled;
-        NavSettings.NavigationCacheMode  = NavigationCacheMode.Enabled;
+        NavPerApp.NavigationCacheMode = NavigationCacheMode.Enabled;
+        NavHistory.NavigationCacheMode = NavigationCacheMode.Enabled;
+        NavReports.NavigationCacheMode = NavigationCacheMode.Enabled;
+        NavAlerts.NavigationCacheMode = NavigationCacheMode.Enabled;
+        NavSettings.NavigationCacheMode = NavigationCacheMode.Enabled;
 
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -69,6 +94,8 @@ public partial class MainWindow : FluentWindow
         _poller.Start();
         _activityPoller.Start();
 
+        BuildAlertsBadgePulseStoryboard();
+
         // Gallery's canonical initial-selection pattern: Navigate(Type)
         // from the window's Loaded handler. With TargetPageType set per
         // item via OnNavItemInitialized BEFORE NavigationView's own
@@ -77,6 +104,117 @@ public partial class MainWindow : FluentWindow
         // NavigateInternal, which updates SelectedItem and NavigationStack
         // so the next user click correctly deactivates Dashboard.
         RootNavigation.Navigate(typeof(DashboardPage));
+    }
+
+    /// <summary>
+    /// Updates the Alerts nav-rail badge to reflect the current active
+    /// alert count and highest severity. Hides the badge when count is 0.
+    /// Phase 2 surface; Phase 6 wires this to the AlertRaised push.
+    /// </summary>
+    /// <param name="activeCount">Number of currently-active (undismissed) alerts.</param>
+    /// <param name="highestSeverity">The worst severity present in the active
+    /// set; drives the badge tint. Null when count is 0 (badge hidden).</param>
+    public void UpdateAlertsBadge(int activeCount, AlertSeverity? highestSeverity)
+    {
+        if (activeCount <= 0)
+        {
+            AlertsBadgeCount.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        AlertsBadgeCount.Visibility = Visibility.Visible;
+        AlertsBadgeCountText.Text = activeCount.ToString();
+        AlertsBadgeCount.Background = (Brush)FindResource(
+            SeverityToBackgroundKey(highestSeverity ?? AlertSeverity.Info));
+    }
+
+    /// <summary>
+    /// Fires the one-shot pulse-ring animation on the Alerts nav-rail
+    /// badge. Skipped silently when the badge is hidden (no active
+    /// alerts) or when OS animation is disabled
+    /// (<see cref="SystemParameters.ClientAreaAnimation"/>). Idempotent:
+    /// calling while a previous pulse is still in flight restarts the
+    /// animation, never overlaps it.
+    /// </summary>
+    public void PulseAlertsBadge()
+    {
+        if (_alertsBadgePulseStoryboard is null) return;
+        if (AlertsBadgeCount.Visibility != Visibility.Visible) return;
+        if (!SystemParameters.ClientAreaAnimation) return;
+
+        // Stop a still-running pulse before starting a fresh one — Begin()
+        // alone restarts in place, but Stop()+Begin() ensures the From
+        // value reseeds cleanly for back-to-back arrivals.
+        _alertsBadgePulseStoryboard.Stop(AlertsBadgePulse);
+        _alertsBadgePulseStoryboard.Begin(AlertsBadgePulse, isControllable: true);
+    }
+
+    // Locked severity → status background-brush mapping per the Alerts
+    // catalog §1.4. The badge tint uses the SOLID severity brushes
+    // (status.critical, status.caution, status.neutral), not the
+    // .background tints — the mockup paints fully-saturated pills with
+    // white text. status.neutral is overridden in BrandAccent.{Light,Dark}
+    // from Wpf.Ui's gray to the brand cool blue per the Phase 1 token work.
+    private static string SeverityToBackgroundKey(AlertSeverity severity) => severity switch
+    {
+        AlertSeverity.Critical => "status.critical",
+        AlertSeverity.Warning => "status.caution",
+        AlertSeverity.Info => "status.neutral",
+        _ => "status.neutral",
+    };
+
+    // Build the badge pulse storyboard once, after Loaded fires (so the
+    // target element is in the visual tree and Storyboard.SetTarget
+    // resolves). Three parallel animations: opacity 0.85 → 0, ScaleX
+    // 1 → 2.6, ScaleY 1 → 2.6 — all sharing the same duration + easing.
+    // Spec source: alerts mockup page 9 ("scale ≈ 1 → 2.6, opacity ≈
+    // 0.85 → 0"). Honors prefers-reduced-motion via
+    // SystemParameters.ClientAreaAnimation at PulseAlertsBadge call
+    // time (skip rather than build a no-op).
+    private void BuildAlertsBadgePulseStoryboard()
+    {
+        var duration = (TimeSpan)FindResource("motion.duration.arrival");
+        var ease = (IEasingFunction)FindResource("motion.ease.glide");
+        var wpfDuration = new Duration(duration);
+
+        var sb = new Storyboard();
+
+        var opacityAnim = new DoubleAnimation
+        {
+            From = 0.85,
+            To = 0.0,
+            Duration = wpfDuration,
+            EasingFunction = ease,
+        };
+        Storyboard.SetTarget(opacityAnim, AlertsBadgePulse);
+        Storyboard.SetTargetProperty(opacityAnim, new PropertyPath(UIElement.OpacityProperty));
+        sb.Children.Add(opacityAnim);
+
+        var scaleXAnim = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 2.6,
+            Duration = wpfDuration,
+            EasingFunction = ease,
+        };
+        Storyboard.SetTarget(scaleXAnim, AlertsBadgePulse);
+        Storyboard.SetTargetProperty(scaleXAnim,
+            new PropertyPath("(UIElement.RenderTransform).(ScaleTransform.ScaleX)"));
+        sb.Children.Add(scaleXAnim);
+
+        var scaleYAnim = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 2.6,
+            Duration = wpfDuration,
+            EasingFunction = ease,
+        };
+        Storyboard.SetTarget(scaleYAnim, AlertsBadgePulse);
+        Storyboard.SetTargetProperty(scaleYAnim,
+            new PropertyPath("(UIElement.RenderTransform).(ScaleTransform.ScaleY)"));
+        sb.Children.Add(scaleYAnim);
+
+        _alertsBadgePulseStoryboard = sb;
     }
 
     // NavigationView builds its type->item lookup inside its OnInitialized,
@@ -91,11 +229,11 @@ public partial class MainWindow : FluentWindow
         item.TargetPageType = item.Name switch
         {
             nameof(NavDashboard) => typeof(DashboardPage),
-            nameof(NavPerApp)    => typeof(PerAppPage),
-            nameof(NavHistory)   => typeof(HistoryPage),
-            nameof(NavReports)   => typeof(ReportsPage),
-            nameof(NavAlerts)    => typeof(AlertsPage),
-            nameof(NavSettings)  => typeof(SettingsPage),
+            nameof(NavPerApp) => typeof(PerAppPage),
+            nameof(NavHistory) => typeof(HistoryPage),
+            nameof(NavReports) => typeof(ReportsPage),
+            nameof(NavAlerts) => typeof(AlertsPage),
+            nameof(NavSettings) => typeof(SettingsPage),
             _ => null,
         };
     }

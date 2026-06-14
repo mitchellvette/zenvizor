@@ -38,6 +38,13 @@
     <Color x:Key="SystemFillColorCautionBackground">#2EF1AD34</Color>   <!-- 18% alpha -->
     <Color x:Key="SystemFillColorCriticalBackground">#2EF5547F</Color>  <!-- 18% alpha -->
 
+    <!--  status.neutral — brand cool blue-violet (lighter ramp for dark
+          backdrop legibility, #7e8ef7). NOT Wpf.Ui's SystemFillColorNeutral
+          (warm gray). Used by alert Info severity (dot / tile bg / badge).
+          CSS source: status-neutral dark. -->
+    <Color x:Key="SystemFillColorNeutral">#7E8EF7</Color>
+    <Color x:Key="SystemFillColorNeutralBackground">#297E8EF7</Color>   <!-- 16% alpha -->
+
     <!--  CHART up/down series — lighter brand variants for dark backdrop
           legibility. -->
     <SolidColorBrush x:Key="chart.upSeries" Color="#9A72F0" />      <!-- violet-400 -->

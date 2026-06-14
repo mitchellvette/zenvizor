@@ -181,14 +181,106 @@
                                        Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
+                <!--  Alerts nav-rail item carries a count + pulse-ring badge per
+                      the Alerts brief §16.1 and mockup page 9 (Q8-A variant:
+                      count + highest-severity tint + one-shot pulse ring).
+                      Composition:
+                        * Content is a Grid with [Label | Badge container].
+                          Label uses ui:TextBlock so it inherits the
+                          NavigationViewItem.Foreground brush correctly
+                          (a plain TextBlock would be hijacked by the
+                          implicit TextBlock style in DesignTokens.xaml).
+                        * Badge container stacks two Borders in a Grid:
+                          AlertsBadgePulse (back, stroked-only, Opacity=0
+                          default with a ScaleTransform render transform —
+                          the storyboard target) UNDER AlertsBadgeCount
+                          (front, filled tinted pill carrying the count
+                          digits).
+                        * Count badge Visibility=Collapsed by default
+                          (no active alerts → no chrome added to the row).
+                          UpdateAlertsBadge in code-behind flips visibility
+                          and re-tints the background on every count
+                          change; PulseAlertsBadge fires the one-shot
+                          ring animation on AlertRaised.
+                        * Phase 2 wires the surface + storyboard only —
+                          no real count source yet. Phase 6 AlertRaised
+                          push hooks UpdateAlertsBadge + PulseAlertsBadge.  -->
                 <ui:NavigationViewItem x:Name="NavAlerts"
-                                       Content="Alerts"
+                                       HorizontalContentAlignment="Stretch"
                                        Initialized="OnNavItemInitialized">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Alert24"
                                        FontSize="20"
                                        Filled="{Binding IsActive, RelativeSource={RelativeSource AncestorType=ui:NavigationViewItem}}" />
                     </ui:NavigationViewItem.Icon>
+                    <!--  Wpf.Ui v4.0.2's NavigationViewItem template doesn't
+                          TemplateBind HorizontalContentAlignment to its
+                          inner ContentPresenter, so the Stretch attribute
+                          above is a no-op on its own — the ContentPresenter
+                          sizes to content and our Star column has no slack
+                          to allocate. MinWidth on this Grid forces the
+                          claim instead: pane is OpenPaneLength=220, minus
+                          icon column + template padding (~64px), so the
+                          content slot is ~156. MinWidth=150 is a safe
+                          pick that pushes the badge column to the row's
+                          right edge regardless of template tweaks.  -->
+                    <ui:NavigationViewItem.Content>
+                        <Grid MinWidth="150">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBlock Grid.Column="0"
+                                          Text="Alerts"
+                                          VerticalAlignment="Center" />
+                            <Grid Grid.Column="1"
+                                  x:Name="AlertsBadgeContainer"
+                                  Margin="8,0,0,0"
+                                  VerticalAlignment="Center">
+                                <Border x:Name="AlertsBadgePulse"
+                                        Width="18" Height="18"
+                                        BorderBrush="{DynamicResource accent.default}"
+                                        BorderThickness="2"
+                                        CornerRadius="9"
+                                        Opacity="0"
+                                        IsHitTestVisible="False"
+                                        RenderTransformOrigin="0.5,0.5">
+                                    <Border.RenderTransform>
+                                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                                    </Border.RenderTransform>
+                                </Border>
+                                <!--  UseLayoutRounding=True snaps the centered
+                                      digit to whole pixels so a tabular-numeral
+                                      "1" (which sits at the right of its
+                                      advance cell in Overpass Mono) lands on
+                                      the pixel center, not 0.5px offset.
+                                      Typography.NumeralAlignment=Tabular on
+                                      the digit pins every numeral to the same
+                                      advance grid (WPF equivalent of CSS
+                                      font-feature-settings tnum). FontWeight
+                                      bold reads cleanly at the 12 px caption
+                                      size on saturated severity faces;
+                                      semibold was too thin to register.  -->
+                                <Border x:Name="AlertsBadgeCount"
+                                        Visibility="Collapsed"
+                                        MinWidth="18" Height="18"
+                                        Background="{DynamicResource status.critical}"
+                                        CornerRadius="9"
+                                        Padding="6,0"
+                                        UseLayoutRounding="True">
+                                    <TextBlock x:Name="AlertsBadgeCountText"
+                                               Text="0"
+                                               FontFamily="{StaticResource font.mono}"
+                                               FontSize="{StaticResource font.size.caption}"
+                                               FontWeight="{StaticResource font.weight.bold}"
+                                               Foreground="{DynamicResource text.on-accent}"
+                                               Typography.NumeralAlignment="Tabular"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </ui:NavigationViewItem.Content>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>

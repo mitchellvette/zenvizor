@@ -58,6 +58,15 @@
     <Color x:Key="SystemFillColorCautionBackground">#29EC9A0B</Color>   <!-- 16% alpha -->
     <Color x:Key="SystemFillColorCriticalBackground">#1FD62B62</Color>  <!-- 12% alpha -->
 
+    <!--  status.neutral — brand cool blue-violet (#4d5fd0), NOT Wpf.Ui's
+          SystemFillColorNeutral (warm gray). DesignTokens.xaml aliases
+          status.neutral.Color to SystemFillColorNeutral; overriding the
+          Color here flips the brush to the brand value app-wide. Used
+          by alert Info severity (dot / tile bg / badge). CSS source:
+          status-neutral light. -->
+    <Color x:Key="SystemFillColorNeutral">#4D5FD0</Color>
+    <Color x:Key="SystemFillColorNeutralBackground">#214D5FD0</Color>   <!-- 13% alpha -->
+
     <!--  CHART up/down series — brand violet/teal. Theme-swap because the
           chart series sit on theme-swapped surface.card, and the brand
           spec tunes each series to its theme's surface for legibility.

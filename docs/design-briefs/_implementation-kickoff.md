@@ -17,7 +17,7 @@ is tracked across the design loop).
 | **App Detail** | ✓ | — | — | — | drill from Per-App; richest layout (chart + two grids + summary) |
 | **History** | ✓ | ✓ | ✓ | ✓ COMPLETE | Phases 1-5 run 2026-06-08/09; cross-page IsConnectionLost timeout fix |
 | **Reports** (Group B) | ✓ | — | — | placeholder live | brief covers interim + eventual layout per template §18 |
-| **Alerts** (Group B) | ✓ | — | — | placeholder live | same Group B treatment |
+| **Alerts** (Group B) | ✓ | ✓ | ✓ | (in progress) | Bucket A landed 2026-06-13/14 (tokens + interim + nav badge); Bucket B (IPC + functional UI) in flight |
 | **Settings** (Group B) | ✓ | — | — | placeholder live | same; underlying logic lands Phase 6 |
 
 Status legend: `✓` = complete · `(in progress)` = active work · `—` = not yet started · `placeholder live` = Group B screen running on a shared `PlaceholderPage`; brief work designs the eventual layout.
@@ -212,12 +212,42 @@ Reference screen for what "complete" looks like. The implementation record captu
 - **Mockup**: pending
 - **Implementation**: pending; underlying logic lands Phase 5
 
-### Alerts (Group B)
+### Alerts (Group B) — IN PROGRESS
 
 - **Findings**: `docs/design-briefs/findings/alerts.md`
-- **Brief**: pending — same Group B two-state treatment
-- **Mockup**: pending
-- **Implementation**: pending; underlying logic lands Phase 6
+- **Brief**: `docs/design-briefs/alerts.md`
+- **Catalog**: `docs/alerts-catalog.md` (alert vocabulary source-of-truth the brief is written against)
+- **Mockup**: `docs/design/mockups/alerts-design-mockups.pdf` (16 pages: 11 states light + dark-theme audit + token/pattern/variant tables + nav badge spec + interim placeholder)
+- **Phases run (Bucket A — landed 2026-06-13/14)**:
+  - Phase 1 — token surface (motion family + metal.accent.fill family + style.button.accent.fill + status.neutral BrandAccent override) + interim placeholder per §18a + ReportsPage Export refactor.
+  - Phase 2 — nav-rail badge surface + one-shot pulse storyboard (count + highest-severity tint + accent.default ring, scale 1→2.6 / opacity 0.85→0 over motion.duration.arrival).
+- **Phases in flight (Bucket B)**:
+  - Phase 3 — IPC contracts (GetAlertsAsync + DismissAlertAsync + AlertRaised push) + DTOs (AlertDto, AlertsFilter, Severity, AlertType, SourceMonitor, EntityKind) + AlertsViewModel skeleton.
+  - Phase 4 — page chrome + KPI strip + filter bar (Q4 A+C: segmented State + severity checkboxes + type menu) + state coverage (loading / disconnected / error / empty / filtered-empty / all-active / all-dismissed).
+  - Phase 5 — per-item template (Q1-A per-item cards + Q2 left bar + tinted tile + severity badge + Q3 expand-on-click why-copy disclosure) + dismiss flow + Q5 live-arrival ring-glow cue + nav-badge pulse on AlertRaised.
+  - Phase 6 — HC token audit + final pass.
+
+**Tokens introduced this run**:
+- `motion.duration.arrival` (sys:TimeSpan, 600ms, theme-invariant) + `motion.duration.fast` (sys:TimeSpan, 200ms, theme-invariant) + `motion.ease.glide` (CubicEase EaseOut, theme-invariant) — animation primitives for nav-badge pulse + item ring-glow cues. Stored as sys:TimeSpan rather than Duration because XAML resource-binding doesn't implicit-convert TimeSpan → Duration; consumers build Storyboards in code-behind where C# `new Duration(timeSpan)` works.
+- `metal.accent.fill` + `.hover` + `.pressed` (LinearGradientBrush, theme-invariant, HC HighlightColor) — canonical filled-accent button face. Three-stop violet gradient (catch-light → main face → bottom shade). Promoted from ReportsPage local Resources per its original author's second-consumer promotion note.
+- `style.button.accent.fill` (Style targeting ui:Button) — canonical filled-accent Button Style. `Style.Resources` re-publishes the WinUI 3 brush keys (ButtonBackgroundPointerOver / Pressed + ButtonForeground+Border overrides) so the Wpf.Ui Button template picks up hover/pressed automatically without any call-site Resources block.
+
+**BrandAccent overrides this run**:
+- `status.neutral` + `status.neutral.background` — flipped from Wpf.Ui's `SystemFillColorNeutral` (warm gray) to CSS brand cool blue (#4D5FD0 light / #7E8EF7 dark) + 13%/16% alpha backgrounds. The brief and catalog lock Info severity to `status.neutral`; without this override Info dots/pills/badges paint gray instead of cool blue, breaking the mockup. Same delegation pattern as `status.caution.text` (BrandAccent owns the AA-tuned value; DesignTokens aliases to the SystemFillColor key).
+
+**Cross-page work landed this run**:
+- **ReportsPage Export button** refactored to `Style="{StaticResource style.button.accent.fill}"`. Page-local `metal.accent.fill` LinearGradientBrush + Resources-block hover/pressed brush overrides deleted. Second-consumer promotion explicitly authorized by the original author's inline note.
+
+**Canonical patterns established this run**:
+- **Nav-rail badge** — two stacked Borders inside `NavigationViewItem.Content` Grid: stroked-only outer pulse-ring Border with a `ScaleTransform` RenderTransform (animated via code-behind Storyboard) over a filled tinted-pill Border with mono digits. Severity → background-brush mapping locked one-to-one with the catalog: Critical → `status.critical`, Warning → `status.caution`, Info → `status.neutral`. Public `MainWindow.UpdateAlertsBadge(int, AlertSeverity?)` + `PulseAlertsBadge()` surface; honors `SystemParameters.ClientAreaAnimation`; `Stop()+Begin()` on each pulse so back-to-back arrivals reseed cleanly. AlertsBadgeCountText: `Typography.NumeralAlignment="Tabular"` + `UseLayoutRounding="True"` for pixel-perfect digit centering in a fixed-size pill (Overpass Mono "1" sits right-of-cell without tnum).
+- **Filled-accent Button Style** — `style.button.accent.fill` is the canonical recipe; never inline `metal.accent.fill` + Resources block at call-sites. Two consumers today (ReportsPage Export + AlertsPage Reset CTA, the latter landing in Bucket B Phase 4).
+
+**Lessons learned (apply to next screen)**:
+- **WPF reserved system keys**: F10 (menu-bar activation), Alt+F4, and F1 (Help) are pre-processed by Windows. WPF routes F10 as `Key.System` with the actual key in `e.SystemKey` — a `case Key.F10:` arm never matches. Avoid F10 for keystroke hooks/probes; F2-F8 + F11-F12 round-trip through `OnKeyDown` normally.
+- **Wpf.Ui v4.0.2 NavigationViewItem template gotcha**: `HorizontalContentAlignment` is NOT TemplateBound to the inner ContentPresenter. Setting `HorizontalContentAlignment="Stretch"` is a no-op for content layout. For child content that must stretch (a label + right-aligned cell), force the Grid to claim space with explicit `MinWidth`. Pane content slot at `OpenPaneLength="220"` is ~156px after icon column + template padding.
+- **WPF Storyboard.Duration vs sys:TimeSpan**: Duration is a PresentationCore struct with no implicit conversion FROM TimeSpan at XAML resource-binding time (TypeConverter only converts from strings, not boxed objects). Either declare durations as `<Duration>` resources OR build the Storyboard in code-behind where C# `new Duration(timeSpan)` does the conversion. Motion tokens here are `sys:TimeSpan` for code-behind storyboard construction; that's load-bearing.
+- **XML comment escape**: CSS variable references (`--var-name`) inside XAML `<!-- ... -->` comments fail compilation because `--` is the XML comment-close fence. Strip the leading dashes when documenting CSS vars in XAML (e.g. "the CSS ease-glide variable" not "the CSS `--ease-glide`"). XAML compiler error MC3000.
+- **Wpf.Ui v4.0.2 ships no `InfoBadge` control** in the compiled DLL surface; verify availability before relying on it for nav-item decoration. We rolled our own badge composition in `NavigationViewItem.Content` rather than depending on a control that may not exist.
 
 ### Settings (Group B)
 
