@@ -25,6 +25,41 @@
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
+        <!--  MENU.HEADER.ROW — minimal MenuItem Style for the Type filter
+              dropdown's Select all / Clear header row. The default Wpf.Ui
+              MenuItem template assumes templated parts (chrome host,
+              checkmark slot) and runs input math through them; combining
+              that with IsHitTestVisible=False on the outer MenuItem (so
+              only inner Buttons receive clicks) crashes the ContextMenu
+              when it tries to render. Replacing the Template with a
+              minimal Border + ContentPresenter+ContentSource=Header
+              gives the row a stable host for its custom Grid content
+              (two action Buttons + a 1px hairline divider) without the
+              MenuItem chrome.
+
+              Focusable + IsTabStop = False keep keyboard navigation
+              walking past the header straight to the first checkable
+              MenuItem below. -->
+        <Style x:Key="menu.header.row" TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header"
+                                              RecognizesAccessKey="False" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!--  STATE.CHIP — the segmented State control's individual chip.
               Radio button group inside a dimmed container; the SELECTED
               chip elevates with the metallic info-card recipe
@@ -656,26 +691,29 @@
                                Background="{DynamicResource metal.control}"
                                BorderBrush="{DynamicResource border.card}"
                                VerticalAlignment="Center"
+                               HorizontalContentAlignment="Center"
                                Padding="12,4"
                                ToolTip="{Binding TypeFilterTooltip}"
                                Click="OnTypeFilterButtonClick">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding TypeFilterLabel}"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Left"
-                                       TextTrimming="CharacterEllipsis" />
-                            <ui:SymbolIcon Grid.Column="1"
-                                           Symbol="ChevronDown20"
+                        <!--  Text + chevron grouped as a centered pair via
+                              StackPanel HorizontalAlignment=Center. The
+                              previous [* | Auto] Grid layout pinned the text
+                              left and the chevron right, leaving an empty
+                              centre that read as right-weighted because the
+                              chevron carried more visual mass than the short
+                              "All types" label. Centering the pair groups
+                              the affordance visually.  -->
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="{Binding TypeFilterLabel}"
+                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="ChevronDown20"
                                            FontSize="12"
                                            Foreground="{DynamicResource text.secondary}"
                                            VerticalAlignment="Center"
                                            Margin="8,0,0,0" />
-                        </Grid>
+                        </StackPanel>
                         <ui:Button.ContextMenu>
                             <!--  Placement="Custom" + a code-behind callback
                                   (RightAnchoredBelow, set in AlertsPage ctor)
@@ -697,16 +735,13 @@
                                          ItemContainerStyle="{StaticResource brand.menu.item}">
                                 <!--  Header row: Select all / Clear actions
                                       side-by-side, divided by a 1px border.subtle
-                                      hairline. Header MenuItem itself is
-                                      IsHitTestVisible=False on its outer area
-                                      so only the inner Buttons receive clicks
-                                      (no MenuItem hover-highlight on the row;
-                                      the per-Button hover gives the affordance).  -->
+                                      hairline. Uses the menu.header.row Style
+                                      (minimal Template — no MenuItem chrome)
+                                      so the inner Buttons are the only
+                                      interactive elements; clicking either
+                                      bulk-toggles the six type items below.  -->
                                 <MenuItem x:Name="TypeMenuHeaderRow"
-                                          Style="{x:Null}"
-                                          Padding="0"
-                                          Margin="0"
-                                          IsHitTestVisible="False">
+                                          Style="{StaticResource menu.header.row}">
                                     <MenuItem.Header>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
