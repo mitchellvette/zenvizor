@@ -35,20 +35,11 @@
               style.button.accent.fill; this page's Export button references
               it directly via Style="{StaticResource ...}". -->
 
-        <!--  Brand menu-item Style. BasedOn the implicit MenuItem type style
-              so Wpf.Ui's hover / selection / focus chrome is inherited
-              (BasedOn={x:Type MenuItem} resolves to whichever style is
-              registered as MenuItem's default — Wpf.Ui's implicit one). The
-              Setters add the mockup-aligned padding + inter-item margin
-              that the default ContextMenu chrome ships too tight. Reused by
-              both the Export ContextMenu and the Anchor ContextMenu so the
-              two menus visually agree.  -->
-        <Style x:Key="brand.menu.item"
-               TargetType="MenuItem"
-               BasedOn="{StaticResource {x:Type MenuItem}}">
-            <Setter Property="Padding" Value="18,12" />
-            <Setter Property="Margin"  Value="0,4" />
-        </Style>
+        <!--  brand.menu.item Style lifted to DesignTokens.xaml on
+              2026-06-14 when AlertsPage Type filter became the second
+              consumer. The ContextMenu ItemContainerStyle references on
+              this page continue working — the StaticResource resolves to
+              the canonical key.  -->
 
         <!--  Phase 3 — Top Apps DataGrid resources. These mirror the
               page-local resources in PerAppPage.xaml (cell.body.trim,

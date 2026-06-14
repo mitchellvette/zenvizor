@@ -558,6 +558,24 @@
         <Setter Property="BorderThickness" Value="0" />
     </Style>
 
+    <!--  brand.menu.item  ======================================================
+          Canonical MenuItem Style for the brand ContextMenu treatment.
+          BasedOn the implicit ui:MenuItem style so Wpf.Ui's hover / selection
+          / focus chrome and IsCheckable checkmark visual are inherited; the
+          Setters add the mockup-aligned Padding + inter-item Margin that the
+          default Wpf.Ui ContextMenu ships too tight.
+
+          Consumers: ReportsPage Export + Anchor ContextMenus; AlertsPage
+          Type filter ContextMenu. Promoted from ReportsPage local Resources
+          when AlertsPage became the second consumer — same "promote on
+          second consumer" pattern metal.accent.fill followed.  -->
+    <Style x:Key="brand.menu.item"
+           TargetType="MenuItem"
+           BasedOn="{StaticResource {x:Type MenuItem}}">
+        <Setter Property="Padding" Value="18,12" />
+        <Setter Property="Margin" Value="0,4" />
+    </Style>
+
     <!--  Density  =============================================================
           Default Fluent grid spacing is too airy for ZenVizor's data-dense
           surfaces (per-app list, sessions, connections). The compact variant

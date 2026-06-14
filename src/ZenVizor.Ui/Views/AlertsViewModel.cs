@@ -119,6 +119,7 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(EnabledTypes));
             OnPropertyChanged(nameof(IsFilterAtDefault));
             OnPropertyChanged(nameof(IsFilterNotAtDefault));
+            OnPropertyChanged(nameof(TypeFilterLabel));
             ApplyFilter();
         }
     }
@@ -138,6 +139,30 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
     /// <summary>Inverse of <see cref="IsFilterAtDefault"/>. Reset link visibility binds here.</summary>
     public bool IsFilterNotAtDefault => !IsFilterAtDefault;
 
+    /// <summary>
+    /// Dynamic label for the Type filter ContextMenu button. Reads
+    /// "All types" when every catalog type is enabled, the type's display
+    /// name when exactly one is enabled, "No types" when none, and
+    /// "{N} of {total} types" for intermediate states. The button label
+    /// communicates the filter shape without forcing the user to open
+    /// the menu to read it.
+    /// </summary>
+    public string TypeFilterLabel
+    {
+        get
+        {
+            var allCount = Enum.GetValues<AlertType>().Length;
+            var enabled = EnabledTypes.Count;
+            if (enabled == allCount) return "All types";
+            if (enabled == 0) return "No types";
+            if (enabled == 1)
+            {
+                return AlertCatalogLookups.DisplayName(EnabledTypes.First());
+            }
+            return $"{enabled} of {allCount} types";
+        }
+    }
+
     public void ResetFilter()
     {
         SelectedState = AlertState.Active;
@@ -146,6 +171,7 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(EnabledTypes));
         OnPropertyChanged(nameof(IsFilterAtDefault));
         OnPropertyChanged(nameof(IsFilterNotAtDefault));
+        OnPropertyChanged(nameof(TypeFilterLabel));
         ApplyFilter();
     }
 

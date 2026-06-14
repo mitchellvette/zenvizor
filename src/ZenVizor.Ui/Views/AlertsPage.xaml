@@ -26,9 +26,21 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
         <!--  STATE.CHIP — the segmented State control's individual chip.
-              Radio button group; checked chip paints accent.fill +
-              text.on-accent. The whole group sits inside a metal.control
-              container so the segmented look reads as one control.  -->
+              Radio button group inside a dimmed container; the SELECTED
+              chip elevates with the metallic info-card recipe
+              (metal.control + border.card 1px + shadow.sm) and keeps
+              text.primary foreground — the metallic surface against the
+              surface.subtle container is the distinction, not text colour.
+              The default-state Border carries BorderBrush=Transparent +
+              BorderThickness=1 so the chip dimensions don't shift when
+              the border becomes visible on IsChecked (layout-stable
+              selection).
+
+              Original spec on mockup pg 13 was accent.fill + text.on-accent
+              for the selected chip; user override (2026-06-14) calls for
+              the quieter metallic treatment because accent.fill collides
+              with the page's real primary CTA (Reset filter CTA uses
+              style.button.accent.fill).  -->
         <Style x:Key="state.chip" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{DynamicResource text.primary}" />
             <Setter Property="Padding" Value="12,4" />
@@ -41,6 +53,8 @@
                     <ControlTemplate TargetType="RadioButton">
                         <Border x:Name="ChipBorder"
                                 Background="Transparent"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
                                 CornerRadius="{StaticResource radius.control}"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center"
@@ -49,9 +63,11 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="ChipBorder" Property="Background"
-                                        Value="{DynamicResource accent.fill}" />
-                                <Setter Property="Foreground"
-                                        Value="{DynamicResource text.on-accent}" />
+                                        Value="{DynamicResource metal.control}" />
+                                <Setter TargetName="ChipBorder" Property="BorderBrush"
+                                        Value="{DynamicResource border.card}" />
+                                <Setter TargetName="ChipBorder" Property="Effect"
+                                        Value="{DynamicResource shadow.sm}" />
                             </Trigger>
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
@@ -59,7 +75,7 @@
                                     <Condition Property="IsMouseOver" Value="True" />
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="ChipBorder" Property="Background"
-                                        Value="{DynamicResource surface.subtle}" />
+                                        Value="{DynamicResource surface.subtle.alt}" />
                             </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -217,9 +233,16 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <!--  Col 0 — 4px left severity bar. Stretches full card height.  -->
+                    <!--  Col 0 — 4px left severity bar. Stretches full card height.
+                          CornerRadius="10,0,0,10" (top-left, top-right, bottom-right,
+                          bottom-left) matches the outer card's radius.card on the
+                          left edge — WPF's Border does NOT clip children at the
+                          parent's CornerRadius, so without this the bar's flat
+                          corners punch through the rounded card silhouette
+                          (visible at the card's top-left and bottom-left).  -->
                     <Border Grid.Column="0"
                             Width="4"
+                            CornerRadius="10,0,0,10"
                             Style="{StaticResource severity.bar}" />
 
                     <!--  Col 1 — 48px severity tile + glyph. Margin 16 from the
@@ -394,22 +417,35 @@
                               Margin="0,4,0,0" />
             </StackPanel>
 
+            <!--  KPI strip — equal-width 4-cell summary with partial-height
+                  hairline dividers, matching Per-App's canonical
+                  summary-strip pattern (PerAppPage.xaml:192-240). Cells are
+                  Width=* with MinWidth=80; dividers Width=Auto with
+                  Margin="0,12" so the rule reads ~50% of the cell height
+                  rather than full-bleed (full-bleed reads industrial
+                  against the metallic card surface). MinWidth=400 on the
+                  outer Border ensures the * columns actually have slack
+                  to divide — without it the Auto-sized cells would
+                  determine the width and * would have nothing to allocate.
+                  VerticalAlignment=Center balances the strip against the
+                  title+subtitle stack on the left of the header row.  -->
             <Border Grid.Column="1"
                     Background="{DynamicResource metal.card}"
                     BorderBrush="{DynamicResource border.card}"
                     BorderThickness="1"
                     CornerRadius="{StaticResource radius.md}"
                     Effect="{DynamicResource shadow.sm}"
-                    VerticalAlignment="Top">
+                    VerticalAlignment="Center"
+                    MinWidth="400">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="80" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="80" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="80" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="80" />
                     </Grid.ColumnDefinitions>
 
                     <!--  ACTIVE cell — eyebrow + count. eyebrow text.tertiary
@@ -425,7 +461,7 @@
                                    Text="{Binding ActiveCount}"
                                    Margin="0,2,0,0" />
                     </StackPanel>
-                    <Border Grid.Column="1" Width="1" Background="{DynamicResource border.subtle}" />
+                    <Border Grid.Column="1" Width="1" Margin="0,12" Background="{DynamicResource border.subtle}" />
 
                     <!--  CRITICAL — severity-tinted eyebrow + count. Tint
                           uses the saturated status.critical brush. Count
@@ -447,7 +483,7 @@
                                    Text="{Binding CriticalCount}"
                                    Margin="0,2,0,0" />
                     </StackPanel>
-                    <Border Grid.Column="3" Width="1" Background="{DynamicResource border.subtle}" />
+                    <Border Grid.Column="3" Width="1" Margin="0,12" Background="{DynamicResource border.subtle}" />
 
                     <!--  WARNING — same shape, amber tint.  -->
                     <StackPanel Grid.Column="4" Margin="20,12">
@@ -467,7 +503,7 @@
                                    Text="{Binding WarningCount}"
                                    Margin="0,2,0,0" />
                     </StackPanel>
-                    <Border Grid.Column="5" Width="1" Background="{DynamicResource border.subtle}" />
+                    <Border Grid.Column="5" Width="1" Margin="0,12" Background="{DynamicResource border.subtle}" />
 
                     <!--  INFO — cool-blue tint via the BrandAccent
                           status.neutral override.  -->
@@ -502,8 +538,18 @@
                 Effect="{DynamicResource shadow.sm}"
                 Padding="16,10"
                 Margin="0,0,0,12">
+            <!--  Filter bar Grid — 7 columns: SHOW group, vertical divider,
+                  SEVERITY group, vertical divider, TYPE group, * spacer,
+                  Reset link. Section right-margin is dropped because the
+                  divider columns now provide the separation; their
+                  Margin="20,8" gives 20px horizontal padding around each
+                  hairline + 8px vertical (partial-height, matching the
+                  KPI strip rhythm). Spec: mockup pg 13 "Axis divider:
+                  border.subtle, vertical 1px".  -->
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -511,16 +557,17 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!--  SHOW group. Segmented State chips inside a 1px-stroked
-                      container so the three options read as one control.  -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,32,0">
+                <!--  SHOW group. Segmented State chips inside a dimmed
+                      surface.subtle container; the SELECTED chip elevates
+                      with the metallic info-card recipe (see state.chip
+                      Style above).  -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <TextBlock Style="{StaticResource text.caption}"
                                Foreground="{DynamicResource text.tertiary}"
                                Text="SHOW"
                                VerticalAlignment="Center"
                                Margin="0,0,12,0" />
-                    <Border BorderBrush="{DynamicResource border.card}"
-                            BorderThickness="1"
+                    <Border Background="{DynamicResource surface.subtle}"
                             CornerRadius="{StaticResource radius.control}"
                             Padding="2">
                         <StackPanel Orientation="Horizontal">
@@ -544,8 +591,11 @@
                     </Border>
                 </StackPanel>
 
+                <!--  Divider between SHOW and SEVERITY.  -->
+                <Border Grid.Column="1" Width="1" Margin="20,8" Background="{DynamicResource border.subtle}" />
+
                 <!--  SEVERITY group — 3 checkboxes with severity-tinted dots.  -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,32,0">
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <TextBlock Style="{StaticResource text.caption}"
                                Foreground="{DynamicResource text.tertiary}"
                                Text="SEVERITY"
@@ -579,29 +629,109 @@
                     </CheckBox>
                 </StackPanel>
 
-                <!--  TYPE group — ComboBox of catalog type display names.
-                      Phase 4a renders the closed "All types" state; Phase 4b
-                      wires the multi-select dropdown content + filter
-                      application.  -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <!--  Divider between SEVERITY and TYPE.  -->
+                <Border Grid.Column="3" Width="1" Margin="20,8" Background="{DynamicResource border.subtle}" />
+
+                <!--  TYPE group — multi-select dropdown over all six catalog
+                      types. Implemented as a ui:Button + ContextMenu carrying
+                      IsCheckable MenuItems, matching the Reports Anchor
+                      picker pattern (ReportsPage.xaml:582-691) — the Wpf.Ui
+                      ComboBox lacks native multi-select. MenuItems carry
+                      StaysOpenOnClick=True so the user can toggle several
+                      types in one open. The button label binds to
+                      AlertsViewModel.TypeFilterLabel which renders
+                      "All types" / "N of 6 types" / "{single type}".
+                      Phase 6 producer-availability: the filter lists every
+                      type regardless of whether a producer ships in
+                      Phase 6 (brief §3.7 lock — no Phase-6-only special
+                      case in the filter UI).  -->
+                <StackPanel Grid.Column="4" Orientation="Horizontal">
                     <TextBlock Style="{StaticResource text.caption}"
                                Foreground="{DynamicResource text.tertiary}"
                                Text="TYPE"
                                VerticalAlignment="Center"
                                Margin="0,0,12,0" />
-                    <ComboBox x:Name="TypeCombo"
-                              MinWidth="140"
-                              Background="{DynamicResource metal.control}"
-                              BorderBrush="{DynamicResource border.card}"
-                              VerticalAlignment="Center">
-                        <ComboBoxItem Content="All types" IsSelected="True" />
-                    </ComboBox>
+                    <ui:Button x:Name="TypeFilterButton"
+                               MinWidth="180"
+                               Background="{DynamicResource metal.control}"
+                               BorderBrush="{DynamicResource border.card}"
+                               VerticalAlignment="Center"
+                               Padding="12,4"
+                               Click="OnTypeFilterButtonClick">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding TypeFilterLabel}"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Left"
+                                       TextTrimming="CharacterEllipsis" />
+                            <ui:SymbolIcon Grid.Column="1"
+                                           Symbol="ChevronDown20"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0" />
+                        </Grid>
+                        <ui:Button.ContextMenu>
+                            <ContextMenu x:Name="TypeFilterMenu"
+                                         Padding="12"
+                                         MinWidth="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.ActualWidth}"
+                                         ItemContainerStyle="{StaticResource brand.menu.item}">
+                                <MenuItem x:Name="TypeUnsignedItem"
+                                          Header="Unsigned from user folder"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="UnsignedFromUserPath"
+                                          Click="OnTypeMenuItemClick" />
+                                <MenuItem x:Name="TypeInvalidSignatureItem"
+                                          Header="Signature does not verify"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="InvalidSignature"
+                                          Click="OnTypeMenuItemClick" />
+                                <MenuItem x:Name="TypeFirstRunItem"
+                                          Header="First-time program reached network"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="FirstRunWanTalker"
+                                          Click="OnTypeMenuItemClick" />
+                                <MenuItem x:Name="TypeUnusualVolumeItem"
+                                          Header="Higher-than-usual data use"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="UnusualDailyVolume"
+                                          Click="OnTypeMenuItemClick" />
+                                <MenuItem x:Name="TypeLargeDownloadItem"
+                                          Header="Large download in progress"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="LargeDownload"
+                                          Click="OnTypeMenuItemClick" />
+                                <MenuItem x:Name="TypeOutboundHeavyItem"
+                                          Header="Uploads dominated downloads"
+                                          IsCheckable="True"
+                                          IsChecked="True"
+                                          StaysOpenOnClick="True"
+                                          Tag="OutboundHeavy"
+                                          Click="OnTypeMenuItemClick" />
+                            </ContextMenu>
+                        </ui:Button.ContextMenu>
+                    </ui:Button>
                 </StackPanel>
 
                 <!--  Reset link — accent.text, visible only when filter is
                       non-default. Click handler in code-behind calls
-                      ViewModel.ResetFilter().  -->
-                <Button Grid.Column="4"
+                      ViewModel.ResetFilter() and re-syncs the chip/menu
+                      visual state.  -->
+                <Button Grid.Column="6"
                         x:Name="ResetFilterLink"
                         Background="Transparent"
                         BorderThickness="0"

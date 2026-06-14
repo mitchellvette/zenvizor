@@ -54,6 +54,46 @@ public partial class AlertsPage : Page
         // are templated to GroupName="State"; assigning IsChecked here
         // makes the visual state consistent with VM.SelectedState=Active.
         StateActiveChip.IsChecked = true;
+        // Re-check every type menu item — the VM rebuilt EnabledTypes to
+        // the full catalog set, but MenuItem.IsChecked is local visual state
+        // not bound to the VM, so it needs to be re-synced here. Same
+        // pattern the chip group uses above.
+        TypeUnsignedItem.IsChecked = true;
+        TypeInvalidSignatureItem.IsChecked = true;
+        TypeFirstRunItem.IsChecked = true;
+        TypeUnusualVolumeItem.IsChecked = true;
+        TypeLargeDownloadItem.IsChecked = true;
+        TypeOutboundHeavyItem.IsChecked = true;
+    }
+
+    // ---- Type filter ContextMenu -------------------------------------------
+    //
+    // The Wpf.Ui ComboBox does not support multi-select; the Reports page's
+    // Anchor picker pattern (ui:Button + ContextMenu) is the canonical
+    // multi-option dropdown idiom in this codebase. For Alerts we use
+    // IsCheckable MenuItems with StaysOpenOnClick=True so the user can
+    // toggle multiple types in a single open.
+
+    private void OnTypeFilterButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.ContextMenu is not null)
+        {
+            el.ContextMenu.PlacementTarget = el;
+            el.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            el.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private void OnTypeMenuItemClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem mi) return;
+        if (mi.Tag is not string tag) return;
+        if (!Enum.TryParse<AlertType>(tag, out var type)) return;
+        // IsCheckable=True flips MenuItem.IsChecked BEFORE Click fires, so
+        // mi.IsChecked here is the post-toggle value. Push to the VM, which
+        // re-applies the filter and re-fires TypeFilterLabel PropertyChanged
+        // so the button label updates.
+        _vm.SetTypeEnabled(type, mi.IsChecked);
     }
 
     // ---- ListView virtualization gate --------------------------------------
