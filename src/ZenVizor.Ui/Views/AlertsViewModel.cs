@@ -120,6 +120,7 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsFilterAtDefault));
             OnPropertyChanged(nameof(IsFilterNotAtDefault));
             OnPropertyChanged(nameof(TypeFilterLabel));
+            OnPropertyChanged(nameof(TypeFilterTooltip));
             ApplyFilter();
         }
     }
@@ -140,12 +141,18 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
     public bool IsFilterNotAtDefault => !IsFilterAtDefault;
 
     /// <summary>
-    /// Dynamic label for the Type filter ContextMenu button. Reads
-    /// "All types" when every catalog type is enabled, the type's display
-    /// name when exactly one is enabled, "No types" when none, and
-    /// "{N} of {total} types" for intermediate states. The button label
-    /// communicates the filter shape without forcing the user to open
-    /// the menu to read it.
+    /// Dynamic label for the Type filter ContextMenu button. Always uses a
+    /// count format so the label fits in any reasonable button width — even
+    /// at narrow window widths where the parent column squeezes the button.
+    /// The single-type display name (which can be up to ~30 chars: "Higher-
+    /// than-usual data use") goes to <see cref="TypeFilterTooltip"/> instead;
+    /// the user opens the menu (one click) to see exactly which type is
+    /// selected when only one is.
+    /// <para>
+    /// Format: "All types" (default) / "{N} of 6 types" (2-5 enabled) /
+    /// "1 type" (exactly one) / "No types" (none enabled). Longest possible
+    /// label is "5 of 6 types" (~84px) — safely fits MinWidth=140.
+    /// </para>
     /// </summary>
     public string TypeFilterLabel
     {
@@ -154,12 +161,33 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
             var allCount = Enum.GetValues<AlertType>().Length;
             var enabled = EnabledTypes.Count;
             if (enabled == allCount) return "All types";
-            if (enabled == 0) return "No types";
-            if (enabled == 1)
-            {
-                return AlertCatalogLookups.DisplayName(EnabledTypes.First());
-            }
+            if (enabled == 0)        return "No types";
+            if (enabled == 1)        return "1 type";
             return $"{enabled} of {allCount} types";
+        }
+    }
+
+    /// <summary>
+    /// Hover tooltip for the Type filter button. Carries the comma-joined
+    /// list of enabled type display names so the user can read the full
+    /// filter without opening the dropdown. Returns null in the all-enabled
+    /// (default) and none-enabled (cleared) states so the ToolTip
+    /// suppresses — the label already communicates those clearly.
+    /// </summary>
+    public string? TypeFilterTooltip
+    {
+        get
+        {
+            var allCount = Enum.GetValues<AlertType>().Length;
+            var enabled = EnabledTypes.Count;
+            if (enabled == allCount || enabled == 0) return null;
+            // Preserve canonical AlertType ordering (declaration order) so
+            // the tooltip reads consistently across runs regardless of
+            // HashSet enumeration order.
+            var names = Enum.GetValues<AlertType>()
+                .Where(t => EnabledTypes.Contains(t))
+                .Select(t => AlertCatalogLookups.DisplayName(t));
+            return string.Join(", ", names);
         }
     }
 
@@ -172,6 +200,7 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFilterAtDefault));
         OnPropertyChanged(nameof(IsFilterNotAtDefault));
         OnPropertyChanged(nameof(TypeFilterLabel));
+        OnPropertyChanged(nameof(TypeFilterTooltip));
         ApplyFilter();
     }
 

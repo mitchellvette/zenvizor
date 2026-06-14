@@ -652,11 +652,12 @@
                                VerticalAlignment="Center"
                                Margin="0,0,12,0" />
                     <ui:Button x:Name="TypeFilterButton"
-                               MinWidth="180"
+                               MinWidth="140"
                                Background="{DynamicResource metal.control}"
                                BorderBrush="{DynamicResource border.card}"
                                VerticalAlignment="Center"
                                Padding="12,4"
+                               ToolTip="{Binding TypeFilterTooltip}"
                                Click="OnTypeFilterButtonClick">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -676,10 +677,79 @@
                                            Margin="8,0,0,0" />
                         </Grid>
                         <ui:Button.ContextMenu>
+                            <!--  Placement="Custom" + a code-behind callback
+                                  (RightAnchoredBelow, set in AlertsPage ctor)
+                                  anchor the menu's RIGHT edge under the
+                                  button's RIGHT edge so the menu opens
+                                  leftward and stays on-screen even when the
+                                  button sits near the window's right edge.
+                                  Default Bottom placement anchors LEFT-to-LEFT
+                                  and lets the wider menu spill off-screen.
+                                  Same pattern as the Reports Export menu.
+
+                                  The MinWidth binding is dropped — the menu
+                                  now sizes naturally to its content; the
+                                  custom placement handles the right-edge
+                                  constraint regardless of button width.  -->
                             <ContextMenu x:Name="TypeFilterMenu"
                                          Padding="12"
-                                         MinWidth="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.ActualWidth}"
+                                         Placement="Custom"
                                          ItemContainerStyle="{StaticResource brand.menu.item}">
+                                <!--  Header row: Select all / Clear actions
+                                      side-by-side, divided by a 1px border.subtle
+                                      hairline. Header MenuItem itself is
+                                      IsHitTestVisible=False on its outer area
+                                      so only the inner Buttons receive clicks
+                                      (no MenuItem hover-highlight on the row;
+                                      the per-Button hover gives the affordance).  -->
+                                <MenuItem x:Name="TypeMenuHeaderRow"
+                                          Style="{x:Null}"
+                                          Padding="0"
+                                          Margin="0"
+                                          IsHitTestVisible="False">
+                                    <MenuItem.Header>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button Grid.Column="0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="{DynamicResource accent.text}"
+                                                    Padding="12,8"
+                                                    Cursor="Hand"
+                                                    IsHitTestVisible="True"
+                                                    FocusVisualStyle="{x:Null}"
+                                                    Click="OnSelectAllTypesClick">
+                                                <TextBlock Text="Select all"
+                                                           Style="{StaticResource text.caption}"
+                                                           FontWeight="{StaticResource font.weight.semibold}"
+                                                           Foreground="{DynamicResource accent.text}" />
+                                            </Button>
+                                            <Border Grid.Column="1"
+                                                    Width="1"
+                                                    Margin="0,6"
+                                                    Background="{DynamicResource border.subtle}" />
+                                            <Button Grid.Column="2"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="{DynamicResource accent.text}"
+                                                    Padding="12,8"
+                                                    Cursor="Hand"
+                                                    IsHitTestVisible="True"
+                                                    FocusVisualStyle="{x:Null}"
+                                                    Click="OnClearAllTypesClick">
+                                                <TextBlock Text="Clear"
+                                                           Style="{StaticResource text.caption}"
+                                                           FontWeight="{StaticResource font.weight.semibold}"
+                                                           Foreground="{DynamicResource accent.text}" />
+                                            </Button>
+                                        </Grid>
+                                    </MenuItem.Header>
+                                </MenuItem>
+                                <Separator />
                                 <MenuItem x:Name="TypeUnsignedItem"
                                           Header="Unsigned from user folder"
                                           IsCheckable="True"

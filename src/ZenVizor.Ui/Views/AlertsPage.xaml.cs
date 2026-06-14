@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using ZenVizor.Ipc.Contracts.Dto;
 
 namespace ZenVizor.Ui.Views;
@@ -22,10 +23,34 @@ public partial class AlertsPage : Page
         InitializeComponent();
         DataContext = _vm;
 
+        // Right-anchor the Type filter ContextMenu under the button's right
+        // edge so it stays on-screen when the button is near the window's
+        // right edge. Without this the default Bottom placement anchors
+        // LEFT-to-LEFT and the wider menu spills off-screen. Same pattern
+        // the Reports Export menu uses.
+        TypeFilterMenu.CustomPopupPlacementCallback = RightAnchoredBelow;
+
         // Phase 4a synthetic seed — Phase 4b removes this and pulls from
         // AlertsClient. The seed populates six sample alerts (one per
         // catalog type) so the heterogeneous feed renders for visual audit.
         _vm.SeedSyntheticForPhase4aPreview();
+    }
+
+    /// <summary>
+    /// CustomPopupPlacementCallback that anchors the popup's RIGHT edge under
+    /// the placement target's RIGHT edge. Returns one candidate position
+    /// (X = -(popupWidth - targetWidth), Y = targetHeight) — WPF then handles
+    /// on-screen clamping against the working area.
+    /// </summary>
+    private static CustomPopupPlacement[] RightAnchoredBelow(
+        Size popupSize, Size targetSize, Point offset)
+    {
+        var x = -(popupSize.Width - targetSize.Width);
+        var y = targetSize.Height;
+        return new[]
+        {
+            new CustomPopupPlacement(new Point(x, y), PopupPrimaryAxis.Horizontal),
+        };
     }
 
     // ---- State filter chips ------------------------------------------------
@@ -76,10 +101,11 @@ public partial class AlertsPage : Page
 
     private void OnTypeFilterButtonClick(object sender, RoutedEventArgs e)
     {
+        // Placement="Custom" + the RightAnchoredBelow callback handle the
+        // dropdown position; we just need to set the target and open it.
         if (sender is FrameworkElement el && el.ContextMenu is not null)
         {
             el.ContextMenu.PlacementTarget = el;
-            el.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             el.ContextMenu.IsOpen = true;
         }
     }
@@ -91,9 +117,48 @@ public partial class AlertsPage : Page
         if (!Enum.TryParse<AlertType>(tag, out var type)) return;
         // IsCheckable=True flips MenuItem.IsChecked BEFORE Click fires, so
         // mi.IsChecked here is the post-toggle value. Push to the VM, which
-        // re-applies the filter and re-fires TypeFilterLabel PropertyChanged
-        // so the button label updates.
+        // re-applies the filter and re-fires TypeFilterLabel / TypeFilterTooltip
+        // PropertyChanged so the button label and hover tip update.
         _vm.SetTypeEnabled(type, mi.IsChecked);
+    }
+
+    // ---- Header-row bulk actions -------------------------------------------
+    //
+    // Both handlers walk the six named type-menu items, set IsChecked to the
+    // target state, and push the matching VM toggle. The menu stays open
+    // (StaysOpenOnClick=True on the type items) so the user sees the result
+    // immediately. The header-row Buttons themselves don't carry
+    // StaysOpenOnClick (they live inside a MenuItem.Header that's not a
+    // checkable MenuItem) — WPF's default ContextMenu close-on-Button-click
+    // behavior is fine since these are bulk actions; the user reviews the
+    // closed-state button label to confirm.
+
+    private void OnSelectAllTypesClick(object sender, RoutedEventArgs e)
+    {
+        TypeUnsignedItem.IsChecked = true;
+        TypeInvalidSignatureItem.IsChecked = true;
+        TypeFirstRunItem.IsChecked = true;
+        TypeUnusualVolumeItem.IsChecked = true;
+        TypeLargeDownloadItem.IsChecked = true;
+        TypeOutboundHeavyItem.IsChecked = true;
+        foreach (var type in Enum.GetValues<AlertType>())
+        {
+            _vm.SetTypeEnabled(type, true);
+        }
+    }
+
+    private void OnClearAllTypesClick(object sender, RoutedEventArgs e)
+    {
+        TypeUnsignedItem.IsChecked = false;
+        TypeInvalidSignatureItem.IsChecked = false;
+        TypeFirstRunItem.IsChecked = false;
+        TypeUnusualVolumeItem.IsChecked = false;
+        TypeLargeDownloadItem.IsChecked = false;
+        TypeOutboundHeavyItem.IsChecked = false;
+        foreach (var type in Enum.GetValues<AlertType>())
+        {
+            _vm.SetTypeEnabled(type, false);
+        }
     }
 
     // ---- ListView virtualization gate --------------------------------------
