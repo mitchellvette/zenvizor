@@ -5,85 +5,814 @@
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
-    <!--  Interim placeholder — brief §18a. Ships in the polish interlude
-          between now and Phase 6 so the Alerts nav-rail item doesn't open
-          to an unfinished surface next to the four polished screens
-          (Dashboard, Per-App, History, Reports).
+    <!--  Phase 4a — functional layout with synthetic seed data. Replaces
+          the §18a interim placeholder shipped in Bucket A. Phase 4b wires
+          the real AlertsClient.GetAlertsAsync round-trip and the
+          AlertRaised push subscription.
 
-          Layout (centered, no scroll):
-            * 96px metal-recipe medallion (metal.control + border.card +
-              shadow.sm + radius.md — the Per-App "info-card" recipe per
-              memory project_canonical_card_treatment.md, established
-              2026-06-06). The metal.control gradient already carries a
-              baked-in catch-light at offset 0.05 — no separate sheen
-              overlay needed, matching the mockup-vs-tokens reconciliation
-              for this brief.
-            * Alert48 SymbolIcon centered, text.tertiary foreground (a
-              deliberately de-emphasized hero glyph that says "ready for
-              content, not the content").
-            * Title — text.title.large "Alerts".
-            * Body — text.body.large, text.secondary, the "Coming in
-              Phase 6" framing copy verbatim from the brief.
-            * Caption — text.caption, text.tertiary, the additional
-              "first alert wired up" sentence.
+          State coverage shells are all authored as siblings of the feed
+          ListView and toggle Visibility via DataTriggers on the
+          view-model's Content property. The banner above the feed shares
+          its own DataTrigger off the Banner property so a populated feed
+          can coexist with a stale-connection banner (mockup pg 6).
 
-          Tone: deliberate "this is coming," not a working layout with
-          dummy data. The full Phase 6 functional layout (six-type
-          heterogeneous feed, filter bar, dismiss flow, live arrival)
-          replaces this XAML when Phase 6 lands.  -->
-    <Grid>
-        <StackPanel VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    MaxWidth="480">
+          Per-item template is DataTriggered on AlertVm.Severity so each
+          card's severity bar, icon tile, badge, and meta dot all
+          theme-swap correctly via DynamicResource in the Setter values
+          (the IValueConverter pattern would freeze the brush at bind
+          time; DataTrigger Setter values re-resolve on theme change).  -->
 
-            <!--  Medallion: canonical info-card recipe (metal.control +
-                  border.card + shadow.sm + radius.md). 96px square so
-                  the Alert48 glyph (48px font-size SymbolIcon) sits in
-                  a comfortable 24px gutter all round. -->
-            <Border Width="96"
-                    Height="96"
-                    HorizontalAlignment="Center"
-                    Background="{DynamicResource metal.control}"
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!--  STATE.CHIP — the segmented State control's individual chip.
+              Radio button group; checked chip paints accent.fill +
+              text.on-accent. The whole group sits inside a metal.control
+              container so the segmented look reads as one control.  -->
+        <Style x:Key="state.chip" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource text.primary}" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="ChipBorder"
+                                Background="Transparent"
+                                CornerRadius="{StaticResource radius.control}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ChipBorder" Property="Background"
+                                        Value="{DynamicResource accent.fill}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource text.on-accent}" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsChecked" Value="False" />
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ChipBorder" Property="Background"
+                                        Value="{DynamicResource surface.subtle}" />
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  SEVERITY.BAR — 4px Border with severity-tinted background. The
+              DataTrigger Setter values use DynamicResource so theme-swap
+              re-paints correctly. Same pattern repeats for severity tile,
+              severity badge, severity dot below.  -->
+        <Style x:Key="severity.bar" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Background" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Background" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Background" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  SEVERITY.TILE — 48px tinted-background Border. Background uses
+              status.*.background (the soft tint variant). Paired with
+              severity.tile.icon below for the saturated glyph.  -->
+        <Style x:Key="severity.tile" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Background" Value="{DynamicResource status.caution.background}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Background" Value="{DynamicResource status.neutral.background}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  SEVERITY.TILE.ICON — SymbolIcon foreground inside the tinted
+              tile. Saturated severity hue against the soft .background.  -->
+        <Style x:Key="severity.tile.icon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  SEVERITY.BADGE — small labelled pill ("Critical", "Warning",
+              "Info") sat next to the headline. Background uses the soft
+              tint; foreground uses the AA-clear severity colour
+              (status.caution.text for Warning because the bright amber
+              fails AA at body-size against the amber tint; Critical and
+              Info clear AA at their base hues per the BrandAccent overrides).  -->
+        <Style x:Key="severity.badge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource radius.xs}" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Background" Value="{DynamicResource status.critical.background}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Background" Value="{DynamicResource status.caution.background}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Background" Value="{DynamicResource status.neutral.background}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="severity.badge.text" TargetType="TextBlock" BasedOn="{StaticResource text.caption}">
+            <Setter Property="FontWeight" Value="{StaticResource font.weight.semibold}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource status.caution.text}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  SEVERITY.DOT — 6px round Ellipse for the meta row. Same
+              hue as the severity bar.  -->
+        <Style x:Key="severity.dot" TargetType="Ellipse">
+            <Setter Property="Width" Value="6" />
+            <Setter Property="Height" Value="6" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Fill" Value="{DynamicResource status.critical}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Fill" Value="{DynamicResource status.caution}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Info">
+                    <Setter Property="Fill" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--  ALERT.ITEM — per-alert card template. Composition:
+                [4px bar | 48px tile | content | actions]
+              Content stacks: severity badge + headline → detail → "Why this
+              matters" (Phase 5 expand) → meta row.
+              Dismissed rows demote to surface.card.alt; severity bar fades
+              via OpacityMask on IsDismissed. Phase 5 polishes the dismissed
+              treatment further.  -->
+        <DataTemplate x:Key="alert.item">
+            <Border Margin="0,0,0,12"
+                    Background="{DynamicResource metal.card}"
+                    BorderBrush="{DynamicResource border.card}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource radius.card}"
+                    Effect="{DynamicResource shadow.card}">
+                <!--  Dismissed-row demotion is handled by toggling the outer
+                      Opacity via a DataTrigger on AlertVm.IsDismissed.
+                      Phase 5 layers further treatment (severity bar
+                      desaturated, dismiss button replaced with "Dismissed"
+                      tag). -->
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsDismissed}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource surface.card.alt}" />
+                                <Setter Property="Opacity" Value="0.72" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!--  Col 0 — 4px left severity bar. Stretches full card height.  -->
+                    <Border Grid.Column="0"
+                            Width="4"
+                            Style="{StaticResource severity.bar}" />
+
+                    <!--  Col 1 — 48px severity tile + glyph. Margin 16 from the
+                          bar; vertically aligned top so multi-line cards have
+                          a stable visual anchor.  -->
+                    <Border Grid.Column="1"
+                            Width="48" Height="48"
+                            Margin="16,16,0,16"
+                            VerticalAlignment="Top"
+                            CornerRadius="{StaticResource radius.md}"
+                            Style="{StaticResource severity.tile}">
+                        <ui:SymbolIcon Symbol="{Binding Icon}"
+                                       Style="{StaticResource severity.tile.icon}" />
+                    </Border>
+
+                    <!--  Col 2 — content stack: severity badge + headline,
+                          per-instance detail, why-this-matters link, meta row. -->
+                    <StackPanel Grid.Column="2" Margin="16,16,16,16">
+                        <!--  Severity badge + headline. Headline wraps; badge
+                              stays top-aligned with the first line of headline.  -->
+                        <StackPanel Orientation="Horizontal">
+                            <Border Style="{StaticResource severity.badge}" Margin="0,2,8,0">
+                                <TextBlock Text="{Binding SeverityDisplayName}"
+                                           Style="{StaticResource severity.badge.text}" />
+                            </Border>
+                            <TextBlock Style="{StaticResource text.body.strong}"
+                                       Text="{Binding Title}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Top" />
+                        </StackPanel>
+
+                        <!--  Per-instance detail prose. text.body
+                              text.secondary so it doesn't fight the headline.  -->
+                        <TextBlock Style="{StaticResource text.body}"
+                                   Foreground="{DynamicResource text.secondary}"
+                                   Text="{Binding Detail}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0" />
+
+                        <!--  Why-this-matters link. Phase 4a renders the
+                              static accent.text link; Phase 5 wires the
+                              expand-on-click disclosure that reveals the
+                              WhyMatters paragraph inline.  -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <ui:SymbolIcon Symbol="ChevronRight16"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource accent.text}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,4,0" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource accent.text}"
+                                       Text="Why this matters"
+                                       Cursor="Hand" />
+                        </StackPanel>
+
+                        <!--  Meta row: severity dot · timestamp · source label
+                              · type display name. Bullet separators in
+                              text.tertiary so they read as joiners not content. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <Ellipse Style="{StaticResource severity.dot}" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="{Binding SeverityDisplayName}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="  ·  "
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock FontFamily="{StaticResource font.mono}"
+                                       FontSize="{StaticResource font.size.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="{Binding CreatedAtDisplay}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="  ·  "
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="{Binding SourceLabel}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="  ·  "
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="{Binding TypeDisplayName}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!--  Col 3 — action column. Dismiss + View app. Dismiss
+                          uses metal.control + border.card per the brief §13
+                          (NOT a destructive trash icon — passive-only).
+                          View app is the accent.text drill link to
+                          AppDetailPage; Phase 5 wires the click.  -->
+                    <StackPanel Grid.Column="3" Margin="0,16,16,16" VerticalAlignment="Top">
+                        <ui:Button Background="{DynamicResource metal.control}"
+                                   BorderBrush="{DynamicResource border.card}"
+                                   BorderThickness="1"
+                                   Padding="12,4"
+                                   MinWidth="92"
+                                   Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Checkmark20" FontSize="14" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <TextBlock Text="Dismiss" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ui:Button>
+                        <Border Visibility="{Binding IsDismissed, Converter={StaticResource BoolToVisibility}}"
+                                BorderBrush="{DynamicResource border.subtle}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource radius.control}"
+                                Padding="12,4"
+                                MinWidth="92">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="CheckmarkCircle20"
+                                               FontSize="14"
+                                               Foreground="{DynamicResource text.tertiary}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,4,0" />
+                                <TextBlock Text="Dismissed"
+                                           Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" HorizontalAlignment="Right">
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource accent.text}"
+                                       Text="View app"
+                                       Cursor="Hand"
+                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="ChevronRight16"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource accent.text}"
+                                           VerticalAlignment="Center"
+                                           Margin="2,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
+    <!--  Main page layout. 4 rows: header (title + KPI strip), filter bar,
+          status banner, feed container (with state shells). Page outer
+          margin is space.24.  -->
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="320" />
+        </Grid.RowDefinitions>
+
+        <!--  Row 0 — header row. Left: title + subtitle. Right: 4-cell KPI
+              strip (Active | Critical | Warning | Info). Strip is its own
+              metal.card with border.subtle dividers between cells.  -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" MaxWidth="540" HorizontalAlignment="Left">
+                <ui:TextBlock Style="{StaticResource text.subtitle}"
+                              FontFamily="{StaticResource font.display}"
+                              FontSize="24"
+                              Text="Alerts" />
+                <ui:TextBlock Style="{StaticResource text.caption}"
+                              Foreground="{DynamicResource text.secondary}"
+                              Text="Things ZenVizor noticed about your machine that might be worth a look. What was odd, how serious it might be, and a way to mark each one as handled."
+                              TextWrapping="Wrap"
+                              Margin="0,4,0,0" />
+            </StackPanel>
+
+            <Border Grid.Column="1"
+                    Background="{DynamicResource metal.card}"
                     BorderBrush="{DynamicResource border.card}"
                     BorderThickness="1"
                     CornerRadius="{StaticResource radius.md}"
-                    Effect="{DynamicResource shadow.sm}">
-                <ui:SymbolIcon Symbol="Alert48"
-                               FontSize="48"
-                               Foreground="{DynamicResource text.tertiary}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
+                    Effect="{DynamicResource shadow.sm}"
+                    VerticalAlignment="Top">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!--  ACTIVE cell — eyebrow + count. eyebrow text.tertiary
+                          to read as a label, not data.  -->
+                    <StackPanel Grid.Column="0" Margin="20,12">
+                        <TextBlock Style="{StaticResource text.eyebrow}"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   Text="ACTIVE" />
+                        <TextBlock FontFamily="{StaticResource font.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   FontWeight="{StaticResource font.weight.semibold}"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="{Binding ActiveCount}"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                    <Border Grid.Column="1" Width="1" Background="{DynamicResource border.subtle}" />
+
+                    <!--  CRITICAL — severity-tinted eyebrow + count. Tint
+                          uses the saturated status.critical brush. Count
+                          stays text.primary so the value reads as data.  -->
+                    <StackPanel Grid.Column="2" Margin="20,12">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6"
+                                     Fill="{DynamicResource status.critical}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,6,0" />
+                            <TextBlock Style="{StaticResource text.eyebrow}"
+                                       Foreground="{DynamicResource status.critical}"
+                                       Text="CRITICAL" />
+                        </StackPanel>
+                        <TextBlock FontFamily="{StaticResource font.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   FontWeight="{StaticResource font.weight.semibold}"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="{Binding CriticalCount}"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                    <Border Grid.Column="3" Width="1" Background="{DynamicResource border.subtle}" />
+
+                    <!--  WARNING — same shape, amber tint.  -->
+                    <StackPanel Grid.Column="4" Margin="20,12">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6"
+                                     Fill="{DynamicResource status.caution}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,6,0" />
+                            <TextBlock Style="{StaticResource text.eyebrow}"
+                                       Foreground="{DynamicResource status.caution.text}"
+                                       Text="WARNING" />
+                        </StackPanel>
+                        <TextBlock FontFamily="{StaticResource font.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   FontWeight="{StaticResource font.weight.semibold}"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="{Binding WarningCount}"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                    <Border Grid.Column="5" Width="1" Background="{DynamicResource border.subtle}" />
+
+                    <!--  INFO — cool-blue tint via the BrandAccent
+                          status.neutral override.  -->
+                    <StackPanel Grid.Column="6" Margin="20,12">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6"
+                                     Fill="{DynamicResource status.neutral}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,6,0" />
+                            <TextBlock Style="{StaticResource text.eyebrow}"
+                                       Foreground="{DynamicResource status.neutral}"
+                                       Text="INFO" />
+                        </StackPanel>
+                        <TextBlock FontFamily="{StaticResource font.mono}"
+                                   FontSize="{StaticResource font.size.metric}"
+                                   FontWeight="{StaticResource font.weight.semibold}"
+                                   Foreground="{DynamicResource text.primary}"
+                                   Text="{Binding InfoCount}"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                </Grid>
             </Border>
+        </Grid>
 
-            <!--  Title — page identity. 24px Margin between medallion and
-                  title (space.24) matches the page outer margin rhythm. -->
-            <ui:TextBlock Style="{StaticResource text.title.large}"
-                          Text="Alerts"
-                          HorizontalAlignment="Center"
-                          Margin="0,24,0,0" />
+        <!--  Row 1 — filter bar. SHOW segmented State control + SEVERITY
+              checkboxes + TYPE ComboBox + Reset link.  -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource metal.card}"
+                BorderBrush="{DynamicResource border.card}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource radius.md}"
+                Effect="{DynamicResource shadow.sm}"
+                Padding="16,10"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <!--  Body — the "coming in Phase 6" framing. text.body.large
-                  for legible long-form prose; text.secondary so the body
-                  doesn't compete with the title. TextWrapping so the copy
-                  wraps cleanly inside the MaxWidth=480 envelope. -->
-            <ui:TextBlock Style="{StaticResource text.body.large}"
-                          Foreground="{DynamicResource text.secondary}"
-                          Text="Coming in Phase 6. A feed of observations ZenVizor flagged, with a way to mark each one as handled."
-                          HorizontalAlignment="Center"
-                          TextAlignment="Center"
-                          TextWrapping="Wrap"
-                          Margin="0,12,0,0" />
+                <!--  SHOW group. Segmented State chips inside a 1px-stroked
+                      container so the three options read as one control.  -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,32,0">
+                    <TextBlock Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.tertiary}"
+                               Text="SHOW"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,0" />
+                    <Border BorderBrush="{DynamicResource border.card}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource radius.control}"
+                            Padding="2">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="StateActiveChip"
+                                         GroupName="State"
+                                         Content="Active"
+                                         IsChecked="True"
+                                         Click="OnStateChipClick"
+                                         Style="{StaticResource state.chip}" />
+                            <RadioButton x:Name="StateDismissedChip"
+                                         GroupName="State"
+                                         Content="Dismissed"
+                                         Click="OnStateChipClick"
+                                         Style="{StaticResource state.chip}" />
+                            <RadioButton x:Name="StateAllChip"
+                                         GroupName="State"
+                                         Content="All"
+                                         Click="OnStateChipClick"
+                                         Style="{StaticResource state.chip}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
-            <!--  Caption — the additional "first alert wired up" sentence
-                  from brief §18a. text.caption + text.tertiary so it reads
-                  as supporting detail beneath the body, not part of it. -->
-            <ui:TextBlock Style="{StaticResource text.caption}"
-                          Foreground="{DynamicResource text.tertiary}"
-                          Text="The first alert wired up is for unsigned programs from user-writable folders making network connections."
-                          HorizontalAlignment="Center"
-                          TextAlignment="Center"
-                          TextWrapping="Wrap"
-                          Margin="0,16,0,0" />
-        </StackPanel>
+                <!--  SEVERITY group — 3 checkboxes with severity-tinted dots.  -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,32,0">
+                    <TextBlock Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.tertiary}"
+                               Text="SEVERITY"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,0" />
+                    <CheckBox x:Name="SeverityCriticalCheck"
+                              IsChecked="{Binding SeverityCriticalEnabled, Mode=TwoWay}"
+                              VerticalContentAlignment="Center"
+                              Margin="0,0,12,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource status.critical}" VerticalAlignment="Center" Margin="4,0,4,0" />
+                            <TextBlock Text="Critical" Style="{StaticResource text.body}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox x:Name="SeverityWarningCheck"
+                              IsChecked="{Binding SeverityWarningEnabled, Mode=TwoWay}"
+                              VerticalContentAlignment="Center"
+                              Margin="0,0,12,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource status.caution}" VerticalAlignment="Center" Margin="4,0,4,0" />
+                            <TextBlock Text="Warning" Style="{StaticResource text.body}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox x:Name="SeverityInfoCheck"
+                              IsChecked="{Binding SeverityInfoEnabled, Mode=TwoWay}"
+                              VerticalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource status.neutral}" VerticalAlignment="Center" Margin="4,0,4,0" />
+                            <TextBlock Text="Info" Style="{StaticResource text.body}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+
+                <!--  TYPE group — ComboBox of catalog type display names.
+                      Phase 4a renders the closed "All types" state; Phase 4b
+                      wires the multi-select dropdown content + filter
+                      application.  -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource text.tertiary}"
+                               Text="TYPE"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,0" />
+                    <ComboBox x:Name="TypeCombo"
+                              MinWidth="140"
+                              Background="{DynamicResource metal.control}"
+                              BorderBrush="{DynamicResource border.card}"
+                              VerticalAlignment="Center">
+                        <ComboBoxItem Content="All types" IsSelected="True" />
+                    </ComboBox>
+                </StackPanel>
+
+                <!--  Reset link — accent.text, visible only when filter is
+                      non-default. Click handler in code-behind calls
+                      ViewModel.ResetFilter().  -->
+                <Button Grid.Column="4"
+                        x:Name="ResetFilterLink"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="6,4"
+                        Cursor="Hand"
+                        Click="OnResetFilterClick"
+                        VerticalAlignment="Center"
+                        FocusVisualStyle="{x:Null}"
+                        Visibility="{Binding IsFilterNotAtDefault, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowReset24"
+                                       FontSize="14"
+                                       Foreground="{DynamicResource accent.text}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                        <TextBlock Style="{StaticResource text.caption}"
+                                   Foreground="{DynamicResource accent.text}"
+                                   Text="Reset filter"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!--  Row 2 — status banner. Default Collapsed; ViewModel.Banner
+              property drives Visibility + background + foreground +
+              glyph. Disconnected = status.critical.background / .critical;
+              error = status.caution.background / .text.  -->
+        <Border Grid.Row="2"
+                x:Name="StatusBanner"
+                Visibility="Collapsed"
+                Margin="0,0,0,12"
+                Padding="12,8"
+                CornerRadius="{StaticResource radius.control}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                               Symbol="Warning20"
+                               FontSize="16"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                <TextBlock x:Name="StatusBannerText" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!--  Row 3 — feed container + state shells. ListView populated
+              from ViewModel.Alerts. Loading / NoAlerts / FilteredEmpty
+              overlays sit as siblings; their Visibility toggles via
+              DataTriggers on ViewModel.Content.
+
+              MaxHeight set programmatically in code-behind on Loaded +
+              SizeChanged so the inner VirtualizingStackPanel virtualizes
+              (memory: project_wpfui_navigationview_scrollviewer.md).
+              ScrollUnit=Pixel because Phase 5's expand-on-click disclosure
+              makes item heights variable.  -->
+        <Grid Grid.Row="3">
+            <!--  Populated feed.  -->
+            <ListView x:Name="AlertsList"
+                      ItemsSource="{Binding Alerts}"
+                      ItemTemplate="{StaticResource alert.item}"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.ScrollUnit="Pixel"
+                      VirtualizingPanel.VirtualizationMode="Standard"
+                      Loaded="OnAlertsListLoaded"
+                      SizeChanged="OnAlertsListSizeChanged">
+                <ListView.Style>
+                    <Style TargetType="ListView">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="Populated">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListView.Style>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+            </ListView>
+
+            <!--  LOADING shell — centered ProgressRing, no skeleton shimmer
+                  (brief §8.1 global lock).  -->
+            <ui:ProgressRing IsIndeterminate="True"
+                             Width="36"
+                             Height="36"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center">
+                <ui:ProgressRing.Style>
+                    <Style TargetType="ui:ProgressRing">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="Loading">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ui:ProgressRing.Style>
+            </ui:ProgressRing>
+
+            <!--  NO ALERTS shell — centered medallion + reassuring title +
+                  body. Medallion uses the canonical info-card recipe
+                  (metal.control + border.card + shadow.sm + radius.md);
+                  glyph in status.success per the mockup pg 5 lock.  -->
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="420">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="NoAlerts">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <Border Width="80" Height="80"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource metal.control}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.md}"
+                        Effect="{DynamicResource shadow.sm}">
+                    <ui:SymbolIcon Symbol="ShieldCheckmark48"
+                                   FontSize="40"
+                                   Foreground="{DynamicResource status.success}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                </Border>
+                <ui:TextBlock Style="{StaticResource text.subtitle}"
+                              Text="No alerts"
+                              HorizontalAlignment="Center"
+                              Margin="0,16,0,0" />
+                <ui:TextBlock Style="{StaticResource text.body.large}"
+                              Foreground="{DynamicResource text.secondary}"
+                              Text="ZenVizor will surface anything worth a look here when it sees it."
+                              HorizontalAlignment="Center"
+                              TextAlignment="Center"
+                              TextWrapping="Wrap"
+                              Margin="0,8,0,0" />
+            </StackPanel>
+
+            <!--  FILTERED-EMPTY shell — distinct copy from NoAlerts (brief
+                  §4 lock — "Filtered to empty" is its own state, naming the
+                  filter as the cause). Reset CTA below the copy carries the
+                  hidden count.  -->
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="460">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="FilteredEmpty">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <Border Width="80" Height="80"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource metal.control}"
+                        BorderBrush="{DynamicResource border.card}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource radius.md}"
+                        Effect="{DynamicResource shadow.sm}">
+                    <ui:SymbolIcon Symbol="Filter24"
+                                   FontSize="40"
+                                   Foreground="{DynamicResource text.tertiary}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                </Border>
+                <ui:TextBlock Style="{StaticResource text.subtitle}"
+                              Text="No alerts match the current filter"
+                              HorizontalAlignment="Center"
+                              Margin="0,16,0,0" />
+                <ui:TextBlock Style="{StaticResource text.body.large}"
+                              Foreground="{DynamicResource text.secondary}"
+                              Text="Alerts exist; the current filter is hiding them."
+                              HorizontalAlignment="Center"
+                              TextAlignment="Center"
+                              TextWrapping="Wrap"
+                              Margin="0,8,0,0" />
+                <ui:Button x:Name="ResetFilterCta"
+                           Style="{StaticResource style.button.accent.fill}"
+                           Margin="0,16,0,0"
+                           Height="32"
+                           Padding="14,0"
+                           HorizontalAlignment="Center"
+                           Click="OnResetFilterClick">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowReset24"
+                                       FontSize="14"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                        <TextBlock Text="Reset filter to see hidden alerts"
+                                   Foreground="{DynamicResource text.on-accent}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>
