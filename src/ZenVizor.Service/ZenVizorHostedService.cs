@@ -35,6 +35,7 @@ internal sealed class ZenVizorHostedService : IHostedService
     private readonly ILogger<ZenVizorHostedService> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private ZenVizorPipeServer? _pipeServer;
+    private AlertBroadcaster? _alertBroadcaster;
     private CaptureMonitor? _captureMonitor;
     private EtwCaptureSource? _captureSource;
     private CancellationTokenSource? _retentionCts;
@@ -170,9 +171,19 @@ internal sealed class ZenVizorHostedService : IHostedService
             historyProvider:     (w,g)    => queryRepo.GetTrafficHistory(w, g),
             dailyReportProvider: (d,a,sd) => dailyReportRepo.GetDailyReport(d, a, sd, TimeZoneInfo.Local));
 
+        // The alert broadcaster is the fan-out point for server-pushed
+        // AlertRaised notifications. Phase 6 sprint work — the alert
+        // producer + storage repository — will call BroadcastAlertRaisedAsync
+        // when a rule fires. The broadcaster is wired into the pipe server
+        // here so every accepted connection auto-subscribes; the producer
+        // gets a reference to it once the rule-engine wiring lands.
+        _alertBroadcaster = new AlertBroadcaster(
+            _loggerFactory.CreateLogger<AlertBroadcaster>());
+
         _pipeServer = new ZenVizorPipeServer(
             handler,
-            _loggerFactory.CreateLogger<ZenVizorPipeServer>());
+            _loggerFactory.CreateLogger<ZenVizorPipeServer>(),
+            alertBroadcaster: _alertBroadcaster);
         _pipeServer.Start();
 
         // ---- Retention purge: one immediate run + once per 24 h thereafter. ----

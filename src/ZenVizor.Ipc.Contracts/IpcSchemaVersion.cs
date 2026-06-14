@@ -28,4 +28,10 @@ public static class IpcSchemaVersion
 
     /// <summary>Schema version of <see cref="Dto.DailyReportResult"/> payloads.</summary>
     public const int DailyReport = 1;
+
+    /// <summary>
+    /// Schema version of <see cref="Dto.AlertsResult"/> payloads and the
+    /// <c>AlertDto</c> rows it carries. Phase 6 — initial.
+    /// </summary>
+    public const int Alerts = 1;
 }

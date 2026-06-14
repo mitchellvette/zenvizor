@@ -21,17 +21,23 @@ public sealed class ZenVizorPipeServer : IAsyncDisposable
     private readonly IZenVizorIpc _handler;
     private readonly ILogger _logger;
     private readonly string _pipeName;
+    private readonly AlertBroadcaster? _alertBroadcaster;
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptLoop;
 
     public ZenVizorPipeServer(
         IZenVizorIpc handler,
         ILogger<ZenVizorPipeServer>? logger = null,
-        string? pipeName = null)
+        string? pipeName = null,
+        AlertBroadcaster? alertBroadcaster = null)
     {
         _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         _logger = (ILogger?)logger ?? NullLogger.Instance;
         _pipeName = pipeName ?? IpcConstants.PipeName;
+        // The broadcaster is optional so test harnesses + legacy callers that
+        // don't care about server-push can omit it; production composition in
+        // ZenVizorHostedService always supplies one.
+        _alertBroadcaster = alertBroadcaster;
     }
 
     public void Start()
@@ -103,6 +109,10 @@ public sealed class ZenVizorPipeServer : IAsyncDisposable
             {
                 try { rpc.Dispose(); } catch { /* best-effort */ }
             });
+            // Register this connection with the alert broadcaster so the
+            // Phase 6 alert producer can fan AlertRaised notifications out
+            // to every connected client. Auto-unregisters on JsonRpc.Disconnected.
+            _alertBroadcaster?.Register(rpc);
             await rpc.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

@@ -223,14 +223,130 @@ public sealed class InProcessRpcTests
         envelope.Payload.Series.Sum(p => p.BytesUp).Should().Be(3_000);
     }
 
+    // ---- Phase 6 Alerts surface --------------------------------------------
+
+    [Fact]
+    public async Task GetAlerts_RoundTripsThroughEnvelope()
+    {
+        var handler = new FakeIpcHandler();
+        var filter = new AlertsFilter(AlertState.Active);
+        handler.Alerts = new AlertsResult(
+            Filter: filter,
+            Alerts: new[]
+            {
+                new AlertDto(
+                    AlertId: 42,
+                    Type: AlertType.UnsignedFromUserPath,
+                    Severity: NotableSeverity.Critical,
+                    CreatedAtUnixMs: 1_700_000_000_000L,
+                    Source: SourceMonitor.Capture,
+                    EntityKind: AlertEntityKind.App,
+                    EntityRef: "7",
+                    Title: "Unsigned program talking to the network: 7zG.exe",
+                    Detail: "7zG.exe is running from a user-writable folder...",
+                    AcknowledgedAtUnixMs: null),
+            },
+            HasMore: false);
+        await using var session = TestRpcSession.Create(handler);
+
+        var envelope = await session.Proxy.GetAlertsAsync(filter);
+
+        envelope.SchemaVersion.Should().Be(IpcSchemaVersion.Alerts);
+        envelope.Payload.Filter.State.Should().Be(AlertState.Active);
+        envelope.Payload.Alerts.Should().ContainSingle();
+
+        var alert = envelope.Payload.Alerts.Single();
+        alert.AlertId.Should().Be(42);
+        alert.Type.Should().Be(AlertType.UnsignedFromUserPath);
+        alert.Severity.Should().Be(NotableSeverity.Critical);
+        alert.Source.Should().Be(SourceMonitor.Capture);
+        alert.EntityKind.Should().Be(AlertEntityKind.App);
+        alert.EntityRef.Should().Be("7");
+        alert.AcknowledgedAtUnixMs.Should().BeNull();
+        envelope.Payload.HasMore.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DismissAlert_RecordsAlertIdOnHandler()
+    {
+        var handler = new FakeIpcHandler();
+        await using var session = TestRpcSession.Create(handler);
+
+        await session.Proxy.DismissAlertAsync(99);
+
+        handler.DismissedAlertIds.Should().ContainSingle().Which.Should().Be(99);
+    }
+
+    [Fact]
+    public async Task AlertRaised_PushNotification_DispatchesToClientTarget()
+    {
+        // Verifies the server-to-client push path end-to-end: AlertBroadcaster
+        // → JsonRpc.NotifyAsync → client-side IAlertNotifications.OnAlertRaisedAsync.
+        // The locking pattern matches what AlertsClient does in production.
+        var handler = new FakeIpcHandler();
+        var notificationTarget = new TestAlertNotifications();
+        await using var session = TestRpcSession.Create(handler, notificationTarget);
+
+        var broadcaster = new AlertBroadcaster();
+        broadcaster.Register(session.ServerRpc);
+
+        var alert = new AlertDto(
+            AlertId: 1,
+            Type: AlertType.UnsignedFromUserPath,
+            Severity: NotableSeverity.Critical,
+            CreatedAtUnixMs: 1_700_000_000_000L,
+            Source: SourceMonitor.Capture,
+            EntityKind: AlertEntityKind.App,
+            EntityRef: "7",
+            Title: "Test alert",
+            Detail: "Round-trip test.",
+            AcknowledgedAtUnixMs: null);
+
+        await broadcaster.BroadcastAlertRaisedAsync(alert);
+
+        // StreamJsonRpc dispatches notifications asynchronously; wait briefly
+        // for the inbound NotifyAsync to land on the client-side target.
+        var received = await notificationTarget.WaitForAlertAsync(TimeSpan.FromSeconds(2));
+
+        received.Should().NotBeNull();
+        received!.AlertId.Should().Be(1);
+        received.Title.Should().Be("Test alert");
+        broadcaster.SubscriberCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Test-side implementation of <see cref="IAlertNotifications"/>. Captures
+    /// the first AlertDto pushed by the server and exposes a wait helper for
+    /// the async dispatch round-trip.
+    /// </summary>
+    private sealed class TestAlertNotifications : IAlertNotifications
+    {
+        private readonly TaskCompletionSource<AlertDto> _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnAlertRaisedAsync(AlertDto alert)
+        {
+            _tcs.TrySetResult(alert);
+            return Task.CompletedTask;
+        }
+
+        public async Task<AlertDto?> WaitForAlertAsync(TimeSpan timeout)
+        {
+            var completed = await Task.WhenAny(_tcs.Task, Task.Delay(timeout)).ConfigureAwait(false);
+            return completed == _tcs.Task ? await _tcs.Task.ConfigureAwait(false) : null;
+        }
+    }
+
     /// <summary>
     /// Owns the in-process duplex stream + the JsonRpc instances on both ends.
+    /// <see cref="ServerRpc"/> is exposed so push-notification tests can
+    /// register the server-side <see cref="StreamJsonRpc.JsonRpc"/> with an
+    /// <see cref="AlertBroadcaster"/>.
     /// </summary>
     private sealed class TestRpcSession : IAsyncDisposable
     {
         private readonly IDuplexPipe _clientPipe;
         private readonly IDuplexPipe _serverPipe;
-        private readonly StreamJsonRpc.JsonRpc _serverRpc;
         private readonly StreamJsonRpc.JsonRpc _clientRpc;
 
         private TestRpcSession(
@@ -242,28 +358,31 @@ public sealed class InProcessRpcTests
         {
             _clientPipe = clientPipe;
             _serverPipe = serverPipe;
-            _serverRpc = serverRpc;
+            ServerRpc = serverRpc;
             _clientRpc = clientRpc;
             Proxy = proxy;
         }
 
         public IZenVizorIpc Proxy { get; }
+        public StreamJsonRpc.JsonRpc ServerRpc { get; }
 
-        public static TestRpcSession Create(IZenVizorIpc handler)
+        public static TestRpcSession Create(
+            IZenVizorIpc handler,
+            IAlertNotifications? notificationTarget = null)
         {
             var (clientPipe, serverPipe) = FullDuplexStream.CreatePipePair();
             var serverStream = serverPipe.AsStream();
             var clientStream = clientPipe.AsStream();
 
             var serverRpc = ZenVizorRpcHost.Host(serverStream, handler);
-            var (proxy, clientRpc) = ZenVizorRpcClient.Attach(clientStream);
+            var (proxy, clientRpc) = ZenVizorRpcClient.Attach(clientStream, notificationTarget);
             return new TestRpcSession(clientPipe, serverPipe, serverRpc, clientRpc, proxy);
         }
 
         public ValueTask DisposeAsync()
         {
             _clientRpc.Dispose();
-            _serverRpc.Dispose();
+            ServerRpc.Dispose();
             _clientPipe.Input.Complete();
             _clientPipe.Output.Complete();
             _serverPipe.Input.Complete();

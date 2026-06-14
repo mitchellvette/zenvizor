@@ -75,4 +75,30 @@ public interface IZenVizorIpc
         DateOnly date,
         AnchorMode anchor,
         DateOnly? anchorSpecificDate);
+
+    // ---- Phase 6 Alerts surface ----
+
+    /// <summary>
+    /// Returns alerts matching the given filter. Server-side filtering covers
+    /// the <see cref="AlertsFilter.State"/> axis only — Severity and Type axes
+    /// are applied client-side per Alerts brief §14 (the entire matched set
+    /// returns in a single envelope so the client can pivot without round-trips).
+    /// Results are ordered reverse-chronological (newest first) per brief §11
+    /// (discovery-over-ranking). The <see cref="AlertsFilter.MaxRows"/> bound
+    /// is a transport safety net, not a top-N rank cap.
+    /// </summary>
+    Task<IpcEnvelope<AlertsResult>> GetAlertsAsync(AlertsFilter filter);
+
+    /// <summary>
+    /// Marks an active alert as dismissed. One-click action with no
+    /// confirmation per brief §3.5 + §8.2 lock — dismissed rows remain
+    /// queryable via the <c>Dismissed</c> and <c>All</c> filters until
+    /// retention purges them (dismissed + 90 days, configurable per PRD §7.9).
+    /// The internal column name stays <c>acknowledged_at</c> (no schema
+    /// migration) but the IPC method, the CLI subcommand, and every visible
+    /// string use "dismiss" per the catalog §1.2 vocabulary lock. No-op if
+    /// the alert is already dismissed or does not exist (idempotent —
+    /// double-clicks must not throw).
+    /// </summary>
+    Task DismissAlertAsync(long alertId);
 }

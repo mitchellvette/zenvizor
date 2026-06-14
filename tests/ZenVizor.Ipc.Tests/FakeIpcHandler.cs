@@ -118,6 +118,22 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         DateOnly? anchorSpecificDate) =>
         Task.FromResult(new IpcEnvelope<DailyReportResult>(IpcSchemaVersion.DailyReport, DailyReport));
 
+    // ---- Phase 6 Alerts surface: scriptable stubs for contract tests ----
+
+    public AlertsResult Alerts { get; set; } =
+        new(new AlertsFilter(AlertState.Active), Array.Empty<AlertDto>(), HasMore: false);
+
+    public List<long> DismissedAlertIds { get; } = new();
+
+    public Task<IpcEnvelope<AlertsResult>> GetAlertsAsync(AlertsFilter filter) =>
+        Task.FromResult(new IpcEnvelope<AlertsResult>(IpcSchemaVersion.Alerts, Alerts));
+
+    public Task DismissAlertAsync(long alertId)
+    {
+        DismissedAlertIds.Add(alertId);
+        return Task.CompletedTask;
+    }
+
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>
         ProtocolVersion.IsCompatible(clientVersion)
             ? new NegotiateVersionResult(Accepted: true, ServerVersion: ProtocolVersion.Current, Reason: null)

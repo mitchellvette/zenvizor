@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
 using ZenVizor.Ui.Views;
 using Wpf.Ui.Appearance;
@@ -10,24 +11,11 @@ using Wpf.Ui.Controls;
 
 namespace ZenVizor.Ui;
 
-/// <summary>
-/// Severity vocabulary for the Alerts nav-rail badge. Phase 2 placeholder
-/// pending unification with the Phase 6 IPC contract severity enum
-/// (ZenVizor.Ipc.Contracts.Dto.Severity, not yet defined). Locked mapping
-/// per the catalog §1.4: Info → status.neutral, Warning → status.caution,
-/// Critical → status.critical.
-/// </summary>
-public enum AlertSeverity
-{
-    Info,
-    Warning,
-    Critical,
-}
-
 public partial class MainWindow : FluentWindow
 {
     private readonly ServiceStatusPoller _poller;
     private readonly ActivitySnapshotPoller _activityPoller;
+    private readonly AlertsClient _alertsClient;
     private bool _exiting;
 
     // Alerts nav-rail badge — one-shot pulse storyboard built in code-behind
@@ -74,6 +62,14 @@ public partial class MainWindow : FluentWindow
         _activityPoller = new ActivitySnapshotPoller();
         _activityPoller.SnapshotReceived += OnActivitySnapshot;
 
+        // The alerts client owns the persistent push-subscription connection.
+        // Constructed up-front so AlertsPage (cached, NavigationCacheMode.Enabled)
+        // can reach it on first nav; subscribed here so the nav-rail badge
+        // receives AlertRaised pushes regardless of whether the user has
+        // opened the Alerts page. OnAlertRaised marshals to dispatcher.
+        _alertsClient = new AlertsClient();
+        _alertsClient.AlertRaised += OnAlertRaised;
+
         // Cache page instances so picker state (window, grain, scroll position)
         // survives navigation away and back. Without this, each nav rail click
         // constructs a fresh page and resets every picker to its default.
@@ -96,6 +92,25 @@ public partial class MainWindow : FluentWindow
 
         BuildAlertsBadgePulseStoryboard();
 
+        // Establish the alerts-push subscription eagerly so the nav-rail
+        // badge fires immediately on AlertRaised even if the user has not
+        // opened the Alerts page. Connection failures here are non-fatal —
+        // the service may be down; the next user-driven query will surface
+        // a status banner. Fire-and-forget so OnLoaded doesn't block on
+        // pipe handshake (a slow connect would stall window display).
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _alertsClient.EnsureConnectedAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort — the AlertsPage / nav-badge surface will
+                // re-attempt the connect on their own query path.
+            }
+        });
+
         // Gallery's canonical initial-selection pattern: Navigate(Type)
         // from the window's Loaded handler. With TargetPageType set per
         // item via OnNavItemInitialized BEFORE NavigationView's own
@@ -107,14 +122,41 @@ public partial class MainWindow : FluentWindow
     }
 
     /// <summary>
+    /// The single shared <see cref="AlertsClient"/> for this UI process.
+    /// AlertsPage's view-model subscribes to its <c>AlertRaised</c> event
+    /// alongside the nav-rail badge handler here, so both surfaces see the
+    /// same push payload at the same moment.
+    /// </summary>
+    internal AlertsClient AlertsClient => _alertsClient;
+
+    private void OnAlertRaised(object? sender, AlertDto alert)
+    {
+        // Marshal to dispatcher — StreamJsonRpc invokes the callback on
+        // a thread-pool thread; visual-tree mutations must run on the UI
+        // thread. Matches the OnActivitySnapshot pattern above.
+        Dispatcher.Invoke(() =>
+        {
+            // Phase 3: simple "+1 to count, take this severity as the highest
+            // observed" cue. Phase 4 wires the real ViewModel that owns the
+            // active-set count and the running highest-severity calculation;
+            // for now this gives a visible signal that push works end-to-end.
+            // The AlertsViewModel (when authored) will own the count + severity
+            // state and call UpdateAlertsBadge itself.
+            PulseAlertsBadge();
+        });
+    }
+
+    /// <summary>
     /// Updates the Alerts nav-rail badge to reflect the current active
     /// alert count and highest severity. Hides the badge when count is 0.
-    /// Phase 2 surface; Phase 6 wires this to the AlertRaised push.
+    /// Called from the AlertsViewModel as it recomputes the active set
+    /// (Phase 4 wiring) and from any place that wants to force-refresh
+    /// the badge surface.
     /// </summary>
     /// <param name="activeCount">Number of currently-active (undismissed) alerts.</param>
     /// <param name="highestSeverity">The worst severity present in the active
     /// set; drives the badge tint. Null when count is 0 (badge hidden).</param>
-    public void UpdateAlertsBadge(int activeCount, AlertSeverity? highestSeverity)
+    public void UpdateAlertsBadge(int activeCount, NotableSeverity? highestSeverity)
     {
         if (activeCount <= 0)
         {
@@ -125,7 +167,7 @@ public partial class MainWindow : FluentWindow
         AlertsBadgeCount.Visibility = Visibility.Visible;
         AlertsBadgeCountText.Text = activeCount.ToString();
         AlertsBadgeCount.Background = (Brush)FindResource(
-            SeverityToBackgroundKey(highestSeverity ?? AlertSeverity.Info));
+            SeverityToBackgroundKey(highestSeverity ?? NotableSeverity.Info));
     }
 
     /// <summary>
@@ -155,11 +197,11 @@ public partial class MainWindow : FluentWindow
     // .background tints — the mockup paints fully-saturated pills with
     // white text. status.neutral is overridden in BrandAccent.{Light,Dark}
     // from Wpf.Ui's gray to the brand cool blue per the Phase 1 token work.
-    private static string SeverityToBackgroundKey(AlertSeverity severity) => severity switch
+    private static string SeverityToBackgroundKey(NotableSeverity severity) => severity switch
     {
-        AlertSeverity.Critical => "status.critical",
-        AlertSeverity.Warning => "status.caution",
-        AlertSeverity.Info => "status.neutral",
+        NotableSeverity.Critical => "status.critical",
+        NotableSeverity.Warning => "status.caution",
+        NotableSeverity.Info => "status.neutral",
         _ => "status.neutral",
     };
 
@@ -261,6 +303,11 @@ public partial class MainWindow : FluentWindow
     {
         try { _poller.Dispose(); } catch { }
         try { _activityPoller.Dispose(); } catch { }
+        // Fire-and-forget the alerts pipe disposal — the named pipe + RPC
+        // session free themselves quickly; we don't await because OnClosed
+        // is running on the dispatcher and a blocking wait would deadlock
+        // any in-flight callback that still expects the dispatcher.
+        try { _ = _alertsClient.DisposeAsync().AsTask(); } catch { }
         // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
         // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
         // disposes the tray AFTER the dispatcher fully drains. Calling

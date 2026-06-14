@@ -123,6 +123,18 @@ internal sealed class NegotiationGate : IZenVizorIpc
         return _inner.GetDailyReportAsync(date, anchor, anchorSpecificDate);
     }
 
+    public Task<IpcEnvelope<AlertsResult>> GetAlertsAsync(AlertsFilter filter)
+    {
+        RequireNegotiated(nameof(GetAlertsAsync));
+        return _inner.GetAlertsAsync(filter);
+    }
+
+    public Task DismissAlertAsync(long alertId)
+    {
+        RequireNegotiated(nameof(DismissAlertAsync));
+        return _inner.DismissAlertAsync(alertId);
+    }
+
     private void RequireNegotiated(string methodName)
     {
         if (!IsNegotiated)

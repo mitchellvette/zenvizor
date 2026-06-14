@@ -29,10 +29,17 @@ public sealed class ZenVizorPipeClient : IAsyncDisposable
     /// Connect to the ZenVizor service named pipe and negotiate the wire-protocol
     /// version. Throws <see cref="IpcVersionMismatchException"/> if the server
     /// rejects the client's <see cref="ProtocolVersion.Current"/>.
+    /// <para>
+    /// When <paramref name="notificationTarget"/> is supplied, it's registered
+    /// as the client-side callback target for server-pushed notifications
+    /// (see <see cref="IAlertNotifications"/>). Pass null when the consumer
+    /// only needs the request/reply surface (history queries, daily reports).
+    /// </para>
     /// </summary>
     public static async Task<ZenVizorPipeClient> ConnectAsync(
         string? pipeName = null,
         TimeSpan? connectTimeout = null,
+        IAlertNotifications? notificationTarget = null,
         CancellationToken cancellationToken = default)
     {
         var name = pipeName ?? IpcConstants.PipeName;
@@ -54,7 +61,7 @@ public sealed class ZenVizorPipeClient : IAsyncDisposable
             throw;
         }
 
-        var (proxy, rpc) = ZenVizorRpcClient.Attach(pipe);
+        var (proxy, rpc) = ZenVizorRpcClient.Attach(pipe, notificationTarget);
 
         NegotiateVersionResult negotiation;
         try

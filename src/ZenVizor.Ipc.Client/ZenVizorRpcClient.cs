@@ -10,12 +10,28 @@ namespace ZenVizor.Ipc.Client;
 /// </summary>
 public static class ZenVizorRpcClient
 {
-    public static (IZenVizorIpc Proxy, JsonRpc Rpc) Attach(Stream stream)
+    /// <summary>
+    /// Attach a JsonRpc proxy + RPC instance to <paramref name="stream"/> and
+    /// start listening. When <paramref name="notificationTarget"/> is supplied,
+    /// it's registered as a local RPC target BEFORE listening starts so the
+    /// server's <c>NotifyAsync</c> push notifications (e.g.
+    /// <see cref="IAlertNotifications.OnAlertRaisedAsync"/>) dispatch into
+    /// the supplied callback handler. Registration order matters —
+    /// AddLocalRpcTarget after StartListening can race with the first
+    /// incoming notification.
+    /// </summary>
+    public static (IZenVizorIpc Proxy, JsonRpc Rpc) Attach(
+        Stream stream,
+        IAlertNotifications? notificationTarget = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
         var rpc = new JsonRpc(new HeaderDelimitedMessageHandler(stream));
         var proxy = rpc.Attach<IZenVizorIpc>();
+        if (notificationTarget is not null)
+        {
+            rpc.AddLocalRpcTarget(notificationTarget);
+        }
         rpc.StartListening();
         return (proxy, rpc);
     }

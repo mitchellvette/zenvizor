@@ -40,6 +40,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private readonly Func<int, QueryWindow, ConnectionListResult> _connectionsProvider;
     private readonly Func<QueryWindow, TrafficGrain, TrafficHistoryResult> _historyProvider;
     private readonly Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult> _dailyReportProvider;
+    private readonly Func<AlertsFilter, AlertsResult> _alertsProvider;
+    private readonly Func<long, bool> _alertDismisser;
     private readonly Func<DateTimeOffset> _clock;
     private readonly long _maxWindowLookbackMs;
     private readonly string _serviceVersion;
@@ -55,6 +57,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
         Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null,
         Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null,
+        Func<AlertsFilter, AlertsResult>? alertsProvider = null,
+        Func<long, bool>? alertDismisser = null,
         Func<DateTimeOffset>? clock = null,
         long? maxWindowLookbackMs = null)
     {
@@ -74,6 +78,12 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         // provider is wired (legacy test harnesses), fall back to an empty
         // result rather than mock data.
         _dailyReportProvider = dailyReportProvider ?? EmptyDailyReport;
+        // Phase 6 Alerts — the real provider + dismisser wire to the alerts
+        // repository when storage + producer ship. Until then the handler
+        // returns an empty active set and treats dismiss as a no-op (idempotent
+        // per the brief §3.5 contract).
+        _alertsProvider = alertsProvider ?? EmptyAlerts;
+        _alertDismisser = alertDismisser ?? (_ => false);
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _maxWindowLookbackMs = maxWindowLookbackMs ?? DefaultMaxWindowLookbackMs;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
@@ -103,6 +113,11 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         TopApps: Array.Empty<DailyReportAppRow>(),
         UncommonTalkers: Array.Empty<DailyReportTalker>(),
         Notable: Array.Empty<DailyReportNotable>());
+
+    private static AlertsResult EmptyAlerts(AlertsFilter filter) => new(
+        Filter: filter,
+        Alerts: Array.Empty<AlertDto>(),
+        HasMore: false);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -197,6 +212,25 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         return Task.FromResult(new IpcEnvelope<DailyReportResult>(IpcSchemaVersion.DailyReport, payload));
     }
 
+    public Task<IpcEnvelope<AlertsResult>> GetAlertsAsync(AlertsFilter filter)
+    {
+        ValidateAlertsFilter(filter);
+        var payload = _alertsProvider(filter);
+        return Task.FromResult(new IpcEnvelope<AlertsResult>(IpcSchemaVersion.Alerts, payload));
+    }
+
+    public Task DismissAlertAsync(long alertId)
+    {
+        ValidateAlertId(alertId);
+        // Idempotent — the dismisser returns false when the row is already
+        // dismissed or absent. The brief §3.5 + §8.2 contract is "one click,
+        // no confirm"; surfacing a double-click as an error would leak the
+        // dismissed-already state to the UI as a faulted task. Silent
+        // success is the contract.
+        _alertDismisser(alertId);
+        return Task.CompletedTask;
+    }
+
     // ---- Argument validation ------------------------------------------------
     //
     // Every Phase-4 query RPC validates its inputs and returns a typed
@@ -241,6 +275,30 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         if (!Enum.IsDefined(typeof(TrafficGrain), grain))
         {
             throw InvalidArgument($"TrafficGrain value {(int)grain} is not defined.");
+        }
+    }
+
+    private static void ValidateAlertId(long alertId)
+    {
+        if (alertId <= 0)
+        {
+            throw InvalidArgument($"alertId must be positive (received {alertId}).");
+        }
+    }
+
+    private static void ValidateAlertsFilter(AlertsFilter filter)
+    {
+        if (filter is null)
+        {
+            throw InvalidArgument("filter is required.");
+        }
+        if (!Enum.IsDefined(typeof(AlertState), filter.State))
+        {
+            throw InvalidArgument($"AlertsFilter.State value {(int)filter.State} is not defined.");
+        }
+        if (filter.MaxRows <= 0)
+        {
+            throw InvalidArgument($"AlertsFilter.MaxRows must be positive (received {filter.MaxRows}).");
         }
     }
 
