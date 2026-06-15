@@ -328,20 +328,105 @@
                                    TextWrapping="Wrap"
                                    Margin="0,8,0,0" />
 
-                        <!--  Why-this-matters link. Phase 4a renders the
-                              static accent.text link; Phase 5 wires the
-                              expand-on-click disclosure that reveals the
-                              WhyMatters paragraph inline.  -->
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <ui:SymbolIcon Symbol="ChevronRight16"
-                                           FontSize="12"
+                        <!--  Why-this-matters disclosure (Phase 5.2). The
+                              wrapping toggle StackPanel carries
+                              Background=Transparent so the gap between
+                              chevron and label is also hit-testable; without
+                              it, MouseLeftButtonUp only fires on the visible
+                              glyph and text and clicking the empty space
+                              between them falls through. ToggleExpanded
+                              flips AlertVm.IsExpanded, which drives both
+                              the chevron rotation (0→90° via
+                              RenderTransform) and the body Border's
+                              Visibility below.
+
+                              Chevron rotation uses an inline DataTrigger
+                              storyboard rather than a code-behind
+                              storyboard so the animation survives ListView
+                              container recycling (DataTrigger
+                              EnterActions/ExitActions are scoped to the
+                              triggered visual; recycling resets the
+                              storyboard naturally on container reuse).
+                              Duration is the literal 0:0:0.2 matching
+                              motion.duration.fast — the brand token is
+                              sys:TimeSpan which doesn't implicitly
+                              convert to the DoubleAnimation.Duration
+                              struct in a XAML resource lookup, so we
+                              inline the value with a comment-pointer to
+                              the token instead.  -->
+                        <StackPanel Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal"
+                                        Cursor="Hand"
+                                        Background="Transparent"
+                                        MouseLeftButtonUp="OnWhyMattersClick">
+                                <ui:SymbolIcon Symbol="ChevronRight16"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource accent.text}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,4,0"
+                                               RenderTransformOrigin="0.5,0.5">
+                                    <ui:SymbolIcon.RenderTransform>
+                                        <RotateTransform Angle="0" />
+                                    </ui:SymbolIcon.RenderTransform>
+                                    <ui:SymbolIcon.Style>
+                                        <Style TargetType="ui:SymbolIcon">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                    <DataTrigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                    To="90"
+                                                                    Duration="0:0:0.2"
+                                                                    EasingFunction="{StaticResource motion.ease.glide}" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.EnterActions>
+                                                    <DataTrigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                    To="0"
+                                                                    Duration="0:0:0.2"
+                                                                    EasingFunction="{StaticResource motion.ease.glide}" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.ExitActions>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:SymbolIcon.Style>
+                                </ui:SymbolIcon>
+                                <TextBlock Style="{StaticResource text.caption}"
                                            Foreground="{DynamicResource accent.text}"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,4,0" />
-                            <TextBlock Style="{StaticResource text.caption}"
-                                       Foreground="{DynamicResource accent.text}"
-                                       Text="Why this matters"
-                                       Cursor="Hand" />
+                                           Text="Why this matters"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <!--  Expanded body. surface.subtle background with
+                                  a 1px border.subtle frame keeps the body
+                                  distinct from the per-instance Detail above
+                                  without competing with the card chrome.
+                                  Left margin 16 indents the body so it
+                                  visually belongs to the toggle link above.
+                                  Full WhyMatters body (no truncation) —
+                                  catalog copy is at most ~5 lines and the
+                                  ListView is pixel-scrolled so variable
+                                  heights virtualize cleanly.  -->
+                            <Border Margin="16,8,0,0"
+                                    Padding="12"
+                                    Background="{DynamicResource surface.subtle}"
+                                    BorderBrush="{DynamicResource border.subtle}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource radius.control}"
+                                    Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Style="{StaticResource text.body}"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           Text="{Binding WhyMatters}"
+                                           TextWrapping="Wrap" />
+                            </Border>
                         </StackPanel>
 
                         <!--  Meta row: severity dot · timestamp · source label

@@ -266,6 +266,22 @@ public partial class AlertsPage : Page
         };
     }
 
+    // ---- Per-item "Why this matters" expand --------------------------------
+    //
+    // The whole chevron+label row catches MouseLeftButtonUp via a transparent
+    // hit-test Background on the wrapping StackPanel (without it, only the
+    // glyph and text would catch clicks; the gap between them would fall
+    // through). Handled=true stops the bubble before ListViewItem's default
+    // selection handler runs — the toggle is a self-contained per-row
+    // interaction, not a row selection event.
+
+    private void OnWhyMattersClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not AlertVm av) return;
+        av.ToggleExpanded();
+        e.Handled = true;
+    }
+
     // ---- Per-item Dismiss flow ---------------------------------------------
     //
     // Optimistic: flip the AlertVm immediately (parent VM re-runs KPI + filter,

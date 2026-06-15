@@ -18,6 +18,7 @@ namespace ZenVizor.Ui.Views;
 internal sealed class AlertVm : INotifyPropertyChanged
 {
     private long? _acknowledgedAtUnixMs;
+    private bool _isExpanded;
 
     public AlertVm(AlertDto dto)
     {
@@ -88,6 +89,26 @@ internal sealed class AlertVm : INotifyPropertyChanged
             return dt.ToString("yyyy-MM-dd  HH:mm");
         }
     }
+
+    /// <summary>
+    /// Whether the per-item "Why this matters" disclosure is open. Bound by
+    /// the DataTemplate to drive (a) the body Border's Visibility and (b)
+    /// the chevron's RotateTransform.Angle storyboard. Toggled by
+    /// <see cref="ToggleExpanded"/> from the link's click handler.
+    /// Defaults false; each item enters the feed collapsed.
+    /// </summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        private set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            OnPropertyChanged(nameof(IsExpanded));
+        }
+    }
+
+    public void ToggleExpanded() => IsExpanded = !IsExpanded;
 
     public string TypeDisplayName       => AlertCatalogLookups.DisplayName(Type);
     public string SourceLabel           => AlertCatalogLookups.SourceLabel(Source);
