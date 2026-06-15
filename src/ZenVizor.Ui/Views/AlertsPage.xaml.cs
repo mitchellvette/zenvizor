@@ -1,32 +1,215 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using ZenVizor.Ipc.Client;
 using ZenVizor.Ipc.Contracts.Dto;
+using ZenVizor.Ui.Services;
 
 namespace ZenVizor.Ui.Views;
 
 /// <summary>
-/// Alerts page. Phase 4a — page chrome + KPI strip + filter bar + state
-/// shells + per-item template, populated with synthetic seed data from
-/// <see cref="AlertsViewModel.SeedSyntheticForPhase4aPreview"/> so the
-/// layout is visually verifiable without a Phase 6 producer running.
-/// Phase 4b replaces the seed with a real
-/// <c>AlertsClient.GetAlertsAsync</c> call on page load and wires the
-/// <c>AlertRaised</c> push subscription.
+/// Alerts page. Phase 4b — real <c>AlertsClient.GetAlertsAsync</c>
+/// round-trip on page Loaded, push subscription for <c>AlertRaised</c>,
+/// status-banner wiring for disconnected / query-failure states, and
+/// nav-rail badge updates driven from the view-model's KPI counts.
+/// Page-level VM still owns the active set; Phase 5+ may lift it to
+/// MainWindow scope so the badge stays authoritative regardless of which
+/// State chip the user has selected.
 /// </summary>
 public partial class AlertsPage : Page
 {
     private readonly AlertsViewModel _vm = new();
+    private AlertsClient? _alertsClient;
 
     public AlertsPage()
     {
         InitializeComponent();
         DataContext = _vm;
 
-        // Phase 4a synthetic seed — Phase 4b removes this and pulls from
-        // AlertsClient. The seed populates six sample alerts (one per
-        // catalog type) so the heterogeneous feed renders for visual audit.
-        _vm.SeedSyntheticForPhase4aPreview();
+        // Subscribe/unsubscribe paired on Loaded/Unloaded so navigating
+        // away from a cached page (NavigationCacheMode.Enabled) tears
+        // down the push subscription cleanly. Subsequent navigation back
+        // re-attaches and triggers a fresh RefreshAsync so the feed
+        // catches up on alerts that arrived while we were detached.
+        Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
+    }
+
+    private async void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+        // Resolve the shared AlertsClient owned by MainWindow. Both the
+        // nav-rail badge handler (MainWindow.OnAlertRaised) and this page
+        // subscribe to the same instance's events so they see identical
+        // pushes at the same moment.
+        if (_alertsClient is null)
+        {
+            _alertsClient = (Application.Current.MainWindow as MainWindow)?.AlertsClient;
+        }
+        if (_alertsClient is null) return;
+
+        _alertsClient.AlertRaised += OnServiceAlertRaised;
+        _vm.PropertyChanged += OnVmPropertyChanged;
+
+        await RefreshAsync();
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (_alertsClient is not null)
+        {
+            _alertsClient.AlertRaised -= OnServiceAlertRaised;
+        }
+        _vm.PropertyChanged -= OnVmPropertyChanged;
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    //  RefreshAsync — single entry point. Loading → IPC → result classify
+    //  (LoadAlerts) or catch → Disconnected / Error. Mirrors the
+    //  HistoryQueryClient.IsConnectionLost pattern from
+    //  HistoryPage / AppDetailPage / PerAppPage / ReportsPage.
+    // ────────────────────────────────────────────────────────────────────
+
+    private async Task RefreshAsync()
+    {
+        if (_alertsClient is null) return;
+
+        _vm.SetLoading();
+        // Capture the State filter we're requesting so we can drop a
+        // stale response if the user flips the SHOW chip mid-flight.
+        // OnVmPropertyChanged(SelectedState) re-fires RefreshAsync on the
+        // new state immediately, so the latest request always wins.
+        var requestState = _vm.SelectedState;
+        var filter = new AlertsFilter(requestState);
+
+        try
+        {
+            var result = await _alertsClient.GetAlertsAsync(filter);
+
+            // Stale-response guard.
+            if (_vm.SelectedState != requestState) return;
+
+            _vm.LoadAlerts(result.Alerts);
+            _vm.ClearBanner();
+            UpdateNavBadge();
+        }
+        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        {
+            if (_vm.SelectedState != requestState) return;
+            _vm.SetBanner(
+                AlertsViewModel.BannerState.Disconnected,
+                "Service disconnected. Last refresh stale.");
+        }
+        catch (Exception ex)
+        {
+            if (_vm.SelectedState != requestState) return;
+            _vm.SetBanner(
+                AlertsViewModel.BannerState.Error,
+                $"Query failed ({ex.GetType().Name}): {ex.Message}");
+        }
+    }
+
+    private void OnServiceAlertRaised(object? sender, AlertDto alert)
+    {
+        // StreamJsonRpc dispatches the server's NotifyAsync callback on a
+        // thread-pool thread; mutating the VM (which raises PropertyChanged
+        // → visual-tree updates) must run on the UI dispatcher. Matches
+        // MainWindow.OnAlertRaised + OnActivitySnapshot pattern.
+        Dispatcher.Invoke(() =>
+        {
+            _vm.OnAlertRaised(alert);
+            UpdateNavBadge();
+        });
+    }
+
+    private async void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(AlertsViewModel.SelectedState):
+                // State axis is server-applied per brief §14 — re-query
+                // with the new filter. Severity + Type axes are filtered
+                // in-memory by the VM setters and don't trigger a
+                // round-trip.
+                await RefreshAsync();
+                break;
+            case nameof(AlertsViewModel.Banner):
+            case nameof(AlertsViewModel.BannerMessage):
+                // Both cases fire ApplyBannerToUi as belt-and-suspenders:
+                // SetBanner's intended order is BannerMessage→Banner so
+                // the Banner case alone suffices, but listening for
+                // BannerMessage too means a future caller setting them
+                // in either order (or only BannerMessage) keeps the UI
+                // in sync without re-introducing the order bug.
+                ApplyBannerToUi();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Pushes the VM's current KPI surface to the nav-rail badge.
+    /// <para>
+    /// Known limitation in Phase 4b: <c>VM.ActiveCount</c> derives from
+    /// <c>_allAlerts.Count(non-dismissed)</c>, and <c>_allAlerts</c> only
+    /// holds rows matching the current State filter. When the user views
+    /// State=Dismissed, the badge reads 0 transiently. Acceptable for
+    /// Phase 4b; Phase 5+ may lift the VM to app-level scope or add a
+    /// count-summary IPC payload so the badge stays authoritative across
+    /// view filters.
+    /// </para>
+    /// </summary>
+    private void UpdateNavBadge()
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.UpdateAlertsBadge(_vm.ActiveCount, _vm.HighestActiveSeverity);
+        }
+    }
+
+    /// <summary>
+    /// Applies the VM's <see cref="AlertsViewModel.Banner"/> state to the
+    /// inline <c>StatusBanner</c> Border above the feed. Follows the
+    /// HistoryPage / AppDetailPage pattern of SetResourceReference for
+    /// the background / glyph / text foreground brushes so the banner
+    /// theme-swaps correctly in HC. No em-dash in copy
+    /// (memory: feedback_no_emdash_in_ui_copy).
+    /// </summary>
+    private void ApplyBannerToUi()
+    {
+        switch (_vm.Banner)
+        {
+            case AlertsViewModel.BannerState.Disconnected:
+                // Caution-amber, not critical-red. Alerts is the page where
+                // disconnect is the LEAST sensational event we can be in
+                // (the feed itself is non-critical state — there are no
+                // alerts to show when the service is down because none can
+                // be produced) so the brief's tiered convention puts this
+                // at caution rather than critical. The PlugDisconnected20
+                // glyph + the literal "Service disconnected" copy carry
+                // the semantics; the amber tint says "informational, not
+                // alarming". Other pages (History / AppDetail / Reports)
+                // paint disconnect red because their data is operational
+                // and going stale matters more.
+                StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+                StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.PlugDisconnected20;
+                StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
+                StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
+                StatusBannerText.Text = _vm.BannerMessage;
+                StatusBanner.Visibility = Visibility.Visible;
+                break;
+            case AlertsViewModel.BannerState.Error:
+                StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+                StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.Warning20;
+                StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
+                StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
+                StatusBannerText.Text = _vm.BannerMessage;
+                StatusBanner.Visibility = Visibility.Visible;
+                break;
+            case AlertsViewModel.BannerState.None:
+            default:
+                StatusBanner.Visibility = Visibility.Collapsed;
+                break;
+        }
     }
 
     /// <summary>

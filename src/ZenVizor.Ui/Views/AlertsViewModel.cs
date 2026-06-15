@@ -77,7 +77,16 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
             if (_selectedState == value) return;
             _selectedState = value;
             OnPropertyChanged();
-            ApplyFilter();
+            // State is the server-applied axis (brief §14). The page
+            // subscribes to this PropertyChanged and issues a fresh
+            // GetAlertsAsync with the new filter; the result lands via
+            // LoadAlerts which calls ApplyFilter. We deliberately do NOT
+            // ApplyFilter locally here — the existing _allAlerts only
+            // holds rows matching the PREVIOUS State filter, so filtering
+            // them with the new State predicate would briefly render
+            // FilteredEmpty (or wrong contents) before the round-trip
+            // completes. Severity and Type axes remain client-side and
+            // call ApplyFilter from their setters as before.
         }
     }
 
@@ -383,8 +392,17 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
 
     public void SetBanner(BannerState state, string message)
     {
-        Banner = state;
+        // BannerMessage assigned BEFORE Banner so that the page's
+        // PropertyChanged handler — which reacts to Banner by calling
+        // ApplyBannerToUi (which reads VM.BannerMessage) — sees the
+        // current message text, not the prior call's stale value.
+        // Reverse order produces an off-by-one banner: every SetBanner
+        // call paints the banner with the PREVIOUS message; first call
+        // shows empty text. ClearBanner doesn't have this concern
+        // because ApplyBannerToUi's None case just collapses the
+        // banner without reading BannerMessage.
         BannerMessage = message;
+        Banner = state;
     }
 
     public void ClearBanner()
