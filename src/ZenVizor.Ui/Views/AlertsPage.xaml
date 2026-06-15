@@ -121,7 +121,15 @@
         <!--  SEVERITY.BAR — 4px Border with severity-tinted background. The
               DataTrigger Setter values use DynamicResource so theme-swap
               re-paints correctly. Same pattern repeats for severity tile,
-              severity badge, severity dot below.  -->
+              severity badge, severity dot below.
+
+              IsDismissed trigger MUST be declared LAST in the collection
+              so that, when both Severity and IsDismissed match (any
+              dismissed alert), this Setter overrides the severity tint —
+              dismissed rows demote the bar to a neutral text.tertiary so
+              the row reads as "settled" alongside the outer card's
+              opacity 0.72 + surface.card.alt treatment. Earlier-declared
+              Setters lose to later Setters on the same Property.  -->
         <Style x:Key="severity.bar" TargetType="Border">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Severity}" Value="Critical">
@@ -132,6 +140,9 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Severity}" Value="Info">
                     <Setter Property="Background" Value="{DynamicResource status.neutral}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDismissed}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource text.tertiary}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -364,6 +375,20 @@
                                        Foreground="{DynamicResource text.secondary}"
                                        Text="{Binding TypeDisplayName}"
                                        VerticalAlignment="Center" />
+                            <!--  Dismissed-only segment: " · dismissed yyyy-MM-dd HH:mm".
+                                  Both elements collapse via IsDismissed +
+                                  BoolToVisibility so active rows skip the
+                                  separator entirely (no double-bullet  · ·).
+                                  Matches the brief §13 dismissed-row meta lock.  -->
+                            <TextBlock Text="  ·  "
+                                       Foreground="{DynamicResource text.tertiary}"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding IsDismissed, Converter={StaticResource BoolToVisibility}}" />
+                            <TextBlock Style="{StaticResource text.caption}"
+                                       Foreground="{DynamicResource text.secondary}"
+                                       Text="{Binding DismissedAtDisplay, StringFormat='dismissed {0}'}"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding IsDismissed, Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
                     </StackPanel>
 
@@ -378,7 +403,8 @@
                                    BorderThickness="1"
                                    Padding="12,4"
                                    MinWidth="92"
-                                   Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                                   Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}"
+                                   Click="OnDismissAlertClick">
                             <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon Symbol="Checkmark20" FontSize="14" VerticalAlignment="Center" Margin="0,0,4,0" />
                                 <TextBlock Text="Dismiss" VerticalAlignment="Center" />

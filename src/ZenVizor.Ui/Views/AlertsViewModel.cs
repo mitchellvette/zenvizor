@@ -390,6 +390,54 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
         Content = PageContent.Loading;
     }
 
+    /// <summary>
+    /// True when the in-memory set has at least one row. Used by the page's
+    /// dev-only seed-bypass branch in <c>RefreshAsync</c>: once the seed has
+    /// populated <c>_allAlerts</c>, the page skips the server round-trip on
+    /// subsequent State chip flips so that in-place user mutations
+    /// (dismissals) survive. Production code paths (seed flag off) don't
+    /// touch this property.
+    /// </summary>
+    public bool HasAnyAlerts => _allAlerts.Count > 0;
+
+    /// <summary>
+    /// Re-runs the filter pipeline against the current in-memory rows
+    /// without replacing them. Thin public surface over the private
+    /// <see cref="ApplyFilter"/> for the dev-seed bypass; not part of the
+    /// production refresh path.
+    /// </summary>
+    public void RefilterOnly() => ApplyFilter();
+
+    /// <summary>
+    /// Locally marks an alert as dismissed and re-runs the KPI + filter
+    /// pipeline so the nav badge, KPI strip, and visible feed all
+    /// reflect the optimistic state change. Page calls this BEFORE
+    /// awaiting <c>DismissAlertAsync</c>; on failure it pairs with
+    /// <see cref="RollbackDismiss"/> to revert.
+    /// </summary>
+    public void MarkAlertDismissed(long alertId, long whenUnixMs)
+    {
+        var vm = _allAlerts.FirstOrDefault(a => a.AlertId == alertId);
+        if (vm is null || vm.IsDismissed) return;
+        vm.MarkDismissed(whenUnixMs);
+        RebuildKpiCounts();
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Reverts the optimistic update made by <see cref="MarkAlertDismissed"/>
+    /// when the server-side dismiss call fails. Re-runs KPI + filter so
+    /// the card reappears (if filtered out) and the badge re-increments.
+    /// </summary>
+    public void RollbackDismiss(long alertId)
+    {
+        var vm = _allAlerts.FirstOrDefault(a => a.AlertId == alertId);
+        if (vm is null || !vm.IsDismissed) return;
+        vm.RollbackDismissed();
+        RebuildKpiCounts();
+        ApplyFilter();
+    }
+
     public void SetBanner(BannerState state, string message)
     {
         // BannerMessage assigned BEFORE Banner so that the page's

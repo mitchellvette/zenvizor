@@ -66,6 +66,29 @@ internal sealed class AlertVm : INotifyPropertyChanged
     /// </summary>
     public bool IsActive => !_acknowledgedAtUnixMs.HasValue;
 
+    /// <summary>
+    /// When this alert was dismissed (server-authoritative on a load; set
+    /// optimistically by <see cref="MarkDismissed"/> on a UI dismiss click).
+    /// Null when active.
+    /// </summary>
+    public long? DismissedAtUnixMs => _acknowledgedAtUnixMs;
+
+    /// <summary>
+    /// "dismissed 2026-06-14  20:09" — format matches CreatedAtDisplay so the
+    /// meta row reads consistently when both timestamps appear. Empty string
+    /// when not dismissed (the consuming TextBlock is collapsed via the
+    /// IsDismissed BoolToVisibility binding so the empty value never paints).
+    /// </summary>
+    public string DismissedAtDisplay
+    {
+        get
+        {
+            if (!_acknowledgedAtUnixMs.HasValue) return string.Empty;
+            var dt = DateTimeOffset.FromUnixTimeMilliseconds(_acknowledgedAtUnixMs.Value).LocalDateTime;
+            return dt.ToString("yyyy-MM-dd  HH:mm");
+        }
+    }
+
     public string TypeDisplayName       => AlertCatalogLookups.DisplayName(Type);
     public string SourceLabel           => AlertCatalogLookups.SourceLabel(Source);
     public string WhyMatters            => AlertCatalogLookups.WhyMatters(Type);
@@ -83,6 +106,27 @@ internal sealed class AlertVm : INotifyPropertyChanged
         _acknowledgedAtUnixMs = whenUnixMs;
         OnPropertyChanged(nameof(IsDismissed));
         OnPropertyChanged(nameof(IsActive));
+        OnPropertyChanged(nameof(DismissedAtUnixMs));
+        OnPropertyChanged(nameof(DismissedAtDisplay));
+    }
+
+    /// <summary>
+    /// Reverts a previous <see cref="MarkDismissed"/>. Reserved for the
+    /// optimistic-update rollback path in <c>AlertsPage.OnDismissAlertClick</c>
+    /// — when the server-side <c>DismissAlertAsync</c> throws, the page rolls
+    /// back the optimistic flip so the card returns to its active state.
+    /// No-op if already active. NOT a general "un-dismiss" surface; the
+    /// server is the authority on durable state and this method exists
+    /// purely to undo a not-yet-confirmed local mutation.
+    /// </summary>
+    public void RollbackDismissed()
+    {
+        if (!_acknowledgedAtUnixMs.HasValue) return;
+        _acknowledgedAtUnixMs = null;
+        OnPropertyChanged(nameof(IsDismissed));
+        OnPropertyChanged(nameof(IsActive));
+        OnPropertyChanged(nameof(DismissedAtUnixMs));
+        OnPropertyChanged(nameof(DismissedAtDisplay));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
