@@ -573,35 +573,38 @@
                 Effect="{DynamicResource shadow.sm}"
                 Padding="16,10"
                 Margin="0,0,0,12">
-            <!--  Filter bar Grid — 7 columns: SHOW group, vertical divider,
-                  SEVERITY group, vertical divider, TYPE group, * spacer,
-                  Reset link. Section right-margin is dropped because the
-                  divider columns now provide the separation; their
-                  Margin="20,8" gives 20px horizontal padding around each
-                  hairline + 8px vertical (partial-height, matching the
-                  KPI strip rhythm). Spec: mockup pg 13 "Axis divider:
-                  border.subtle, vertical 1px".  -->
+            <!--  Filter bar Grid — 6 columns: SHOW group, vertical divider,
+                  SEVERITY group, * spacer, TYPE group, Reset link. The *
+                  sits between SEVERITY and TYPE so SHOW+SEVERITY group LEFT
+                  and TYPE+Reset group RIGHT at any width above the
+                  content-desired total (default 1200 window and up); the
+                  TYPE button stays anchored to the right side of the card
+                  instead of hugging SEVERITY and leaving empty space at the
+                  card's right edge. The second divider (formerly between
+                  SEVERITY and TYPE) is dropped because the * spacer
+                  provides visual separation between the left and right
+                  groups. Divider Margin tightened from "20,8" to "12,8" so
+                  the narrow-width (MinWidth=1000) case still fits without
+                  clipping. Spec: mockup pg 13 "Axis divider: border.subtle,
+                  vertical 1px".  -->
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <!--  SHOW group. Segmented State chips inside a dimmed
                       surface.subtle container; the SELECTED chip elevates
                       with the metallic info-card recipe (see state.chip
-                      Style above).  -->
+                      Style above). Eyebrow label dropped: the segmented
+                      chip group is self-describing, and the filter bar's
+                      content total at MinWidth=1000 only fits without the
+                      three "SHOW" / "SEVERITY" / "TYPE" caption labels.  -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Style="{StaticResource text.caption}"
-                               Foreground="{DynamicResource text.tertiary}"
-                               Text="SHOW"
-                               VerticalAlignment="Center"
-                               Margin="0,0,12,0" />
                     <Border Background="{DynamicResource surface.subtle}"
                             CornerRadius="{StaticResource radius.control}"
                             Padding="2">
@@ -627,19 +630,15 @@
                 </StackPanel>
 
                 <!--  Divider between SHOW and SEVERITY.  -->
-                <Border Grid.Column="1" Width="1" Margin="20,8" Background="{DynamicResource border.subtle}" />
+                <Border Grid.Column="1" Width="1" Margin="12,8" Background="{DynamicResource border.subtle}" />
 
-                <!--  SEVERITY group — 3 checkboxes with severity-tinted dots.  -->
+                <!--  SEVERITY group — 3 checkboxes with severity-tinted dots.
+                      Eyebrow label dropped (see SHOW group above).  -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <TextBlock Style="{StaticResource text.caption}"
-                               Foreground="{DynamicResource text.tertiary}"
-                               Text="SEVERITY"
-                               VerticalAlignment="Center"
-                               Margin="0,0,12,0" />
                     <CheckBox x:Name="SeverityCriticalCheck"
                               IsChecked="{Binding SeverityCriticalEnabled, Mode=TwoWay}"
                               VerticalContentAlignment="Center"
-                              Margin="0,0,12,0">
+                              Margin="0,0,6,0">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="6" Height="6" Fill="{DynamicResource status.critical}" VerticalAlignment="Center" Margin="4,0,4,0" />
                             <TextBlock Text="Critical" Style="{StaticResource text.body}" VerticalAlignment="Center" />
@@ -648,7 +647,7 @@
                     <CheckBox x:Name="SeverityWarningCheck"
                               IsChecked="{Binding SeverityWarningEnabled, Mode=TwoWay}"
                               VerticalContentAlignment="Center"
-                              Margin="0,0,12,0">
+                              Margin="0,0,6,0">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="6" Height="6" Fill="{DynamicResource status.caution}" VerticalAlignment="Center" Margin="4,0,4,0" />
                             <TextBlock Text="Warning" Style="{StaticResource text.body}" VerticalAlignment="Center" />
@@ -664,9 +663,6 @@
                     </CheckBox>
                 </StackPanel>
 
-                <!--  Divider between SEVERITY and TYPE.  -->
-                <Border Grid.Column="3" Width="1" Margin="20,8" Background="{DynamicResource border.subtle}" />
-
                 <!--  TYPE group — multi-select dropdown over all six catalog
                       types. Implemented as a ui:Button + ContextMenu carrying
                       IsCheckable MenuItems, matching the Reports Anchor
@@ -679,32 +675,36 @@
                       Phase 6 producer-availability: the filter lists every
                       type regardless of whether a producer ships in
                       Phase 6 (brief §3.7 lock — no Phase-6-only special
-                      case in the filter UI).  -->
+                      case in the filter UI). Eyebrow label dropped (see
+                      SHOW group); the Filter24 icon on the button itself
+                      reads as the group's semantic affordance now that the
+                      caption is gone.  -->
                 <StackPanel Grid.Column="4" Orientation="Horizontal">
-                    <TextBlock Style="{StaticResource text.caption}"
-                               Foreground="{DynamicResource text.tertiary}"
-                               Text="TYPE"
-                               VerticalAlignment="Center"
-                               Margin="0,0,12,0" />
                     <ui:Button x:Name="TypeFilterButton"
-                               MinWidth="180"
+                               MinWidth="160"
                                Background="{DynamicResource metal.control}"
                                BorderBrush="{DynamicResource border.card}"
+                               BorderThickness="1"
                                VerticalAlignment="Center"
+                               HorizontalContentAlignment="Stretch"
                                Padding="12,4"
                                ToolTip="{Binding TypeFilterTooltip}"
                                Click="OnTypeFilterButtonClick">
                         <!--  [Filter24 | label | ChevronDown20] Grid layout
                               mirrors the Reports Anchor button
-                              (ReportsPage.xaml:596-615). The left Filter24
-                              icon visually balances the right ChevronDown20,
-                              putting the label in the * column between them
-                              so the composition reads centered without
-                              depending on Wpf.Ui's ui:Button template to
-                              honor HorizontalContentAlignment (it doesn't
-                              reliably propagate to the inner ContentPresenter).
-                              The icon also doubles as a semantic affordance:
-                              "this control is the type filter selector".  -->
+                              (ReportsPage.xaml:596-615). HorizontalContentAlignment=Stretch
+                              is load-bearing: without it the ui:Button's inner
+                              ContentPresenter sizes to the Grid's NATURAL width
+                              (icon + 0px * column + chevron ≈ 58px) and centers
+                              it inside the 180px button, so the * column gets
+                              zero allocated width and the label renders past
+                              the chevron / off the button's right edge. With
+                              Stretch the ContentPresenter fills the button's
+                              content area, the * column gets real space, and
+                              the label sits between the bookend icons.
+                              The Filter24 icon also doubles as a semantic
+                              affordance: "this control is the type filter
+                              selector".  -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -796,7 +796,24 @@
                                         </Grid>
                                     </MenuItem.Header>
                                 </MenuItem>
-                                <Separator />
+                                <!--  Style="{x:Null}" is load-bearing. The
+                                      ContextMenu's ItemContainerStyle is
+                                      brand.menu.item (TargetType=MenuItem);
+                                      with no local Style on this Separator,
+                                      WPF's ItemsControl.ApplyItemContainerStyle
+                                      tries to apply brand.menu.item to the
+                                      Separator container and throws
+                                      InvalidOperationException ("A style
+                                      intended for type 'MenuItem' cannot be
+                                      applied to type 'Separator'") on first
+                                      open. Setting any local Style (null is
+                                      fine; Separator's built-in chrome is
+                                      sufficient) flips ShouldApplyItemContainerStyle
+                                      to false for this child so the
+                                      TargetType-mismatched ItemContainerStyle
+                                      is skipped. Reports' menus don't hit this
+                                      because they contain no Separators.  -->
+                                <Separator Style="{x:Null}" />
                                 <MenuItem x:Name="TypeUnsignedItem"
                                           Header="Unsigned from user folder"
                                           IsCheckable="True"
@@ -844,31 +861,31 @@
                     </ui:Button>
                 </StackPanel>
 
-                <!--  Reset link — accent.text, visible only when filter is
-                      non-default. Click handler in code-behind calls
-                      ViewModel.ResetFilter() and re-syncs the chip/menu
-                      visual state.  -->
-                <Button Grid.Column="6"
+                <!--  Reset link — accent.text icon-only, visible only when
+                      filter is non-default. Click handler in code-behind
+                      calls ViewModel.ResetFilter() and re-syncs the
+                      chip/menu visual state. Compacted to icon-only with a
+                      tooltip so the filter bar fits at MinWidth=1000 when
+                      Reset is showing alongside an active filter; the
+                      FilteredEmpty state shell carries the full "Reset
+                      filter" CTA copy for first-discovery / explicit
+                      affordance when the feed is empty.  -->
+                <Button Grid.Column="5"
                         x:Name="ResetFilterLink"
                         Background="Transparent"
                         BorderThickness="0"
                         Padding="6,4"
+                        Margin="8,0,0,0"
                         Cursor="Hand"
                         Click="OnResetFilterClick"
                         VerticalAlignment="Center"
                         FocusVisualStyle="{x:Null}"
+                        ToolTip="Reset filter"
                         Visibility="{Binding IsFilterNotAtDefault, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="ArrowReset24"
-                                       FontSize="14"
-                                       Foreground="{DynamicResource accent.text}"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,4,0" />
-                        <TextBlock Style="{StaticResource text.caption}"
+                    <ui:SymbolIcon Symbol="ArrowReset24"
+                                   FontSize="14"
                                    Foreground="{DynamicResource accent.text}"
-                                   Text="Reset filter"
                                    VerticalAlignment="Center" />
-                    </StackPanel>
                 </Button>
             </Grid>
         </Border>
