@@ -687,51 +687,63 @@
                                VerticalAlignment="Center"
                                Margin="0,0,12,0" />
                     <ui:Button x:Name="TypeFilterButton"
-                               MinWidth="140"
+                               MinWidth="180"
                                Background="{DynamicResource metal.control}"
                                BorderBrush="{DynamicResource border.card}"
                                VerticalAlignment="Center"
-                               HorizontalContentAlignment="Center"
                                Padding="12,4"
                                ToolTip="{Binding TypeFilterTooltip}"
                                Click="OnTypeFilterButtonClick">
-                        <!--  Text + chevron grouped as a centered pair via
-                              StackPanel HorizontalAlignment=Center. The
-                              previous [* | Auto] Grid layout pinned the text
-                              left and the chevron right, leaving an empty
-                              centre that read as right-weighted because the
-                              chevron carried more visual mass than the short
-                              "All types" label. Centering the pair groups
-                              the affordance visually.  -->
-                        <StackPanel Orientation="Horizontal"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center">
-                            <TextBlock Text="{Binding TypeFilterLabel}"
+                        <!--  [Filter24 | label | ChevronDown20] Grid layout
+                              mirrors the Reports Anchor button
+                              (ReportsPage.xaml:596-615). The left Filter24
+                              icon visually balances the right ChevronDown20,
+                              putting the label in the * column between them
+                              so the composition reads centered without
+                              depending on Wpf.Ui's ui:Button template to
+                              honor HorizontalContentAlignment (it doesn't
+                              reliably propagate to the inner ContentPresenter).
+                              The icon also doubles as a semantic affordance:
+                              "this control is the type filter selector".  -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Grid.Column="0"
+                                           Symbol="Filter24"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource text.secondary}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding TypeFilterLabel}"
                                        VerticalAlignment="Center" />
-                            <ui:SymbolIcon Symbol="ChevronDown20"
+                            <ui:SymbolIcon Grid.Column="2"
+                                           Symbol="ChevronDown20"
                                            FontSize="12"
                                            Foreground="{DynamicResource text.secondary}"
                                            VerticalAlignment="Center"
                                            Margin="8,0,0,0" />
-                        </StackPanel>
+                        </Grid>
                         <ui:Button.ContextMenu>
-                            <!--  Placement="Custom" + a code-behind callback
-                                  (RightAnchoredBelow, set in AlertsPage ctor)
-                                  anchor the menu's RIGHT edge under the
-                                  button's RIGHT edge so the menu opens
-                                  leftward and stays on-screen even when the
-                                  button sits near the window's right edge.
-                                  Default Bottom placement anchors LEFT-to-LEFT
-                                  and lets the wider menu spill off-screen.
-                                  Same pattern as the Reports Export menu.
-
-                                  The MinWidth binding is dropped — the menu
-                                  now sizes naturally to its content; the
-                                  custom placement handles the right-edge
-                                  constraint regardless of button width.  -->
+                            <!--  Placement + CustomPopupPlacementCallback are set
+                                  IN the click handler (OnTypeFilterButtonClick)
+                                  immediately before IsOpen=true, mirroring the
+                                  Reports Anchor / Export menus' working pattern
+                                  (ReportsPage.xaml.cs:213-222). Setting them
+                                  in XAML or in the page ctor crashes on click —
+                                  WPF / Wpf.Ui resets one of the two properties
+                                  somewhere between page-load and click, so by
+                                  the time IsOpen fires the ContextMenu is in
+                                  an inconsistent state (Placement=Custom with
+                                  null callback throws an NRE in popup
+                                  positioning). Setting all four placement
+                                  properties together per-click is the
+                                  bullet-proof pattern.  -->
                             <ContextMenu x:Name="TypeFilterMenu"
                                          Padding="12"
-                                         Placement="Custom"
                                          ItemContainerStyle="{StaticResource brand.menu.item}">
                                 <!--  Header row: Select all / Clear actions
                                       side-by-side, divided by a 1px border.subtle

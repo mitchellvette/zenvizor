@@ -23,13 +23,6 @@ public partial class AlertsPage : Page
         InitializeComponent();
         DataContext = _vm;
 
-        // Right-anchor the Type filter ContextMenu under the button's right
-        // edge so it stays on-screen when the button is near the window's
-        // right edge. Without this the default Bottom placement anchors
-        // LEFT-to-LEFT and the wider menu spills off-screen. Same pattern
-        // the Reports Export menu uses.
-        TypeFilterMenu.CustomPopupPlacementCallback = RightAnchoredBelow;
-
         // Phase 4a synthetic seed — Phase 4b removes this and pulls from
         // AlertsClient. The seed populates six sample alerts (one per
         // catalog type) so the heterogeneous feed renders for visual audit.
@@ -101,12 +94,21 @@ public partial class AlertsPage : Page
 
     private void OnTypeFilterButtonClick(object sender, RoutedEventArgs e)
     {
-        // Placement="Custom" + the RightAnchoredBelow callback handle the
-        // dropdown position; we just need to set the target and open it.
-        if (sender is FrameworkElement el && el.ContextMenu is not null)
+        // Set ALL FOUR placement properties together immediately before
+        // IsOpen=true, mirroring the Reports Anchor / Export pattern
+        // (ReportsPage.xaml.cs:213-222). Setting Placement and
+        // CustomPopupPlacementCallback at XAML-load or page-ctor time
+        // leaves them vulnerable to a WPF / Wpf.Ui lifecycle reset
+        // between page-load and click — the popup positioning then sees
+        // Placement=Custom with a null callback and throws an NRE deep
+        // in the framework, crashing the process. Per-click assignment
+        // guarantees both values are present at the moment of opening.
+        if (sender is FrameworkElement el && el.ContextMenu is { } cm)
         {
-            el.ContextMenu.PlacementTarget = el;
-            el.ContextMenu.IsOpen = true;
+            cm.PlacementTarget = el;
+            cm.Placement = PlacementMode.Custom;
+            cm.CustomPopupPlacementCallback = RightAnchoredBelow;
+            cm.IsOpen = true;
         }
     }
 
