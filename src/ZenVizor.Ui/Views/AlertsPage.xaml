@@ -513,11 +513,27 @@
                                            VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" HorizontalAlignment="Right">
+                        <!--  View-app drill link (Phase 5.3). HorizontalAlignment=Right
+                              keeps the link aligned with the action column;
+                              Background=Transparent makes the gap between
+                              label and chevron hit-testable (same rationale
+                              as the Why-this-matters toggle). Handled=true
+                              in the handler stops the bubble before
+                              ListViewItem's selection. Visibility binds to
+                              HasAppContext so alerts whose EntityKind isn't
+                              App (e.g. Session-scoped LargeDownload)
+                              collapse the link entirely — no dead
+                              affordance.  -->
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,8,0,0"
+                                    HorizontalAlignment="Right"
+                                    Cursor="Hand"
+                                    Background="Transparent"
+                                    MouseLeftButtonUp="OnViewAppClick"
+                                    Visibility="{Binding HasAppContext, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Style="{StaticResource text.caption}"
                                        Foreground="{DynamicResource accent.text}"
                                        Text="View app"
-                                       Cursor="Hand"
                                        VerticalAlignment="Center" />
                             <ui:SymbolIcon Symbol="ChevronRight16"
                                            FontSize="12"

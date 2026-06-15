@@ -19,6 +19,7 @@ internal sealed class AlertVm : INotifyPropertyChanged
 {
     private long? _acknowledgedAtUnixMs;
     private bool _isExpanded;
+    private readonly int? _sourceAppId;
 
     public AlertVm(AlertDto dto)
     {
@@ -33,6 +34,16 @@ internal sealed class AlertVm : INotifyPropertyChanged
         Title = dto.Title;
         Detail = dto.Detail;
         _acknowledgedAtUnixMs = dto.AcknowledgedAtUnixMs;
+        // SourceAppId is resolved once at construction: prefer dto.AppId
+        // (explicit parent-app reference for Session-scoped alerts);
+        // fall back to parsing EntityRef when EntityKind=App (where the
+        // ref IS the app id by contract). Null when neither path
+        // resolves — the View-app link binds Visibility to
+        // HasAppContext so no drill affordance is shown.
+        _sourceAppId = dto.AppId ?? (
+            dto.EntityKind == AlertEntityKind.App && int.TryParse(dto.EntityRef, out var id)
+                ? id
+                : null);
     }
 
     public long AlertId { get; }
@@ -115,6 +126,24 @@ internal sealed class AlertVm : INotifyPropertyChanged
     public string WhyMatters            => AlertCatalogLookups.WhyMatters(Type);
     public string SeverityDisplayName   => AlertCatalogLookups.SeverityDisplayName(Severity);
     public SymbolRegular Icon           => AlertCatalogLookups.Icon(Type);
+
+    /// <summary>
+    /// The parent app id the per-item "View app" drill navigates to.
+    /// Resolved in the constructor from <c>dto.AppId</c> (preferred) or by
+    /// parsing <see cref="EntityRef"/> when <see cref="EntityKind"/> is
+    /// <see cref="AlertEntityKind.App"/>. Null only when neither path
+    /// resolves — currently no seed sample hits that case, but future
+    /// Device-scoped or otherwise app-less alerts would.
+    /// </summary>
+    public int? SourceAppId => _sourceAppId;
+
+    /// <summary>
+    /// True when <see cref="SourceAppId"/> resolves to a value. Bound to the
+    /// View-app link's Visibility (via BoolToVisibility) so an alert without
+    /// any app context (e.g. future Device-scoped alerts) collapses the
+    /// link entirely rather than offering a click that goes nowhere.
+    /// </summary>
+    public bool HasAppContext => _sourceAppId.HasValue;
 
     /// <summary>
     /// Marks this alert as dismissed. Idempotent — repeated calls are

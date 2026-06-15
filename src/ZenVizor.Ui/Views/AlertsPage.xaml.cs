@@ -266,6 +266,42 @@ public partial class AlertsPage : Page
         };
     }
 
+    // ---- Per-item "View app" drill -----------------------------------------
+    //
+    // Navigates to AppDetailPage scoped to the alert's source app. Reuses the
+    // bare-int navigation parameter shape AppDetailPage already supports
+    // (legacy PerApp path) — Alerts has no date override to apply, so the
+    // AppDetailNavParams envelope isn't needed.
+
+    private void OnViewAppClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not AlertVm av) return;
+        if (av.SourceAppId is not int appId) return;
+        var nav = FindNavigationView(this);
+        if (nav is null) return;
+        nav.Navigate(typeof(AppDetailPage), appId);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Walks the visual + logical tree from <paramref name="element"/> up to
+    /// the hosting <see cref="Wpf.Ui.Controls.NavigationView"/>. Same shape
+    /// as ReportsPage.FindNavigationView; kept local because the helper is
+    /// trivial and duplicating it avoids a cross-page utility class
+    /// solely for this one walk.
+    /// </summary>
+    private static Wpf.Ui.Controls.NavigationView? FindNavigationView(DependencyObject element)
+    {
+        var current = element;
+        while (current is not null)
+        {
+            if (current is Wpf.Ui.Controls.NavigationView nv) return nv;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current)
+                   ?? LogicalTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
     // ---- Per-item "Why this matters" expand --------------------------------
     //
     // The whole chevron+label row catches MouseLeftButtonUp via a transparent

@@ -543,7 +543,8 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
                 Detail: "MicrosoftEdgeUpdate.exe pulled down 187 MB from an endpoint it had not used today. " +
                         "Image path: C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe. " +
                         "Signer: Microsoft Corporation. Started: 2026-06-11 13:21.",
-                AcknowledgedAtUnixMs: nowMs - 5 * 60 * MinuteMs),
+                AcknowledgedAtUnixMs: nowMs - 5 * 60 * MinuteMs,
+                AppId: 47),
             new AlertDto(
                 AlertId: 6,
                 Type: AlertType.OutboundHeavy,

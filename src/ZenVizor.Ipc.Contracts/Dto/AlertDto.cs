@@ -22,6 +22,16 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// kinds (PRD §7.6 reserved) can carry richer references without schema
 /// churn.
 /// </para>
+/// <para>
+/// <see cref="AppId"/> carries the parent app reference for alerts whose
+/// primary <see cref="EntityKind"/> isn't <see cref="AlertEntityKind.App"/>
+/// (most commonly Session-scoped alerts). It lets the UI offer a
+/// "View app" drill on session-scoped alerts without an extra
+/// session→app lookup round-trip. Null when no app context applies (e.g.
+/// future Device-scoped alerts). For App-scoped alerts it's redundant
+/// with <see cref="EntityRef"/> and producers may leave it null; the UI
+/// falls back to parsing EntityRef for that case.
+/// </para>
 /// </summary>
 public sealed record AlertDto(
     long AlertId,
@@ -33,4 +43,5 @@ public sealed record AlertDto(
     string EntityRef,
     string Title,
     string Detail,
-    long? AcknowledgedAtUnixMs);
+    long? AcknowledgedAtUnixMs,
+    int? AppId = null);
