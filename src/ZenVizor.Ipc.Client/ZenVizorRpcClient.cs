@@ -30,7 +30,20 @@ public static class ZenVizorRpcClient
         var proxy = rpc.Attach<IZenVizorIpc>();
         if (notificationTarget is not null)
         {
-            rpc.AddLocalRpcTarget(notificationTarget);
+            // AddLocalRpcTarget<TInterface> — NOT the non-generic
+            // AddLocalRpcTarget(object) — because production
+            // implementations (notably AlertsClient) use EXPLICIT
+            // interface implementations on IAlertNotifications to keep
+            // OnAlertRaisedAsync off the class's public surface
+            // (consumers raise interest via the AlertRaised event).
+            // Explicit-impl methods are NOT publicly accessible via
+            // target.GetType().GetMethods(), so AddLocalRpcTarget(object)
+            // silently fails to wire them — production push
+            // notifications dropped on the floor and the only end-to-end
+            // signal (the AlertRaised event firing) never raised.
+            // Generic dispatch uses typeof(TInterface)'s method table,
+            // which DOES include explicit impls. Phase 6.1a fix.
+            rpc.AddLocalRpcTarget<IAlertNotifications>(notificationTarget, options: null);
         }
         rpc.StartListening();
         return (proxy, rpc);

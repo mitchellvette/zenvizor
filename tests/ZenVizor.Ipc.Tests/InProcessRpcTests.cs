@@ -318,13 +318,24 @@ public sealed class InProcessRpcTests
     /// Test-side implementation of <see cref="IAlertNotifications"/>. Captures
     /// the first AlertDto pushed by the server and exposes a wait helper for
     /// the async dispatch round-trip.
+    /// <para>
+    /// <see cref="IAlertNotifications.OnAlertRaisedAsync"/> is intentionally
+    /// an EXPLICIT interface implementation, mirroring how
+    /// <c>AlertsClient</c> declares it in production. This is the regression
+    /// guard for the Phase 6.1a fix: <c>ZenVizorRpcClient.Attach</c> must
+    /// use <c>AddLocalRpcTarget&lt;IAlertNotifications&gt;</c> so explicit
+    /// impls are dispatched. The non-generic <c>AddLocalRpcTarget(object)</c>
+    /// scans the concrete type's public methods and skips explicit impls,
+    /// dropping every push silently. If this test fails after a future
+    /// change, the suspect is almost certainly the dispatch wiring.
+    /// </para>
     /// </summary>
     private sealed class TestAlertNotifications : IAlertNotifications
     {
         private readonly TaskCompletionSource<AlertDto> _tcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task OnAlertRaisedAsync(AlertDto alert)
+        Task IAlertNotifications.OnAlertRaisedAsync(AlertDto alert)
         {
             _tcs.TrySetResult(alert);
             return Task.CompletedTask;

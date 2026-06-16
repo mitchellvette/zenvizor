@@ -80,6 +80,35 @@ public sealed class AlertPipelineEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task BareTcpConnect_ZeroBytes_StillRaisesAlert()
+    {
+        // Phase 6.1a regression guard. Before the fix: a process that opened a
+        // TCP socket and idled (no data exchanged) generated zero
+        // TcpIpSend/Recv observations, so the aggregator never saw the
+        // connection, no apps row was created, and no alert fired — a clean
+        // miss for the classic C2 beacon pattern. The EtwCaptureSource fix
+        // synthesizes a zero-byte observation from each TcpIpConnect event;
+        // this test asserts the rest of the pipeline (aggregator → producer
+        // → repo → AlertRaised) handles a zero-byte WAN observation
+        // correctly so the fix end-to-end works.
+        var raised = new List<AlertDto>();
+        var (aggregator, _, _, producer, repo) = BuildPipeline(now: () => T0);
+        producer.AlertRaised += dto => raised.Add(dto);
+
+        await EmitOneWanObservationAsync(aggregator, pid: 1001, bytes: 0);
+        aggregator.Flush(T0 + 5_000);
+
+        var rows = repo.Query(AlertState.Active, 50);
+        rows.Should().HaveCount(1, because:
+            "a zero-byte connect observation must still create a session, " +
+            "land in connectionRows as RemoteClass=Wan, and trigger the " +
+            "alert producer's OnSessionConnectedWan hook");
+        rows[0].Type.Should().Be(nameof(AlertType.UnsignedFromUserPath));
+        rows[0].Severity.Should().Be(nameof(NotableSeverity.Critical));
+        raised.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task SecondQualifyingObservation_DedupesAndAdvancesConnectionCount()
     {
         var raised = new List<AlertDto>();
@@ -168,7 +197,8 @@ public sealed class AlertPipelineEndToEndTests : IDisposable
     /// pipeline-build time) controls the SignatureStatus.
     /// </summary>
     private static async Task EmitOneWanObservationAsync(
-        TrafficAggregator aggregator, int pid, long observationTime = T0 + 500)
+        TrafficAggregator aggregator, int pid,
+        long observationTime = T0 + 500, long bytes = 512)
     {
         var local  = new IPEndPoint(IPAddress.Parse("10.0.0.5"), 51_000);
         var remote = new IPEndPoint(IPAddress.Parse("8.8.8.8"),  443);
@@ -181,7 +211,7 @@ public sealed class AlertPipelineEndToEndTests : IDisposable
             LocalEndpoint: local,
             RemoteEndpoint: remote,
             Direction: Direction.Up,
-            Bytes: 512));
+            Bytes: bytes));
         source.Complete();
 
         await foreach (var obs in source.ObserveAsync(CancellationToken.None))

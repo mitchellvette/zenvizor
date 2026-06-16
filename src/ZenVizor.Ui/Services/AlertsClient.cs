@@ -49,6 +49,32 @@ internal sealed class AlertsClient : IAlertNotifications, IAsyncDisposable
     public Task EnsureConnectedAsync(CancellationToken cancellationToken = default)
         => EnsureProxyAsync(cancellationToken);
 
+    /// <summary>
+    /// Drop the current pipe (if any) and re-establish a fresh one,
+    /// including re-registering the notification target so the
+    /// <see cref="AlertRaised"/> push subscription survives a service
+    /// restart. <see cref="EnsureConnectedAsync"/> alone is NOT
+    /// sufficient — when the existing <c>_client</c> is non-null but its
+    /// underlying pipe is dead, EnsureProxyAsync returns the stale proxy
+    /// unchanged. ForceReconnectAsync nukes the stale proxy first so the
+    /// reconnect path actually runs.
+    /// <para>
+    /// Called by <c>MainWindow.OnStatusChanged</c> on the
+    /// disconnected→connected transition detected by
+    /// <c>ServiceStatusPoller</c>. Between service start and this
+    /// reconnect, alerts raised on the service are broadcast to zero
+    /// subscribers and effectively lost from the UI's push stream;
+    /// MainWindow follows the reconnect with a
+    /// <c>ServiceReconnected</c> event so subscribing pages can run a
+    /// fresh RefreshAsync to pick them up from the DB.
+    /// </para>
+    /// </summary>
+    public async Task ForceReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await ResetAsync().ConfigureAwait(false);
+        await EnsureProxyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<AlertsResult> GetAlertsAsync(AlertsFilter filter, CancellationToken cancellationToken = default)
         => CallAsync(p => p.GetAlertsAsync(filter),
                      nameof(AlertsResult), IpcSchemaVersion.Alerts, cancellationToken);

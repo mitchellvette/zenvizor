@@ -51,6 +51,18 @@ public partial class AlertsPage : Page
         _alertsClient.AlertRaised += OnServiceAlertRaised;
         _vm.PropertyChanged += OnVmPropertyChanged;
 
+        // Subscribe to the MainWindow-driven ServiceReconnected event so
+        // that when the user restarts the service from outside the app
+        // (Settings panel, sc.exe, Services snap-in), the alerts surface
+        // refreshes without waiting for the user to navigate away and
+        // back. MainWindow has already force-reconnected the shared
+        // AlertsClient by the time this fires — so RefreshAsync's
+        // GetAlertsAsync call hits a fresh pipe.
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.ServiceReconnected += OnServiceReconnected;
+        }
+
         await RefreshAsync();
     }
 
@@ -61,6 +73,19 @@ public partial class AlertsPage : Page
             _alertsClient.AlertRaised -= OnServiceAlertRaised;
         }
         _vm.PropertyChanged -= OnVmPropertyChanged;
+
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.ServiceReconnected -= OnServiceReconnected;
+        }
+    }
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        // Pick up any alerts that landed in the gap between service-start
+        // and the AlertsClient reconnect. RefreshAsync also clears the
+        // disconnect banner on success and re-syncs the nav badge.
+        await RefreshAsync();
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -117,6 +142,14 @@ public partial class AlertsPage : Page
         // MainWindow.OnAlertRaised + OnActivitySnapshot pattern.
         Dispatcher.Invoke(() =>
         {
+            // Receipt of a push proves the IPC channel is live, so any
+            // stale Disconnected/Error banner from a prior RefreshAsync
+            // failure is now wrong. Clear it before applying the new alert
+            // so the user sees the fresh row land against a clean banner
+            // state rather than next to a misleading "service disconnected"
+            // strip. (Without this, the banner persisted until the user
+            // navigated away and back to trigger a fresh RefreshAsync.)
+            _vm.ClearBanner();
             _vm.OnAlertRaised(alert);
             UpdateNavBadge();
         });

@@ -364,6 +364,97 @@ deep-link wiring.
 
 ---
 
+## Pre-v1 architectural follow-ups
+
+Findings surfaced during Phase 6 implementation that should land before v1
+ships. Not detection-model limits (those live in
+`docs/threat-model-limits.md`) — these are architectural cleanups that
+make the existing surface more responsive or extensible.
+
+### A1 — Universal page-reactive `ServiceReconnected` event (Scope 2 of Phase 6.1a)
+
+**Discovered:** Phase 6.1a manual validation, 2026-06-15.
+
+**The problem:** When the ZenVizor service restarts, every data page that
+holds a `HistoryQueryClient` (HistoryPage, ReportsPage, PerAppPage,
+AppDetailPage) ends up with a stale pipe handle. The first `RefreshAsync`
+call after restart hits the stale handle, fails with `IsConnectionLost`,
+resets the client, throws — and the page paints a Disconnected banner.
+The SECOND `RefreshAsync` would succeed, but no second refresh fires
+until the user navigates away and back. So every data page exhibits the
+same "banner sticks until user re-navigates" UX as Alerts did before
+Phase 6.1a fixed it.
+
+**What Phase 6.1a Scope 1 did:** Added `MainWindow.ServiceReconnected`
+event fired on disconnected→connected transitions, with MainWindow
+force-reconnecting the shared `AlertsClient` and the AlertsPage
+subscribing to refresh. Other pages can subscribe to the same event with
+no additional MainWindow plumbing.
+
+**What's left for Scope 2:** Each of the four `HistoryQueryClient`-holding
+pages needs:
+1. A `ForceReconnectAsync` on `HistoryQueryClient` (one-time shared
+   change — same `ResetAsync` + `EnsureProxyAsync` shape as
+   `AlertsClient.ForceReconnectAsync`).
+2. A subscription to `ServiceReconnected` in each page's `OnLoaded`
+   handler. The handler calls `_client.ForceReconnectAsync()` then
+   `RefreshAsync()`.
+
+**Estimated effort:** Small — five files, one new method on
+`HistoryQueryClient`, one handler per page. The event scaffolding is
+already in place.
+
+**Why before v1:** Service restart is a routine event (Windows updates,
+manual restart, install/uninstall). Every restart currently degrades the
+UX across four data pages. v1 should feel responsive when the user
+restarts the service from the Settings panel (which lands in Phase 6.2).
+
+### A2 — Centralize query clients at app scope (Scope 3 of Phase 6.1a)
+
+**Discovered:** Phase 6.1a manual validation, 2026-06-15.
+
+**The problem:** Each data page constructs its own `HistoryQueryClient`
+instance (`private readonly HistoryQueryClient _client = new();`). Four
+pages, four connections to the same named pipe. Each one independently
+holds its own pipe handle, signs up for the same negotiation, gets
+torn down and rebuilt on page unload/load. The pages reinvent
+reconnect handling, banner state, and refresh lifecycle separately.
+
+The `AlertsClient` is already a singleton owned by `MainWindow`
+specifically because it owns a push subscription that has to outlive
+page navigation. The same lifetime extension is a quieter win for the
+read-only query clients: a single shared instance survives nav, retains
+the connection across page switches, and lets MainWindow's
+`ServiceReconnected` event drive a single force-reconnect that all
+consumers see.
+
+**What Scope 3 entails:**
+1. Move `HistoryQueryClient` ownership to `MainWindow` as a single
+   instance (or a small `IQueryClientProvider` service that pages
+   resolve).
+2. Pages take a reference instead of constructing their own.
+3. Single `ForceReconnectAsync` call in `MainWindow.OnStatusChanged`
+   covers every page.
+4. Remove the per-page reconnect handling Scope 2 adds. Reconnect logic
+   lives in exactly one place.
+
+**Estimated effort:** Medium — refactor surface across ~6 files plus
+tests. Worth scoping after Scope 2 ships because Scope 2 is the
+incremental win that buys the time to do Scope 3 right.
+
+**Why before v1:** The current pattern is fine for four pages but
+multiplies if a future page (e.g., a Phase 7 host view, a forensics
+view) needs the same data. The refactor is much easier now (six call
+sites) than later (eight, ten, twelve).
+
+**Scope 3 also unblocks:** the count-summary IPC payload that lifts the
+nav-badge accuracy gap from Phase 4b — once `MainWindow` is the owner
+of an authoritative query path, periodic background polling of
+`GetAlertsAsync(State=Active)` for badge state becomes a clean addition
+rather than a layering violation.
+
+---
+
 ## MVP definition of done
 
 All Phase 0–6 acceptance criteria pass (CI + manual). The product: passively captures up/down traffic; attributes it to process incl. svchost service names and signer/path enrichment; shows a near-live dashboard; stores tiered history with user-defined windows and configurable retention; produces a daily report with CSV/HTML export; raises local alerts via an extensible pipeline; installs/uninstalls cleanly via .msi; runs within the performance budget; and **emits no network traffic of its own**, verified by self-monitoring. The collector contract, alert pipeline, and versioned IPC envelope seams (plus the reserved `devices` table) are in place so the post-MVP modules in PRD §10 can be added without re-architecting.

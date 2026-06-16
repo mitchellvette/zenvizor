@@ -18,6 +18,37 @@ public partial class MainWindow : FluentWindow
     private readonly AlertsClient _alertsClient;
     private bool _exiting;
 
+    // Per-severity active counts tracked LOCALLY in MainWindow so the
+    // nav-rail badge updates on AlertRaised push regardless of whether
+    // AlertsPage is currently loaded. Authoritative when MainWindow is
+    // the only mutator; resynced from AlertsPage's view-model via
+    // UpdateAlertsBadge when the page provides a known total.
+    //
+    // Drift envelope (documented Phase 6.1a trade-off): dismissals via
+    // zvctl while AlertsPage is unloaded won't decrement these. Bounded —
+    // Phase 7+ refactors to lift the alerts VM to app-level scope or add
+    // a count-summary push from the service, see sprint plan A2.
+    private int _badgeCritical;
+    private int _badgeWarning;
+    private int _badgeInfo;
+
+    // Tracked across StatusChanged ticks so we fire ServiceReconnected
+    // only on the disconnected→connected transition, not on every steady
+    // "still connected" tick.
+    private bool _serviceWasConnected;
+
+    /// <summary>
+    /// Fires on the dispatcher AFTER MainWindow has force-reconnected
+    /// the shared <see cref="AlertsClient"/> following a service restart.
+    /// Pages with stale per-page query clients subscribe and re-issue a
+    /// refresh to pick up any data raised in the gap. General-purpose by
+    /// design (not Alerts-specific) — see sprint plan §"Pre-v1
+    /// architectural follow-ups" A1/A2 for the planned Scope 2/3
+    /// adoption across HistoryPage / ReportsPage / PerAppPage /
+    /// AppDetailPage.
+    /// </summary>
+    public event EventHandler? ServiceReconnected;
+
     // Alerts nav-rail badge — one-shot pulse storyboard built in code-behind
     // because the motion tokens are sys:TimeSpan / IEasingFunction resources,
     // and Storyboard.Duration is the WPF `Duration` struct that XAML
@@ -136,14 +167,39 @@ public partial class MainWindow : FluentWindow
         // thread. Matches the OnActivitySnapshot pattern above.
         Dispatcher.Invoke(() =>
         {
-            // Phase 3: simple "+1 to count, take this severity as the highest
-            // observed" cue. Phase 4 wires the real ViewModel that owns the
-            // active-set count and the running highest-severity calculation;
-            // for now this gives a visible signal that push works end-to-end.
-            // The AlertsViewModel (when authored) will own the count + severity
-            // state and call UpdateAlertsBadge itself.
+            // Phase 6.1a: MainWindow now owns the badge-state update on
+            // push so users see the nav-rail badge appear regardless of
+            // which page they're on. Previously this only pulsed an
+            // already-visible badge (no-op when count was zero) and
+            // delegated the actual count to the page VM via
+            // UpdateAlertsBadge — which only fires when AlertsPage is
+            // loaded.
+            switch (alert.Severity)
+            {
+                case NotableSeverity.Critical: _badgeCritical++; break;
+                case NotableSeverity.Warning:  _badgeWarning++;  break;
+                case NotableSeverity.Info:     _badgeInfo++;     break;
+            }
+            RenderBadgeFromLocalCounts();
             PulseAlertsBadge();
         });
+    }
+
+    /// <summary>
+    /// Compute the badge count + highest-severity tint from the
+    /// per-severity local counters and render via the existing
+    /// <see cref="UpdateAlertsBadge"/> path. Pulls the highest non-zero
+    /// severity in the locked Critical &gt; Warning &gt; Info ordering.
+    /// </summary>
+    private void RenderBadgeFromLocalCounts()
+    {
+        var total = _badgeCritical + _badgeWarning + _badgeInfo;
+        NotableSeverity? highest =
+            _badgeCritical > 0 ? NotableSeverity.Critical
+            : _badgeWarning > 0 ? NotableSeverity.Warning
+            : _badgeInfo    > 0 ? NotableSeverity.Info
+            : null;
+        UpdateAlertsBadgeInternal(total, highest);
     }
 
     /// <summary>
@@ -157,6 +213,23 @@ public partial class MainWindow : FluentWindow
     /// <param name="highestSeverity">The worst severity present in the active
     /// set; drives the badge tint. Null when count is 0 (badge hidden).</param>
     public void UpdateAlertsBadge(int activeCount, NotableSeverity? highestSeverity)
+    {
+        // Page-authoritative update from AlertsViewModel — collapse the
+        // local per-severity breakdown to match. We don't have full
+        // per-severity detail from the page's caller, so attribute the
+        // total to the highest-severity tier; subsequent push events
+        // will increment from this baseline and RenderBadgeFromLocalCounts
+        // will surface a higher tier if a more-severe push lands. The
+        // visible badge (total + tint) matches the page view; the
+        // per-severity collapse is internal bookkeeping that converges
+        // back to authoritative on the next page-driven update.
+        _badgeCritical = highestSeverity == NotableSeverity.Critical ? activeCount : 0;
+        _badgeWarning  = highestSeverity == NotableSeverity.Warning  ? activeCount : 0;
+        _badgeInfo     = highestSeverity == NotableSeverity.Info     ? activeCount : 0;
+        UpdateAlertsBadgeInternal(activeCount, highestSeverity);
+    }
+
+    private void UpdateAlertsBadgeInternal(int activeCount, NotableSeverity? highestSeverity)
     {
         if (activeCount <= 0)
         {
@@ -362,6 +435,34 @@ public partial class MainWindow : FluentWindow
                 ServiceStatusDot.Fill = (Brush)FindResource("status.disconnected");
                 ServiceStatusText.Text = $"Service: {update.Message}";
             }
+
+            // Phase 6.1a: detect the disconnected→connected transition and
+            // trigger an AlertsClient force-reconnect so the push subscription
+            // survives a service restart. Fire ServiceReconnected after the
+            // reconnect succeeds so subscribing pages (currently just
+            // AlertsPage; sprint plan A1 extends to other pages) can run a
+            // fresh RefreshAsync to pick up anything raised in the gap
+            // between service start and this reconnect. Fire-and-forget so
+            // the status visual update isn't blocked on pipe handshake; the
+            // event fires on the dispatcher after the reconnect completes.
+            if (update.IsConnected && !_serviceWasConnected)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _alertsClient.ForceReconnectAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best-effort. If the reconnect fails the next IPC call
+                        // from any page will re-attempt via the lazy path.
+                        return;
+                    }
+                    Dispatcher.Invoke(() => ServiceReconnected?.Invoke(this, EventArgs.Empty));
+                });
+            }
+            _serviceWasConnected = update.IsConnected;
         });
     }
 

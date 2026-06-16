@@ -298,8 +298,39 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
 
     // ---- TCP connection lifecycle handlers ----
 
+    // ---- TCP connect / accept handlers -------------------------------------
+    //
+    // Phase 6.1a: every connect/accept event ALSO synthesizes a zero-byte
+    // NetworkObservation and writes it to the channel. Without this, a
+    // process that opens a TCP socket and then idles (the classic C2 beacon
+    // shape — establish, wait for command, exfil tiny payload, close) is
+    // invisible to the aggregator. The Microsoft-Windows-Kernel-Network
+    // ETW provider only fires TcpIpSend/Recv for packets carrying
+    // application bytes; SYN/SYN-ACK/ACK/FIN traffic flows through these
+    // connect/disconnect events. So a connection that never carries data
+    // generates ZERO observations in the data-event path. The
+    // _connectionSink call (left intact below) populates the
+    // ConnectionLifecycleResolver cache for PID correction; the new
+    // zero-byte observation is what makes the connection visible to
+    // aggregator → flush → producer.
+    //
+    // Zero-byte semantics: the aggregator's accumulator math handles
+    // bytes=0 cleanly (the sample accumulator adds 0; the connection
+    // accumulator updates FirstSeen/LastSeen and stores 0 bytes). The
+    // connection row at flush time still gets RemoteClass=Wan from the
+    // remote-address classifier, which is the only field
+    // AlertProducer.OnSessionConnectedWan keys on for rule evaluation.
+    //
+    // Direction lock: connects originate locally → Direction.Up. Accepts
+    // are incoming → Direction.Down. UDP has no connect/disconnect events
+    // (every UDP send IS a data event, so it's already covered).
+
     private void OnTcpConnect(TcpIpConnectTraceData d)
     {
+        EmitConnectObservation(d.TimeStamp, d.ProcessID, Protocol.Tcp,
+            new IPEndPoint(d.saddr, d.sport),
+            new IPEndPoint(d.daddr, d.dport),
+            Direction.Up);
         if (_connectionSink is null) return;
         var pid = d.ProcessID;
         if (pid <= 0) return;
@@ -320,6 +351,10 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
 
     private void OnTcp6Connect(TcpIpV6ConnectTraceData d)
     {
+        EmitConnectObservation(d.TimeStamp, d.ProcessID, Protocol.Tcp,
+            new IPEndPoint(d.saddr, d.sport),
+            new IPEndPoint(d.daddr, d.dport),
+            Direction.Up);
         if (_connectionSink is null) return;
         var pid = d.ProcessID;
         if (pid <= 0) return;
@@ -340,6 +375,10 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
 
     private void OnTcpAccept(TcpIpConnectTraceData d)
     {
+        EmitConnectObservation(d.TimeStamp, d.ProcessID, Protocol.Tcp,
+            new IPEndPoint(d.saddr, d.sport),
+            new IPEndPoint(d.daddr, d.dport),
+            Direction.Down);
         if (_connectionSink is null) return;
         var pid = d.ProcessID;
         if (pid <= 0) return;
@@ -360,6 +399,10 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
 
     private void OnTcp6Accept(TcpIpV6ConnectTraceData d)
     {
+        EmitConnectObservation(d.TimeStamp, d.ProcessID, Protocol.Tcp,
+            new IPEndPoint(d.saddr, d.sport),
+            new IPEndPoint(d.daddr, d.dport),
+            Direction.Down);
         if (_connectionSink is null) return;
         var pid = d.ProcessID;
         if (pid <= 0) return;
@@ -376,6 +419,24 @@ public sealed class EtwCaptureSource : ICaptureSource, IAsyncDisposable
         {
             _logger.LogDebug(ex, "ConnectionLifecycleSink.OnConnect (accept v6) failed.");
         }
+    }
+
+    /// <summary>
+    /// Zero-byte observation synthesized from a TcpIpConnect/Accept ETW
+    /// event so that connect-only TCP sessions (no data exchanged) still
+    /// flow through the aggregator. Mirrors the WriteObservation path the
+    /// data-event handlers use, including the negative-PID guard.
+    /// </summary>
+    private void EmitConnectObservation(
+        DateTime timestamp, int etwPid, Protocol protocol,
+        IPEndPoint local, IPEndPoint remote, Direction direction)
+    {
+        // PID guard matches the original Connect handlers: ETW occasionally
+        // reports PID=-1 for events it can't attribute; skip those rather
+        // than emit a null-PID observation that the aggregator would just
+        // drop as unattributed.
+        if (etwPid <= 0) return;
+        WriteObservation(timestamp, etwPid, protocol, local, remote, direction, 0);
     }
 
     private void OnTcpDisconnect(TcpIpTraceData d)
