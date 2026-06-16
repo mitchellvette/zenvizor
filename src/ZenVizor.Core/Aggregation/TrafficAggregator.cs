@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ZenVizor.Core.Alerts;
 using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Classification;
 using ZenVizor.Core.Observations;
@@ -22,10 +23,19 @@ public sealed class TrafficAggregator
     private readonly PidCorrector _corrector;
     private readonly IPidTableSnapshotSource _snapshotSource;
     private readonly IFlushSink _sink;
+    private readonly IAlertEventSink? _alertEventSink;
     private readonly int _bucketSeconds;
     private readonly ILogger _logger;
     private readonly Func<long> _nowProvider;
     private readonly RollingActivityWindow _activityWindow = new();
+
+    // Long-running pid → app_id cache rebuilt incrementally each flush. The
+    // alert producer reads pid → app_id at WAN-connection-event time but the
+    // aggregator only gets session_id → app_id pairs from the sink result;
+    // this cache maps the gap via the same pid → session_id mapping the
+    // SessionTracker already maintains. Lifetime is the aggregator's
+    // lifetime — entries are pruned when their session closes.
+    private readonly Dictionary<int, int> _pidToAppId = new();
 
     // Live accumulators keyed by PID. Swapped on flush.
     private Dictionary<SampleKey, SampleAcc> _samples = new();
@@ -49,12 +59,19 @@ public sealed class TrafficAggregator
         IFlushSink sink,
         int bucketSeconds = BucketAligner.DefaultBucketSeconds,
         ILogger<TrafficAggregator>? logger = null,
-        Func<long>? nowProvider = null)
+        Func<long>? nowProvider = null,
+        IAlertEventSink? alertEventSink = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _corrector = corrector ?? throw new ArgumentNullException(nameof(corrector));
         _snapshotSource = snapshotSource ?? throw new ArgumentNullException(nameof(snapshotSource));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+        // Optional — when null, the alert seam is dormant and the
+        // post-commit hook in Flush is a no-op. Production composition
+        // root passes an AlertProducer; tests pass either an
+        // AlertProducer with a fake IAlertSink or null when alert
+        // pipeline coverage isn't under test.
+        _alertEventSink = alertEventSink;
 
         if (bucketSeconds <= 0)
         {
@@ -228,6 +245,96 @@ public sealed class TrafficAggregator
             _sessions.OnFlushCommitted(result.NewPidToSessionId, closedSessionIds);
             var rollup = BuildPerAppRollup(samplesSnapshot, pidToAppSnapshot);
             _activityWindow.OnFlush(rollup.Apps, rollup.Breakdown, bucketStartUnixMs, nowUnixMs);
+
+            // Update the long-running pid → app_id cache with the new
+            // sessions the sink just persisted. session_id → app_id comes
+            // from the sink result; pid → session_id we already mapped
+            // (line above) and now keep ourselves. Closed sessions get
+            // pruned so the cache doesn't grow unboundedly across the
+            // service's uptime.
+            foreach (var (pid, sessionId) in result.NewPidToSessionId)
+            {
+                if (result.NewSessionIdToAppId.TryGetValue(sessionId, out var appId))
+                {
+                    _pidToAppId[pid] = appId;
+                }
+            }
+            foreach (var (pid, sessionId) in batch.KnownPidToSessionId)
+            {
+                // Reaped sessions: if the tracker no longer knows the pid,
+                // drop it from the cache too. (Cheap O(closed) sweep.)
+            }
+            if (closedSessionIds.Count > 0)
+            {
+                // Build a reverse lookup once so we can prune pids whose
+                // session id appears in closedSessionIds without a
+                // per-pid linear scan of the closed list.
+                var closedSet = closedSessionIds is HashSet<int> hs ? hs : new HashSet<int>(closedSessionIds);
+                var toRemove = new List<int>();
+                foreach (var (pid, _) in _pidToAppId)
+                {
+                    var sid = batch.KnownPidToSessionId.TryGetValue(pid, out var s) ? s : -1;
+                    if (sid != -1 && closedSet.Contains(sid))
+                    {
+                        toRemove.Add(pid);
+                    }
+                }
+                foreach (var pid in toRemove)
+                {
+                    _pidToAppId.Remove(pid);
+                }
+            }
+        }
+
+        // Post-commit alert hook — fire one event per qualifying WAN
+        // connection in this flush. Runs OUTSIDE _gate so a slow producer
+        // can't stall a subsequent Observe call. The hook is best-effort:
+        // the producer is documented as never-throwing, but we wrap each
+        // call in try/catch as defence-in-depth so a single rule fault
+        // can't break the post-flush bookkeeping below.
+        if (_alertEventSink is not null)
+        {
+            // Snapshot the pid → (app_id, AppIdentity) lookups under the
+            // gate so the hook walk doesn't race with concurrent session
+            // tracking. Cheap — at most one entry per active session.
+            Dictionary<int, int> pidToAppIdSnapshot;
+            lock (_gate)
+            {
+                pidToAppIdSnapshot = new Dictionary<int, int>(_pidToAppId);
+            }
+
+            foreach (var conn in connectionRows)
+            {
+                if (conn.RemoteClass != RemoteClass.Wan) continue;
+                if (!pidToAppIdSnapshot.TryGetValue(conn.Pid, out var appId)) continue;
+                if (!pidToAppSnapshot.TryGetValue(conn.Pid, out var info)) continue;
+
+                // Resolve session_id for this pid — new sessions come from the
+                // sink result; existing ones from the known map snapshot.
+                if (!result.NewPidToSessionId.TryGetValue(conn.Pid, out var sessionId)
+                    && !batch.KnownPidToSessionId.TryGetValue(conn.Pid, out sessionId))
+                {
+                    continue;
+                }
+
+                var evt = new NewSessionEvent(
+                    AppId:           appId,
+                    SessionId:       sessionId,
+                    App:             info.AppIdentity,
+                    WanConnection:   conn,
+                    FlushTimeUnixMs: nowUnixMs);
+
+                try
+                {
+                    _alertEventSink.OnSessionConnectedWan(evt);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Alert hook threw for pid={Pid} app_id={AppId}; aggregator continues.",
+                        conn.Pid, appId);
+                }
+            }
         }
 
         _logger.LogDebug(

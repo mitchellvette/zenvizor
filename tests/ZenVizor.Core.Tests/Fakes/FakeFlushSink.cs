@@ -30,13 +30,22 @@ internal sealed class FakeFlushSink : IFlushSink
         Batches.Add(batch);
 
         var newPidToSessionId = new Dictionary<int, int>();
+        var newSessionIdToAppId = new Dictionary<int, int>();
         foreach (var entry in batch.NewSessions)
         {
-            newPidToSessionId[entry.Pid] = ++_nextSessionId;
+            var sessionId = ++_nextSessionId;
+            newPidToSessionId[entry.Pid] = sessionId;
+            // Synthesize a 1:1 session→app mapping so the alert producer
+            // hook on TrafficAggregator (Phase 6.1) can resolve app ids in
+            // tests that drive Flush via this fake. Production wiring
+            // ultimately gets app_id from SqliteFlushSink's apps-table
+            // upsert; this fake just hands back a stable derived value.
+            newSessionIdToAppId[sessionId] = sessionId;
         }
 
         var result = new FlushBatchResult(
-            NewPidToSessionId: newPidToSessionId,
+            NewPidToSessionId:   newPidToSessionId,
+            NewSessionIdToAppId: newSessionIdToAppId,
             SampleRowsWritten: batch.Samples.Count,
             ConnectionUpserts: batch.Connections.Count,
             SessionsClosed: batch.ClosedSessionIds.Count);

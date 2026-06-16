@@ -45,9 +45,16 @@ public sealed record PendingConnection(
 /// Returned by a successful <see cref="IFlushSink.Flush"/> call. Tells the
 /// aggregator/tracker which PIDs are now persisted at which session ids so
 /// future flushes can use <see cref="FlushBatch.KnownPidToSessionId"/> directly.
+/// <para>
+/// <see cref="NewSessionIdToAppId"/> exposes the session_id → app_id pairs
+/// the sink resolved during this flush — used by the aggregator to maintain
+/// a long-running pid → app_id mapping for the alert producer (which needs
+/// app_id at WAN-connection-event time but is fed pid-keyed observations).
+/// </para>
 /// </summary>
 public sealed record FlushBatchResult(
     IReadOnlyDictionary<int, int> NewPidToSessionId,
+    IReadOnlyDictionary<int, int> NewSessionIdToAppId,
     int SampleRowsWritten,
     int ConnectionUpserts,
     int SessionsClosed);

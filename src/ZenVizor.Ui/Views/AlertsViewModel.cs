@@ -391,24 +391,6 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// True when the in-memory set has at least one row. Used by the page's
-    /// dev-only seed-bypass branch in <c>RefreshAsync</c>: once the seed has
-    /// populated <c>_allAlerts</c>, the page skips the server round-trip on
-    /// subsequent State chip flips so that in-place user mutations
-    /// (dismissals) survive. Production code paths (seed flag off) don't
-    /// touch this property.
-    /// </summary>
-    public bool HasAnyAlerts => _allAlerts.Count > 0;
-
-    /// <summary>
-    /// Re-runs the filter pipeline against the current in-memory rows
-    /// without replacing them. Thin public surface over the private
-    /// <see cref="ApplyFilter"/> for the dev-seed bypass; not part of the
-    /// production refresh path.
-    /// </summary>
-    public void RefilterOnly() => ApplyFilter();
-
-    /// <summary>
     /// Locally marks an alert as dismissed and re-runs the KPI + filter
     /// pipeline so the nav badge, KPI strip, and visible feed all
     /// reflect the optimistic state change. Page calls this BEFORE
@@ -465,101 +447,8 @@ internal sealed class AlertsViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string propertyName = "")
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-    // ---- Phase 4a synthetic seed --------------------------------------------
-
-    /// <summary>
-    /// Seeds the in-memory set with the six brief §3 sample instances so the
-    /// Phase 4a layout is visually verifiable without a Phase 6 producer.
-    /// Phase 4b removes this and replaces it with a real GetAlertsAsync call.
-    /// </summary>
-    public void SeedSyntheticForPhase4aPreview()
-    {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        const long MinuteMs = 60_000L;
-
-        var samples = new[]
-        {
-            new AlertDto(
-                AlertId: 1,
-                Type: AlertType.UnsignedFromUserPath,
-                Severity: NotableSeverity.Critical,
-                CreatedAtUnixMs: nowMs - 15 * MinuteMs,
-                Source: SourceMonitor.Capture,
-                EntityKind: AlertEntityKind.App,
-                EntityRef: "7",
-                Title: "Unsigned program talking to the network: 7zG.exe",
-                Detail: "7zG.exe is running from a user-writable folder and started making network connections. " +
-                        "Image path: C:\\Users\\Mitch\\AppData\\Local\\Temp\\7zS9F2A3.tmp\\7zG.exe. " +
-                        "Signer: none (unsigned). First connection: 2026-06-11 14:32. Connections so far: 3.",
-                AcknowledgedAtUnixMs: null),
-            new AlertDto(
-                AlertId: 2,
-                Type: AlertType.InvalidSignature,
-                Severity: NotableSeverity.Critical,
-                CreatedAtUnixMs: nowMs - 45 * MinuteMs,
-                Source: SourceMonitor.Capture,
-                EntityKind: AlertEntityKind.App,
-                EntityRef: "12",
-                Title: "Program signature does not verify: legacy-installer.exe",
-                Detail: "legacy-installer.exe started a network connection while its signature did not verify. " +
-                        "Image path: C:\\Program Files (x86)\\OldVendor\\legacy-installer.exe. " +
-                        "Signer: OldVendor LLC (signature invalid). First connection: 2026-06-11 09:15. Connections so far: 1.",
-                AcknowledgedAtUnixMs: null),
-            new AlertDto(
-                AlertId: 3,
-                Type: AlertType.FirstRunWanTalker,
-                Severity: NotableSeverity.Info,
-                CreatedAtUnixMs: nowMs - 2 * 60 * MinuteMs,
-                Source: SourceMonitor.Capture,
-                EntityKind: AlertEntityKind.App,
-                EntityRef: "21",
-                Title: "First-time program reached the network: Notion.exe",
-                Detail: "Notion.exe was seen for the first time and connected to a remote endpoint within seconds. " +
-                        "Image path: C:\\Users\\Mitch\\AppData\\Local\\Programs\\Notion\\Notion.exe. " +
-                        "Signer: Notion Labs, Inc. First seen: 2026-06-11 10:48. First connection: 2026-06-11 10:48.",
-                AcknowledgedAtUnixMs: null),
-            new AlertDto(
-                AlertId: 4,
-                Type: AlertType.UnusualDailyVolume,
-                Severity: NotableSeverity.Warning,
-                CreatedAtUnixMs: nowMs - 3 * 60 * MinuteMs,
-                Source: SourceMonitor.Rollup,
-                EntityKind: AlertEntityKind.App,
-                EntityRef: "33",
-                Title: "Higher-than-usual data use today: chrome.exe",
-                Detail: "chrome.exe has moved 8.4 GB today, against a typical 1.9 GB over the past 14 days. " +
-                        "Today's volume is about 4.4 times the recent median. " +
-                        "Open the program's history to see when the activity spiked.",
-                AcknowledgedAtUnixMs: null),
-            new AlertDto(
-                AlertId: 5,
-                Type: AlertType.LargeDownload,
-                Severity: NotableSeverity.Info,
-                CreatedAtUnixMs: nowMs - 8 * 60 * MinuteMs,
-                Source: SourceMonitor.Capture,
-                EntityKind: AlertEntityKind.Session,
-                EntityRef: "447",
-                Title: "Large download in progress: MicrosoftEdgeUpdate.exe",
-                Detail: "MicrosoftEdgeUpdate.exe pulled down 187 MB from an endpoint it had not used today. " +
-                        "Image path: C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe. " +
-                        "Signer: Microsoft Corporation. Started: 2026-06-11 13:21.",
-                AcknowledgedAtUnixMs: nowMs - 5 * 60 * MinuteMs,
-                AppId: 47),
-            new AlertDto(
-                AlertId: 6,
-                Type: AlertType.OutboundHeavy,
-                Severity: NotableSeverity.Warning,
-                CreatedAtUnixMs: nowMs - 24 * 60 * MinuteMs,
-                Source: SourceMonitor.Rollup,
-                EntityKind: AlertEntityKind.App,
-                EntityRef: "58",
-                Title: "Uploads dominated downloads today: Backblaze.exe",
-                Detail: "Backblaze.exe sent 4.1 GB and received 78 MB today. " +
-                        "The outbound-to-inbound ratio is unusual; backup clients legitimately look like this. " +
-                        "Signer: Backblaze, Inc.",
-                AcknowledgedAtUnixMs: nowMs - 10 * 60 * MinuteMs),
-        };
-
-        LoadAlerts(samples);
-    }
+    // Phase 4a's SeedSyntheticForPhase4aPreview was excised when the real
+    // UnsignedFromUserPath producer landed in Phase 6.1. If a future
+    // scenario needs a dev-only seed again, reintroduce behind an explicit
+    // const flag — never in the production refresh path.
 }

@@ -25,7 +25,8 @@ public sealed class CaptureMonitorHealthTests
     private sealed class NullFlushSink : IFlushSink
     {
         public FlushBatchResult Flush(FlushBatch batch) => new(
-            NewPidToSessionId: new Dictionary<int, int>(),
+            NewPidToSessionId:   new Dictionary<int, int>(),
+            NewSessionIdToAppId: new Dictionary<int, int>(),
             SampleRowsWritten: 0,
             ConnectionUpserts: 0,
             SessionsClosed: 0);
@@ -171,7 +172,8 @@ public sealed class CaptureMonitorHealthTests
             BatchCount++;
             _onFlush(batch);
             return new FlushBatchResult(
-                NewPidToSessionId: new Dictionary<int, int>(),
+                NewPidToSessionId:   new Dictionary<int, int>(),
+                NewSessionIdToAppId: new Dictionary<int, int>(),
                 SampleRowsWritten: batch.Samples.Count,
                 ConnectionUpserts: batch.Connections.Count,
                 SessionsClosed: batch.ClosedSessionIds.Count);

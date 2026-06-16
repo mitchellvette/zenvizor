@@ -32,7 +32,8 @@ public sealed class SqliteFlushSink : IFlushSink
             && batch.ClosedSessionIds.Count == 0)
         {
             return new FlushBatchResult(
-                NewPidToSessionId: new Dictionary<int, int>(),
+                NewPidToSessionId:   new Dictionary<int, int>(),
+                NewSessionIdToAppId: new Dictionary<int, int>(),
                 SampleRowsWritten: 0,
                 ConnectionUpserts: 0,
                 SessionsClosed: 0);
@@ -65,7 +66,8 @@ public sealed class SqliteFlushSink : IFlushSink
         transaction.Commit();
 
         return new FlushBatchResult(
-            NewPidToSessionId: newPidToSessionId,
+            NewPidToSessionId:   newPidToSessionId,
+            NewSessionIdToAppId: sessionIdToAppId,
             SampleRowsWritten: sampleRowsWritten,
             ConnectionUpserts: connectionUpserts,
             SessionsClosed: sessionsClosed);

@@ -8,7 +8,9 @@ using ZenVizor.Attribution.Paths;
 using ZenVizor.Attribution.Services;
 using ZenVizor.Capture;
 using ZenVizor.Core.Aggregation;
+using ZenVizor.Core.Alerts;
 using ZenVizor.Core.Attribution;
+using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ipc.Server;
 using ZenVizor.Storage;
 using ZenVizor.Storage.Repositories;
@@ -80,6 +82,21 @@ internal sealed class ZenVizorHostedService : IHostedService
         var connections = new ConnectionFactory(dbPath);
         var flushSink = new SqliteFlushSink(connections);
 
+        // ---- Phase 6 alert pipeline (must construct BEFORE the aggregator
+        //      so we can hand the producer in as its IAlertEventSink). The
+        //      sink → producer dependency chain stays inside the service:
+        //      AlertsRepository (Storage) → AlertsRepositorySink (Service
+        //      adapter implementing Core's IAlertSink) → AlertProducer
+        //      (Core, rules-only logic). The producer also exposes the
+        //      AlertRaised event that the broadcaster wires below. ----
+        var alertsRepo  = new AlertsRepository(connections);
+        var alertSink   = new AlertsRepositorySink(alertsRepo);
+        var alertRules  = new IAlertRule[] { new UnsignedFromUserPathRule() };
+        var alertProducer = new AlertProducer(
+            alertRules,
+            alertSink,
+            logger: _loggerFactory.CreateLogger<AlertProducer>());
+
         // ProcessLifecycleResolver is the Phase-3 fix for short-lived process
         // attribution: an ETW-fed image cache keyed by PID, populated at
         // process-start time and held past process-exit for a grace window so
@@ -134,7 +151,8 @@ internal sealed class ZenVizorHostedService : IHostedService
             new PidCorrector(),
             pidTableSource,
             flushSink,
-            logger: _loggerFactory.CreateLogger<TrafficAggregator>());
+            logger: _loggerFactory.CreateLogger<TrafficAggregator>(),
+            alertEventSink: alertProducer);
 
         _captureSource = new EtwCaptureSource(
             logger: _loggerFactory.CreateLogger<EtwCaptureSource>(),
@@ -169,16 +187,30 @@ internal sealed class ZenVizorHostedService : IHostedService
             appDetailProvider:   (id,w,g) => queryRepo.GetAppDetail(id, w, g),
             connectionsProvider: (id,w)   => queryRepo.GetConnections(id, w),
             historyProvider:     (w,g)    => queryRepo.GetTrafficHistory(w, g),
-            dailyReportProvider: (d,a,sd) => dailyReportRepo.GetDailyReport(d, a, sd, TimeZoneInfo.Local));
+            dailyReportProvider: (d,a,sd) => dailyReportRepo.GetDailyReport(d, a, sd, TimeZoneInfo.Local),
+            alertsProvider:      filter   => BuildAlertsResult(alertsRepo, filter),
+            alertDismisser:      id       => alertsRepo.Dismiss(
+                id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
         // The alert broadcaster is the fan-out point for server-pushed
-        // AlertRaised notifications. Phase 6 sprint work — the alert
-        // producer + storage repository — will call BroadcastAlertRaisedAsync
-        // when a rule fires. The broadcaster is wired into the pipe server
-        // here so every accepted connection auto-subscribes; the producer
-        // gets a reference to it once the rule-engine wiring lands.
+        // AlertRaised notifications. The Phase 6 alert producer calls
+        // BroadcastAlertRaisedAsync via the event-forwarding hook below
+        // when a rule fires; every accepted IPC connection auto-subscribes
+        // via the pipe server constructor.
         _alertBroadcaster = new AlertBroadcaster(
             _loggerFactory.CreateLogger<AlertBroadcaster>());
+
+        // Producer → broadcaster bridge. Fire-and-forget so the alert
+        // pipeline's hot path never blocks on per-subscriber send latency
+        // (the broadcaster's internal try/catch handles slow/broken pipes
+        // without stalling other clients). The bridge lives at the
+        // composition root rather than inside the producer so the
+        // producer (Core) stays ignorant of the IPC transport — same
+        // separation Core/Storage already maintains.
+        alertProducer.AlertRaised += dto =>
+        {
+            _ = _alertBroadcaster.BroadcastAlertRaisedAsync(dto);
+        };
 
         _pipeServer = new ZenVizorPipeServer(
             handler,
@@ -200,6 +232,55 @@ internal sealed class ZenVizorHostedService : IHostedService
             "ZenVizor service started. DbPath={DbPath} Pipe=\\\\.\\pipe\\ZenVizor.Ipc.v1 CaptureActive={Active}",
             dbPath, _captureMonitor.IsRunning);
     }
+
+    /// <summary>
+    /// Translates <see cref="AlertsRepository.Query"/> rows into the wire
+    /// <see cref="AlertsResult"/>. Owns the string→enum conversion + HasMore
+    /// truncation. <see cref="AlertsRepository.Query"/> internally fetches
+    /// MaxRows+1 so the truncation check is a length comparison, no extra
+    /// COUNT round-trip.
+    /// <para>
+    /// AppId derivation: for App-scoped alerts the EntityRef IS the app id,
+    /// so the wire DTO populates AppId by parsing EntityRef. For
+    /// Session-scoped (and future Device/File) alerts, AppId would need to
+    /// come from a producer-populated column — out of scope for Phase 6.1
+    /// since the only shipped producer is App-scoped.
+    /// </para>
+    /// </summary>
+    private static AlertsResult BuildAlertsResult(AlertsRepository repo, AlertsFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var rows = repo.Query(filter.State, filter.MaxRows);
+        var hasMore = rows.Count > filter.MaxRows;
+        var visible = hasMore ? rows.Take(filter.MaxRows) : rows;
+
+        var dtos = new List<AlertDto>(filter.MaxRows);
+        foreach (var r in visible)
+        {
+            var entityKind = ParseEnum(r.EntityKind, AlertEntityKind.App);
+            int? appId = entityKind == AlertEntityKind.App && int.TryParse(r.EntityRef, out var parsed)
+                ? parsed
+                : null;
+
+            dtos.Add(new AlertDto(
+                AlertId:              r.AlertId,
+                Type:                 ParseEnum(r.Type,     AlertType.UnsignedFromUserPath),
+                Severity:             ParseEnum(r.Severity, NotableSeverity.Info),
+                CreatedAtUnixMs:      r.CreatedAtUnixMs,
+                Source:               ParseEnum(r.SourceMonitor, SourceMonitor.Capture),
+                EntityKind:           entityKind,
+                EntityRef:            r.EntityRef,
+                Title:                r.Title,
+                Detail:               r.Detail,
+                AcknowledgedAtUnixMs: r.AcknowledgedAtUnixMs,
+                AppId:                appId));
+        }
+
+        return new AlertsResult(filter, dtos, hasMore);
+    }
+
+    private static T ParseEnum<T>(string value, T fallback) where T : struct, Enum =>
+        Enum.TryParse<T>(value, ignoreCase: false, out var parsed) ? parsed : fallback;
 
     private async Task RunRetentionLoopAsync(RetentionRepository retention, CancellationToken cancellationToken)
     {

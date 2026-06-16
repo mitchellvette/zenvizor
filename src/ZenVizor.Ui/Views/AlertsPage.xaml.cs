@@ -22,16 +22,6 @@ public partial class AlertsPage : Page
     private readonly AlertsViewModel _vm = new();
     private AlertsClient? _alertsClient;
 
-    // DEV-ONLY: Phase 5 validation aid. When set, RefreshAsync layers the
-    // synthetic six-sample seed on top of an empty server result so the
-    // dismiss flow, expand-on-click (5.2), and view-app drill (5.3) can be
-    // exercised against real per-item visuals before Phase 6 ships a real
-    // producer. Set FALSE (and remove both the flag and the seed call) the
-    // moment the Phase 6 producer lands — leaving this true with a real
-    // producer would cause synthetic rows to flash in whenever the producer
-    // happens to return zero matches for the current filter window.
-    private const bool EnableSyntheticSeedForDev = true;
-
     public AlertsPage()
     {
         InitializeComponent();
@@ -90,23 +80,6 @@ public partial class AlertsPage : Page
         // OnVmPropertyChanged(SelectedState) re-fires RefreshAsync on the
         // new state immediately, so the latest request always wins.
         var requestState = _vm.SelectedState;
-
-        // DEV-ONLY seed bypass: once the seed has populated _allAlerts,
-        // skip the server round-trip on subsequent SelectedState changes
-        // so user-dismissals (which mutate _allAlerts in place via
-        // MarkAlertDismissed) survive State chip flips. The seed contains
-        // both active and dismissed rows; ApplyFilter slices client-side.
-        // Without this bypass, every chip flip would LoadAlerts(empty) +
-        // re-seed from the static sample data, wiping out optimistic
-        // mutations. Production (seed flag off) never enters this branch.
-        if (EnableSyntheticSeedForDev && _vm.HasAnyAlerts)
-        {
-            _vm.RefilterOnly();
-            _vm.ClearBanner();
-            UpdateNavBadge();
-            return;
-        }
-
         var filter = new AlertsFilter(requestState);
 
         try
@@ -117,16 +90,6 @@ public partial class AlertsPage : Page
             if (_vm.SelectedState != requestState) return;
 
             _vm.LoadAlerts(result.Alerts);
-
-            // DEV-ONLY seed (see EnableSyntheticSeedForDev). SeedSyntheticForPhase4aPreview
-            // re-calls LoadAlerts internally, so KPI counts + filter
-            // pipeline + Content state machine all run again with the
-            // synthetic rows in place.
-            if (EnableSyntheticSeedForDev && result.Alerts.Count == 0)
-            {
-                _vm.SeedSyntheticForPhase4aPreview();
-            }
-
             _vm.ClearBanner();
             UpdateNavBadge();
         }
