@@ -209,6 +209,53 @@ public sealed class RetentionRepositoryTests : IDisposable
         result.HourlyDeleted.Should().Be(1);
     }
 
+    // ---- Phase 6.2 wipe-history ----
+
+    [Fact]
+    public void WipeHistory_DeletesEveryDataRow_PreservesAppsAndSettings()
+    {
+        SeedAppAndSession(1, 1);
+        InsertSample(sessionId: 1, bucketStart: Now - 1 * Day, bytesUp: 100, bytesDown: 200);
+        InsertConnection(sessionId: 1, lastSeen: Now - 1 * Day);
+        InsertHourly(appId: 1, bucketStart: Now - 1 * Day, bytesUp: 1, bytesDown: 0);
+        InsertDaily(appId: 1, bucketStart: Now - 1 * Day, bytesUp: 1, bytesDown: 0);
+        InsertAlert(createdAt: Now - 1 * Day, acknowledgedAt: null);
+
+        var result = _retention.WipeHistory();
+
+        result.SamplesDeleted.Should().Be(1);
+        result.ConnectionsDeleted.Should().Be(1);
+        result.HourlyDeleted.Should().Be(1);
+        result.DailyDeleted.Should().Be(1);
+        result.AlertsDeleted.Should().Be(1);
+        result.SessionsDeleted.Should().Be(1);
+
+        QueryAll("SELECT 1 FROM traffic_samples;").Should().BeEmpty();
+        QueryAll("SELECT 1 FROM connections;").Should().BeEmpty();
+        QueryAll("SELECT 1 FROM traffic_hourly;").Should().BeEmpty();
+        QueryAll("SELECT 1 FROM traffic_daily;").Should().BeEmpty();
+        QueryAll("SELECT 1 FROM alerts;").Should().BeEmpty();
+        QueryAll("SELECT 1 FROM process_sessions;").Should().BeEmpty();
+
+        // Preserved.
+        QueryAll("SELECT 1 FROM apps;").Should().ContainSingle();
+        QueryAll("SELECT 1 FROM settings WHERE key = 'retention.traffic_samples_days';")
+            .Should().ContainSingle();
+    }
+
+    [Fact]
+    public void WipeHistory_OnEmptyDatabase_ReturnsAllZeros()
+    {
+        var result = _retention.WipeHistory();
+
+        result.SamplesDeleted.Should().Be(0);
+        result.ConnectionsDeleted.Should().Be(0);
+        result.HourlyDeleted.Should().Be(0);
+        result.DailyDeleted.Should().Be(0);
+        result.AlertsDeleted.Should().Be(0);
+        result.SessionsDeleted.Should().Be(0);
+    }
+
     // ---- seed helpers ----
 
     private void SeedAppAndSession(int appId, int sessionId, long? endTime = null)

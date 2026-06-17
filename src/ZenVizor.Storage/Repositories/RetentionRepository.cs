@@ -95,6 +95,60 @@ public sealed class RetentionRepository
             OrphanSessionsDeleted: orphanSessions);
     }
 
+    /// <summary>
+    /// Wipes ALL collected history — every row from traffic_samples,
+    /// connections, traffic_hourly, traffic_daily, alerts, and
+    /// process_sessions. Preserves <c>apps</c> (the catalog row dedup is
+    /// expensive to rebuild and harmless to keep) and <c>settings</c> (user
+    /// config). Settings page's "Reset history" button is the only caller.
+    /// </summary>
+    /// <remarks>
+    /// All tables are deleted inside a single transaction so the wipe is
+    /// atomic — a crash mid-wipe doesn't leave the rollup tiers populated
+    /// while traffic_samples is empty (which would skew Reports' "delta vs
+    /// trailing week" math). Unlike <see cref="PurgeOlderThan"/>, the
+    /// flush sink can't contend here in any meaningful way: the wipe takes
+    /// the write lock for the full transaction, but the data being deleted
+    /// is everything that was there at the start, so contention with a
+    /// concurrent flush merely re-populates a few rows that survive the
+    /// wipe (acceptable — the user invoked "start fresh", not "snapshot of
+    /// the exact moment").
+    /// </remarks>
+    public WipeResult WipeHistory()
+    {
+        using var connection = _connections.Open();
+        using var transaction = connection.BeginTransaction();
+
+        var samples       = DeleteAll(connection, transaction, "traffic_samples");
+        var connsRows     = DeleteAll(connection, transaction, "connections");
+        var hourly        = DeleteAll(connection, transaction, "traffic_hourly");
+        var daily         = DeleteAll(connection, transaction, "traffic_daily");
+        var alertsRows    = DeleteAll(connection, transaction, "alerts");
+        var sessions      = DeleteAll(connection, transaction, "process_sessions");
+
+        transaction.Commit();
+
+        _logger.LogInformation(
+            "History wipe: samples={S} connections={C} hourly={H} daily={D} alerts={A} sessions={Ss}",
+            samples, connsRows, hourly, daily, alertsRows, sessions);
+
+        return new WipeResult(
+            SamplesDeleted: samples,
+            ConnectionsDeleted: connsRows,
+            HourlyDeleted: hourly,
+            DailyDeleted: daily,
+            AlertsDeleted: alertsRows,
+            SessionsDeleted: sessions);
+    }
+
+    private static int DeleteAll(SqliteConnection connection, SqliteTransaction transaction, string table)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = $"DELETE FROM {table};";
+        return cmd.ExecuteNonQuery();
+    }
+
     private int DeleteBeforeChunked(SqliteConnection connection, string table, string column, long boundaryUnixMs)
     {
         if (boundaryUnixMs <= 0) return 0;
@@ -231,3 +285,11 @@ public sealed record PurgeResult(
     int DailyDeleted,
     int AlertsDeleted,
     int OrphanSessionsDeleted);
+
+public sealed record WipeResult(
+    int SamplesDeleted,
+    int ConnectionsDeleted,
+    int HourlyDeleted,
+    int DailyDeleted,
+    int AlertsDeleted,
+    int SessionsDeleted);

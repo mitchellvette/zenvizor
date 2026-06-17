@@ -42,6 +42,9 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private readonly Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult> _dailyReportProvider;
     private readonly Func<AlertsFilter, AlertsResult> _alertsProvider;
     private readonly Func<long, bool> _alertDismisser;
+    private readonly Func<SettingsSnapshot> _settingsProvider;
+    private readonly Action<SettingsUpdate> _settingsApplier;
+    private readonly Func<WipeHistoryResult> _historyWiper;
     private readonly Func<DateTimeOffset> _clock;
     private readonly long _maxWindowLookbackMs;
     private readonly string _serviceVersion;
@@ -59,6 +62,9 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null,
         Func<AlertsFilter, AlertsResult>? alertsProvider = null,
         Func<long, bool>? alertDismisser = null,
+        Func<SettingsSnapshot>? settingsProvider = null,
+        Action<SettingsUpdate>? settingsApplier = null,
+        Func<WipeHistoryResult>? historyWiper = null,
         Func<DateTimeOffset>? clock = null,
         long? maxWindowLookbackMs = null)
     {
@@ -84,6 +90,14 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         // per the brief §3.5 contract).
         _alertsProvider = alertsProvider ?? EmptyAlerts;
         _alertDismisser = alertDismisser ?? (_ => false);
+        // Phase 6.2 Settings — composition root in ZenVizorHostedService wires
+        // the SettingsRepository-backed provider + applier and the
+        // RetentionRepository-backed wiper. Defaults keep test handlers
+        // functional (snapshot returns a stable seed; applier is a no-op;
+        // wiper returns all-zero counts).
+        _settingsProvider = settingsProvider ?? DefaultSettings;
+        _settingsApplier = settingsApplier ?? (_ => { });
+        _historyWiper = historyWiper ?? (() => new WipeHistoryResult(0, 0, 0, 0, 0, 0));
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _maxWindowLookbackMs = maxWindowLookbackMs ?? DefaultMaxWindowLookbackMs;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
@@ -118,6 +132,19 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Filter: filter,
         Alerts: Array.Empty<AlertDto>(),
         HasMore: false);
+
+    private static SettingsSnapshot DefaultSettings() => new(
+        AutostartMode: ServiceStartMode.Automatic,
+        ToastOnAlert: true,
+        Theme: AppTheme.System,
+        FlushIntervalMs: 5000,
+        FlushBucketSeconds: 60,
+        RetentionSamplesDays: 30,
+        RetentionConnectionsDays: 30,
+        RetentionHourlyDays: 90,
+        RetentionDailyDays: 365,
+        RetentionAlertsDaysAfterAck: 90,
+        StartMinimized: false);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -231,6 +258,25 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         return Task.CompletedTask;
     }
 
+    public Task<IpcEnvelope<SettingsSnapshot>> GetSettingsAsync()
+    {
+        var payload = _settingsProvider();
+        return Task.FromResult(new IpcEnvelope<SettingsSnapshot>(IpcSchemaVersion.Settings, payload));
+    }
+
+    public Task UpdateSettingsAsync(SettingsUpdate update)
+    {
+        ValidateSettingsUpdate(update);
+        _settingsApplier(update);
+        return Task.CompletedTask;
+    }
+
+    public Task<IpcEnvelope<WipeHistoryResult>> WipeHistoryAsync()
+    {
+        var payload = _historyWiper();
+        return Task.FromResult(new IpcEnvelope<WipeHistoryResult>(IpcSchemaVersion.Settings, payload));
+    }
+
     // ---- Argument validation ------------------------------------------------
     //
     // Every Phase-4 query RPC validates its inputs and returns a typed
@@ -299,6 +345,41 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         if (filter.MaxRows <= 0)
         {
             throw InvalidArgument($"AlertsFilter.MaxRows must be positive (received {filter.MaxRows}).");
+        }
+    }
+
+    private static void ValidateSettingsUpdate(SettingsUpdate update)
+    {
+        if (update is null)
+        {
+            throw InvalidArgument("update is required.");
+        }
+        if (update.AutostartMode is { } mode && !Enum.IsDefined(typeof(ServiceStartMode), mode))
+        {
+            throw InvalidArgument($"SettingsUpdate.AutostartMode value {(int)mode} is not defined.");
+        }
+        if (update.Theme is { } theme && !Enum.IsDefined(typeof(AppTheme), theme))
+        {
+            throw InvalidArgument($"SettingsUpdate.Theme value {(int)theme} is not defined.");
+        }
+        ValidateRetentionDays(nameof(SettingsUpdate.RetentionSamplesDays),         update.RetentionSamplesDays);
+        ValidateRetentionDays(nameof(SettingsUpdate.RetentionConnectionsDays),     update.RetentionConnectionsDays);
+        ValidateRetentionDays(nameof(SettingsUpdate.RetentionHourlyDays),          update.RetentionHourlyDays);
+        ValidateRetentionDays(nameof(SettingsUpdate.RetentionDailyDays),           update.RetentionDailyDays);
+        ValidateRetentionDays(nameof(SettingsUpdate.RetentionAlertsDaysAfterAck),  update.RetentionAlertsDaysAfterAck);
+    }
+
+    private static void ValidateRetentionDays(string field, int? days)
+    {
+        if (days is null) return;
+        // Upper bound 3650 (10 years) matches the UI NumberBox cap (§6.2 Q5).
+        // Lower bound 1 — "never retain" (0) collides with the
+        // RetentionRepository.LoadPolicy fallback that treats <=0 as "use
+        // default", which would silently revert the user's choice.
+        if (days < 1 || days > 3650)
+        {
+            throw InvalidArgument(
+                $"{field} must be between 1 and 3650 days (received {days}).");
         }
     }
 

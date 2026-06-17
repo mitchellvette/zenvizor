@@ -44,7 +44,7 @@ public sealed class MigratorTests : IDisposable
 
         var applied = migrator.Migrate(_dbPath);
 
-        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5 });
+        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5, 6, 7 });
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class MigratorTests : IDisposable
             "SELECT version, name FROM schema_migrations ORDER BY version;",
             r => (Version: r.GetInt32(0), Name: r.GetString(1)));
 
-        rows.Should().HaveCount(5);
+        rows.Should().HaveCount(7);
         rows[0].Version.Should().Be(1);
         rows[0].Name.Should().Be("initial");
         rows[1].Version.Should().Be(2);
@@ -92,6 +92,10 @@ public sealed class MigratorTests : IDisposable
         rows[3].Name.Should().Be("phase4_rollup_backfill");
         rows[4].Version.Should().Be(5);
         rows[4].Name.Should().Be("phase2_path_class");
+        rows[5].Version.Should().Be(6);
+        rows[5].Name.Should().Be("phase6_settings");
+        rows[6].Version.Should().Be(7);
+        rows[6].Name.Should().Be("phase6_start_minimized");
     }
 
     [Fact]
@@ -127,6 +131,11 @@ public sealed class MigratorTests : IDisposable
         settings.Should().Contain(new KeyValuePair<string, string>("autostart.mirror", "1"));
         settings.Should().Contain(new KeyValuePair<string, string>("pid_table.poll_ms", "1000"));
         settings.Should().Contain(new KeyValuePair<string, string>("session.end_grace_ms", "30000"));
+        // Phase 6.2 — Settings page seeds.
+        settings.Should().Contain(new KeyValuePair<string, string>("autostart.mode", "Automatic"));
+        settings.Should().Contain(new KeyValuePair<string, string>("appearance.theme", "system"));
+        // Phase 6.3 — Tray polish seed.
+        settings.Should().Contain(new KeyValuePair<string, string>("ui.start_minimized", "0"));
     }
 
     [Fact]

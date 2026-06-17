@@ -1,0 +1,584 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.Versioning;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
+using ZenVizor.Ipc.Contracts.Dto;
+using ZenVizor.Ui.Services;
+using IpcAppTheme = ZenVizor.Ipc.Contracts.Dto.AppTheme;
+
+namespace ZenVizor.Ui.Views;
+
+/// <summary>
+/// Phase 6.2 Settings page. Hybrid apply policy:
+///   * Booleans / enums (autostart, toast, theme) — apply on change
+///   * Retention NumberBoxes — 500ms debounce after last edit
+///   * Reset history — explicit ContentDialog confirmation
+///
+/// Service-reconnect: subscribes to MainWindow.ServiceReconnected so a
+/// service restart triggers a fresh GetSettingsAsync. Disconnected /
+/// error states render via the StatusBanner + VM.Content state matrix
+/// (Alerts page pattern).
+/// </summary>
+[SupportedOSPlatform("windows")]
+public partial class SettingsPage : Page
+{
+    private readonly SettingsViewModel _vm = new();
+
+    // Owned by MainWindow so the toast-on-alert preference cache + this
+    // page's IPC share one pipe. Resolved lazily on first use because
+    // MainWindow may not be ready in the page ctor (designer hosts page
+    // without a real Application.Current.MainWindow).
+    private SettingsClient? _settingsRef;
+    private SettingsClient Settings =>
+        _settingsRef ??= (Application.Current.MainWindow as MainWindow)?.SettingsClient
+            ?? new SettingsClient();
+
+    // Debounce timer for retention NumberBox edits. 500ms after the last
+    // value change runs an apply; spin-button storms and arrow-key holds
+    // collapse to a single round-trip per "settle" event.
+    private readonly DispatcherTimer _retentionDebounce;
+
+    // Suppresses re-entrant change handlers while we're populating the
+    // form from a fresh snapshot. Without this, Hydrate would trip every
+    // checked / unchecked / SelectionChanged handler and fire spurious
+    // UpdateSettingsAsync calls back to the service.
+    private bool _suppressApply;
+
+    // Set after the first successful GetSettingsAsync round-trip. Until
+    // this flips true, ApplyAsync short-circuits — a defensive belt for
+    // any control whose ValueChanged / SelectionChanged event fires
+    // outside the _suppressApply synchronous window (e.g. WPF deferring an
+    // event past the binding's source update). Prevents the "Couldn't
+    // save change" banner on first load when nothing was edited.
+    private bool _hasHydrated;
+
+    // Row VMs for the Retention ItemsControl. One per tier; each carries
+    // its label, description, max-for-unit, and the underlying
+    // SettingsViewModel.RetentionField. Stored on the page so the
+    // ItemsControl re-bind on Hydrate doesn't lose references.
+    private readonly List<RetentionRowVm> _retentionRows;
+
+    public SettingsPage()
+    {
+        InitializeComponent();
+        DataContext = _vm;
+
+        // Row copy intentionally avoids "ZenVizor keeps" — the section
+        // header already establishes "stays on your machine; nothing is
+        // sent." Each row's prose stays in that frame ("stays on your
+        // machine") so the privacy posture stays loud across every row,
+        // not just the header.
+        _retentionRows = new List<RetentionRowVm>
+        {
+            new("Recent traffic samples",
+                "How long each high-resolution traffic sample stays on your machine. Powers the Dashboard live view and the per-app drill-down at sample-grain.",
+                _vm.Samples),
+            new("Connection records",
+                "How long per-endpoint connection rows stay on your machine. Shown on the per-app drill-down.",
+                _vm.Connections),
+            new("Hourly rollups",
+                "How long the hourly summarized traffic stays on your machine. Used by the History page for the past week or two.",
+                _vm.HourlyRollups),
+            new("Daily rollups",
+                "How long the daily summarized traffic stays on your machine. Powers long-range reports and trend lines.",
+                _vm.DailyRollups),
+            new("Dismissed alerts",
+                "After you dismiss an alert, how long the record stays on your machine before being removed.",
+                _vm.AlertsAfterDismiss),
+        };
+        RetentionRows.ItemsSource = _retentionRows;
+
+        _retentionDebounce = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500),
+        };
+        _retentionDebounce.Tick += OnRetentionDebounceTick;
+
+        PopulateAbout();
+
+        Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    private async void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+        _vm.PropertyChanged += OnVmContentChanged;
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.ServiceReconnected += OnServiceReconnected;
+        }
+
+        await RefreshAsync();
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        _vm.PropertyChanged -= OnVmContentChanged;
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.ServiceReconnected -= OnServiceReconnected;
+        }
+        _retentionDebounce.Stop();
+    }
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _vm.Content = SettingsViewModel.PageContent.Loading;
+
+        // Pre-hydrate the theme picker from the local cache BEFORE awaiting
+        // IPC so it never renders blank if the service is slow or down.
+        // ThemePreferenceStore.Load returns System on any error, so this is
+        // always safe. _suppressApply protects OnThemeChanged.
+        _suppressApply = true;
+        try
+        {
+            ThemePicker.SelectedIndex = (int)ThemePreferenceStore.Load();
+        }
+        finally
+        {
+            _suppressApply = false;
+        }
+
+        try
+        {
+            var snapshot = await Settings.GetSettingsAsync();
+            _suppressApply = true;
+            try
+            {
+                _vm.Hydrate(snapshot);
+                // Sync the non-bindable controls (ComboBox SelectedIndex
+                // doesn't survive a XAML-binding path because we want
+                // SelectedIndex semantics, not SelectedItem). Capture-tier
+                // descriptions are VM-bound (FlushIntervalDescription /
+                // BucketSizeDescription) so they refresh automatically.
+                ThemePicker.SelectedIndex = (int)snapshot.Theme;
+                // Mirror the authoritative server value back to the local
+                // cache so an out-of-band edit (zvctl, direct SQL) flows
+                // into the next App.OnStartup synchronous read.
+                StartMinimizedStore.Save(snapshot.StartMinimized);
+                foreach (var row in _retentionRows)
+                {
+                    row.RefreshAfterHydrate();
+                }
+            }
+            finally
+            {
+                _suppressApply = false;
+            }
+            _hasHydrated = true;
+            _vm.Content = SettingsViewModel.PageContent.Populated;
+            HideBanner();
+        }
+        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        {
+            _vm.Content = SettingsViewModel.PageContent.Disconnected;
+            ShowBanner(critical: true,
+                "Service disconnected. Settings can be viewed but not changed.");
+        }
+        catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
+        {
+            // Service binary predates Phase 6.2 — the settings IPC isn't
+            // exposed yet. Surface as a calm informational banner rather
+            // than an alarming red one; defaults remain visible (theme
+            // came from the local cache) and the user knows how to fix.
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false,
+                "Settings can't be loaded. The ZenVizor service is older than this app; " +
+                "restart the service (Services.msc, ZenVizor, Restart) to enable changes.");
+        }
+        catch (Exception ex)
+        {
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false, $"Couldn't load settings ({ex.GetType().Name}).");
+        }
+    }
+
+    // ── Apply-on-change handlers ────────────────────────────────────────
+
+    private async void OnAutostartChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        var mode = _vm.AutostartEnabled
+            ? ServiceStartMode.Automatic
+            : ServiceStartMode.Manual;
+        await ApplyAsync(new SettingsUpdate { AutostartMode = mode });
+    }
+
+    private async void OnStartMinimizedChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        // Update the local cache eagerly so a crash before the IPC
+        // round-trip completes still gives the next launch a correct
+        // value. Same pattern as theme.
+        StartMinimizedStore.Save(_vm.StartMinimized);
+        await ApplyAsync(new SettingsUpdate { StartMinimized = _vm.StartMinimized });
+    }
+
+    private async void OnToastChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        await ApplyAsync(new SettingsUpdate { ToastOnAlert = _vm.ToastOnAlert });
+        // Mirror the new value into MainWindow's cached field so the
+        // very next AlertRaised push honours the toggle without
+        // waiting for an IPC round-trip.
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.SetToastEnabled(_vm.ToastOnAlert);
+        }
+    }
+
+    private async void OnThemeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressApply) return;
+        if (ThemePicker.SelectedIndex < 0) return;
+
+        var picked = (IpcAppTheme)ThemePicker.SelectedIndex;
+        _vm.Theme = picked;
+
+        // Apply the theme locally BEFORE the IPC call so the user sees
+        // the change immediately. Cache it to disk too so the next launch
+        // boots into the same theme without waiting for the service.
+        ApplyThemeImmediate(picked);
+        ThemePreferenceStore.Save(picked);
+
+        // Persist server-side. If the call fails the local override stays
+        // (cache and ApplicationThemeManager both already moved); a
+        // subsequent successful save reconciles. This is the right
+        // trade-off for theme — bouncing back to old theme on transient
+        // pipe error feels worse than the brief divergence.
+        await ApplyAsync(new SettingsUpdate { Theme = picked });
+    }
+
+    // ── Retention composite — debounced apply ───────────────────────────
+
+    // NumberBoxValueChangedEvent delegate signature is
+    // (object sender, NumberBoxValueChangedEventArgs args) — confirmed by
+    // reflection against Wpf.Ui 4.0.2. XAML handler matching is strict on
+    // the exact delegate Invoke signature so we mirror it here.
+    private void OnRetentionValueChanged(object sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_suppressApply) return;
+        // Restart the debounce window. Multiple changes within 500ms
+        // collapse to one apply at the end.
+        _retentionDebounce.Stop();
+        _retentionDebounce.Start();
+    }
+
+    private void OnRetentionUnitChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressApply) return;
+        if (sender is not ComboBox cb || cb.Tag is not RetentionRowVm row) return;
+
+        // The ComboBox's bound UnitIndex setter triggers RetentionField
+        // unit setter, which recomputes UnitScopedValue. The Hydrate-path
+        // suppression keeps Unit setting from firing apply during load.
+        row.RefreshAfterUnitChange();
+        _retentionDebounce.Stop();
+        _retentionDebounce.Start();
+    }
+
+    private async void OnRetentionDebounceTick(object? sender, EventArgs e)
+    {
+        _retentionDebounce.Stop();
+        // Send every retention day-count in one round-trip. The IPC
+        // contract is partial-update, but lumping all five is cheaper
+        // (one RPC, atomic at the handler) than dispatching one per
+        // field and easier to reason about under back-to-back edits.
+        var update = new SettingsUpdate
+        {
+            RetentionSamplesDays         = _vm.Samples.Days,
+            RetentionConnectionsDays     = _vm.Connections.Days,
+            RetentionHourlyDays          = _vm.HourlyRollups.Days,
+            RetentionDailyDays           = _vm.DailyRollups.Days,
+            RetentionAlertsDaysAfterAck  = _vm.AlertsAfterDismiss.Days,
+        };
+        await ApplyAsync(update);
+    }
+
+    // ── Reset history — explicit confirm ────────────────────────────────
+
+    private async void OnResetHistoryClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset history?",
+            Content = "This permanently deletes every traffic, connection, " +
+                      "session, and alert row. Your settings are preserved.\n\n" +
+                      "ZenVizor will start collecting fresh data on the next " +
+                      "capture tick. This cannot be undone.",
+            PrimaryButtonText = "Reset history",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        // Host the dialog in MainWindow's content presenter — required by
+        // Wpf.Ui's ContentDialog (it renders inside the DialogHost
+        // ContentPresenter via z-order overlay).
+        var host = Window.GetWindow(this) as MainWindow;
+        if (host?.DialogHost is null)
+        {
+            // Fallback path — shouldn't happen in production but keeps the
+            // page testable in a host without DialogHost wired.
+            return;
+        }
+        dialog.DialogHost = host.DialogHost;
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        try
+        {
+            var wipe = await Settings.WipeHistoryAsync();
+            var total = wipe.TotalDeleted;
+            _vm.ResetHistoryStatus = total == 0
+                ? "Nothing to reset. History was already empty."
+                : $"Reset complete. Removed {total:N0} rows.";
+            ResetHistoryStatusText.Text = _vm.ResetHistoryStatus;
+            ResetHistoryStatusText.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        {
+            _vm.Content = SettingsViewModel.PageContent.Disconnected;
+            ShowBanner(critical: true,
+                "Service disconnected. Couldn't reset history.");
+        }
+        catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
+        {
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false,
+                "Couldn't reset history. The ZenVizor service is older than this app; " +
+                "restart the service to enable changes.");
+        }
+        catch (Exception ex)
+        {
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false, $"Couldn't reset history ({ex.GetType().Name}).");
+        }
+    }
+
+    // ── Test notification — bypass alert pipeline ──────────────────────
+
+    private void OnTestNotificationClick(object sender, RoutedEventArgs e)
+    {
+        // Direct call into MainWindow.ShowTestToast — the same Tray
+        // notification path real alerts use. Lets the user verify the OS
+        // toast wiring without waiting for an alert to fire.
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.ShowTestToast();
+        }
+    }
+
+    // ── About: shell-open the repo link ─────────────────────────────────
+
+    private void OnRepoLinkClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // UseShellExecute = true hands off to the user's default
+            // browser; ZenVizor itself emits no network traffic. This is
+            // load-bearing for CLAUDE.md invariant 1.
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/mitchellvette/zenvizor",
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Best-effort; the link is a courtesy, not a feature.
+        }
+    }
+
+    // ── Apply / banner / theme plumbing ─────────────────────────────────
+
+    private async Task ApplyAsync(SettingsUpdate update)
+    {
+        // Defensive: never call UpdateSettingsAsync before the page has
+        // successfully hydrated. WPF deferred events fired by the binding
+        // system during Hydrate could otherwise reach here with
+        // _suppressApply already reset to false, triggering a spurious
+        // "Couldn't save change" banner on the very first page load.
+        if (!_hasHydrated) return;
+
+        try
+        {
+            await Settings.UpdateSettingsAsync(update);
+            HideBanner();
+            if (_vm.Content == SettingsViewModel.PageContent.Error)
+            {
+                _vm.Content = SettingsViewModel.PageContent.Populated;
+            }
+        }
+        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        {
+            _vm.Content = SettingsViewModel.PageContent.Disconnected;
+            ShowBanner(critical: true,
+                "Service disconnected. Your change wasn't saved.");
+        }
+        catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
+        {
+            // Same "service is older than UI" condition GetSettingsAsync
+            // surfaces — but per-save. Theme changes still take effect
+            // locally (ApplyThemeImmediate + ThemePreferenceStore.Save
+            // ran before this call), so the banner reads as informational
+            // not "your change was lost."
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false,
+                "Changes can't be saved. The ZenVizor service is older than this app; " +
+                "restart the service to enable changes.");
+        }
+        catch (Exception ex)
+        {
+            _vm.Content = SettingsViewModel.PageContent.Error;
+            ShowBanner(critical: false, $"Couldn't save change ({ex.GetType().Name}).");
+        }
+    }
+
+    private static void ApplyThemeImmediate(IpcAppTheme picked)
+    {
+        // System: re-enable the OS watcher path. Light/Dark: pin the theme.
+        // updateAccent stays false so the brand violet ramp is preserved
+        // (see App.xaml.cs comments).
+        switch (picked)
+        {
+            case IpcAppTheme.System:
+                ApplicationThemeManager.ApplySystemTheme(updateAccent: false);
+                break;
+            case IpcAppTheme.Light:
+                ApplicationThemeManager.Apply(ApplicationTheme.Light, updateAccent: false);
+                break;
+            case IpcAppTheme.Dark:
+                ApplicationThemeManager.Apply(ApplicationTheme.Dark, updateAccent: false);
+                break;
+        }
+    }
+
+    private void OnVmContentChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SettingsViewModel.Content)) return;
+        // Disconnected state disables every input. Done via IsEnabled on
+        // the form's outer ScrollViewer since per-control bindings would
+        // proliferate without buying anything.
+        FormScroll.IsEnabled = _vm.Content != SettingsViewModel.PageContent.Disconnected;
+    }
+
+    private void ShowBanner(bool critical, string text)
+    {
+        StatusBanner.Background = (System.Windows.Media.Brush)FindResource(
+            critical ? "status.critical.background" : "status.caution.background");
+        var fg = critical ? "status.critical" : "status.caution.text";
+        StatusBannerGlyph.Foreground = (System.Windows.Media.Brush)FindResource(fg);
+        StatusBannerText.Foreground = (System.Windows.Media.Brush)FindResource(fg);
+        StatusBannerText.Text = text;
+        StatusBanner.Visibility = Visibility.Visible;
+    }
+
+    private void HideBanner()
+    {
+        StatusBanner.Visibility = Visibility.Collapsed;
+    }
+
+    // ── About card population ───────────────────────────────────────────
+
+    private void PopulateAbout()
+    {
+        // User-facing surface uses clean SemVer (no commit hash). The full
+        // diagnostic version (with +hash) is still available via
+        // `zvctl --version` for support workflows.
+        var assembly = typeof(SettingsPage).Assembly;
+        var raw = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString();
+        AboutVersion.Text = VersionFormatter.Display(raw);
+    }
+
+    /// <summary>
+    /// Page-internal row VM for the Retention ItemsControl. Carries label
+    /// + description + unit cap + a reference to the persisted field.
+    /// </summary>
+    internal sealed class RetentionRowVm : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public string Label { get; }
+        public string Description { get; }
+        public SettingsViewModel.RetentionField Field { get; }
+
+        public RetentionRowVm(
+            string label,
+            string description,
+            SettingsViewModel.RetentionField field)
+        {
+            Label = label;
+            Description = description;
+            Field = field;
+            field.PropertyChanged += (_, args) =>
+            {
+                // Re-broadcast Field-level changes so XAML's binding on
+                // Field.UnitScopedValue updates without needing a deep path.
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxForUnit)));
+            };
+        }
+
+        /// <summary>
+        /// 0 = Days, 1 = Months, 2 = Years. Bound to the ComboBox
+        /// SelectedIndex so a change on either side mirrors. Setter
+        /// converts back to <see cref="SettingsViewModel.RetentionUnit"/>.
+        /// </summary>
+        public int UnitIndex
+        {
+            get => (int)Field.Unit;
+            set
+            {
+                var unit = value switch
+                {
+                    1 => SettingsViewModel.RetentionUnit.Months,
+                    2 => SettingsViewModel.RetentionUnit.Years,
+                    _ => SettingsViewModel.RetentionUnit.Days,
+                };
+                if (Field.Unit == unit) return;
+                Field.Unit = unit;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UnitIndex)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxForUnit)));
+            }
+        }
+
+        /// <summary>
+        /// Cap for the NumberBox per the active unit. Matches the IPC
+        /// server-side validation: 3650 days = ~10 years; 120 months
+        /// = 10 years; 10 years. The cap goes down as the unit grows
+        /// to keep the persisted day count under 3650.
+        /// </summary>
+        public int MaxForUnit => Field.Unit switch
+        {
+            SettingsViewModel.RetentionUnit.Months => 120,
+            SettingsViewModel.RetentionUnit.Years  => 10,
+            _                                      => 3650,
+        };
+
+        public void RefreshAfterHydrate()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UnitIndex)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxForUnit)));
+        }
+
+        public void RefreshAfterUnitChange()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MaxForUnit)));
+        }
+    }
+}

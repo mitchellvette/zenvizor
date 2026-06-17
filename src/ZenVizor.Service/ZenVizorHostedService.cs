@@ -169,6 +169,12 @@ internal sealed class ZenVizorHostedService : IHostedService
         // ---- IPC ----
         var queryRepo       = new AppHistoryQueryRepository(connections);
         var dailyReportRepo = new DailyReportRepository(connections);
+        var settingsRepo    = new SettingsRepository(connections);
+        var retentionForWipe = new RetentionRepository(
+            connections, _loggerFactory.CreateLogger<RetentionRepository>());
+        var startModeManager = new ServiceStartModeManager(
+            ServiceConstants.ServiceName,
+            _loggerFactory.CreateLogger<ServiceStartModeManager>());
         var startedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var handler = new ZenVizorIpcHandler(
             startedAtUnixMs,
@@ -190,7 +196,10 @@ internal sealed class ZenVizorHostedService : IHostedService
             dailyReportProvider: (d,a,sd) => dailyReportRepo.GetDailyReport(d, a, sd, TimeZoneInfo.Local),
             alertsProvider:      filter   => BuildAlertsResult(alertsRepo, filter),
             alertDismisser:      id       => alertsRepo.Dismiss(
-                id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+            settingsProvider:    ()       => BuildSettingsSnapshot(settingsRepo, startModeManager),
+            settingsApplier:     update   => ApplySettingsUpdate(settingsRepo, startModeManager, update),
+            historyWiper:        ()       => Wipe(retentionForWipe));
 
         // The alert broadcaster is the fan-out point for server-pushed
         // AlertRaised notifications. The Phase 6 alert producer calls
@@ -281,6 +290,87 @@ internal sealed class ZenVizorHostedService : IHostedService
 
     private static T ParseEnum<T>(string value, T fallback) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: false, out var parsed) ? parsed : fallback;
+
+    /// <summary>
+    /// Builds the Settings snapshot returned by
+    /// <c>GetSettingsAsync</c>. SCM start-mode is queried live so the UI sees
+    /// reality, not the cached <c>autostart.mode</c> row (which may have
+    /// drifted if someone ran <c>sc.exe config</c> out-of-band). The cached
+    /// row is updated as a side effect so subsequent reads stay fast.
+    /// </summary>
+    private static SettingsSnapshot BuildSettingsSnapshot(
+        SettingsRepository settings,
+        ServiceStartModeManager startModeManager)
+    {
+        var liveMode = startModeManager.Get();
+        // Update the cached mirror row so it stays consistent for diagnostics.
+        settings.Set(SettingsRepository.Keys.AutostartMode, liveMode.ToString());
+
+        return new SettingsSnapshot(
+            AutostartMode:               liveMode,
+            ToastOnAlert:                settings.GetBool(SettingsRepository.Keys.ToastOnAlert, true),
+            Theme:                       ParseEnum(
+                                            settings.GetString(SettingsRepository.Keys.AppearanceTheme) ?? "System",
+                                            AppTheme.System),
+            FlushIntervalMs:             settings.GetInt(SettingsRepository.Keys.FlushIntervalMs,  5000),
+            FlushBucketSeconds:          settings.GetInt(SettingsRepository.Keys.FlushBucketSecs,  60),
+            RetentionSamplesDays:        settings.GetInt(SettingsRepository.Keys.SamplesDays,         30),
+            RetentionConnectionsDays:    settings.GetInt(SettingsRepository.Keys.ConnectionsDays,     30),
+            RetentionHourlyDays:         settings.GetInt(SettingsRepository.Keys.HourlyDays,          90),
+            RetentionDailyDays:          settings.GetInt(SettingsRepository.Keys.DailyDays,           365),
+            RetentionAlertsDaysAfterAck: settings.GetInt(SettingsRepository.Keys.AlertsDaysAfterAck,  90),
+            StartMinimized:              settings.GetBool(SettingsRepository.Keys.StartMinimized,    false));
+    }
+
+    /// <summary>
+    /// Applies each non-null field on the update. Autostart-mode changes
+    /// hit SCM via <c>ChangeServiceConfig</c>; failure there throws and
+    /// the rest of the update is skipped — partial-success is not exposed
+    /// to the wire so the UI never reads a half-applied state.
+    /// </summary>
+    private static void ApplySettingsUpdate(
+        SettingsRepository settings,
+        ServiceStartModeManager startModeManager,
+        SettingsUpdate update)
+    {
+        if (update.AutostartMode is { } mode)
+        {
+            startModeManager.Set(mode);
+            settings.Set(SettingsRepository.Keys.AutostartMode, mode.ToString());
+        }
+        if (update.ToastOnAlert is { } toast)
+        {
+            settings.SetBool(SettingsRepository.Keys.ToastOnAlert, toast);
+        }
+        if (update.Theme is { } theme)
+        {
+            settings.Set(SettingsRepository.Keys.AppearanceTheme, theme.ToString());
+        }
+        if (update.RetentionSamplesDays         is { } a) settings.SetInt(SettingsRepository.Keys.SamplesDays,        a);
+        if (update.RetentionConnectionsDays     is { } b) settings.SetInt(SettingsRepository.Keys.ConnectionsDays,    b);
+        if (update.RetentionHourlyDays          is { } c) settings.SetInt(SettingsRepository.Keys.HourlyDays,         c);
+        if (update.RetentionDailyDays           is { } d) settings.SetInt(SettingsRepository.Keys.DailyDays,          d);
+        if (update.RetentionAlertsDaysAfterAck  is { } e) settings.SetInt(SettingsRepository.Keys.AlertsDaysAfterAck, e);
+        if (update.StartMinimized               is { } m) settings.SetBool(SettingsRepository.Keys.StartMinimized,    m);
+    }
+
+    /// <summary>
+    /// Wraps <see cref="RetentionRepository.WipeHistory"/> into the wire
+    /// shape. Exists as a method (rather than inline lambda in the handler
+    /// composition) so the projection from internal <c>WipeResult</c> to
+    /// <c>WipeHistoryResult</c> stays in one place.
+    /// </summary>
+    private static WipeHistoryResult Wipe(RetentionRepository retention)
+    {
+        var r = retention.WipeHistory();
+        return new WipeHistoryResult(
+            SamplesDeleted:     r.SamplesDeleted,
+            ConnectionsDeleted: r.ConnectionsDeleted,
+            HourlyDeleted:      r.HourlyDeleted,
+            DailyDeleted:       r.DailyDeleted,
+            AlertsDeleted:      r.AlertsDeleted,
+            SessionsDeleted:    r.SessionsDeleted);
+    }
 
     private async Task RunRetentionLoopAsync(RetentionRepository retention, CancellationToken cancellationToken)
     {

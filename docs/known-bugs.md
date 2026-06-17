@@ -21,7 +21,24 @@ zero and don't re-attempt approaches we've already ruled out.
 
 ## Active
 
+*(none currently)*
+
+## Resolved
+
 ### TRAY-01 — Tray context menu lingers after Exit click
+
+**Resolved:** Prior to Phase 6.3 (resolution confirmed by user 2026-06-17;
+specific resolving commit not recorded at the time). The menu no longer
+lingers after Exit; tray popup dismisses with the window.
+
+Full diagnostic write-up retained below for reference — if a regression
+of the same shape appears the prior hypothesis catalog cuts re-investigation
+time. **Note:** when revisiting, verify the current behavior first; the
+detail below describes the bug as it was, not a current symptom.
+
+---
+
+### TRAY-01 (historical) — Tray context menu lingers after Exit click
 
 **Surface:** UI — system tray context menu
 **Severity:** Cosmetic. Exit path only. App functions correctly; process exits
@@ -124,13 +141,6 @@ mitigates it. App exits cleanly.
 3. Right-click the tray icon in the system notification area.
 4. Click **Exit**.
 5. Observe: main window disappears immediately, tray popup stays visible for ~3 s.
-
----
-
-## Resolved
-
-*(none yet — when a fix lands, move the entry here with the resolving commit
-hash and a one-line "what worked" note.)*
 
 ---
 

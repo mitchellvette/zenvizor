@@ -135,6 +135,24 @@ internal sealed class NegotiationGate : IZenVizorIpc
         return _inner.DismissAlertAsync(alertId);
     }
 
+    public Task<IpcEnvelope<SettingsSnapshot>> GetSettingsAsync()
+    {
+        RequireNegotiated(nameof(GetSettingsAsync));
+        return _inner.GetSettingsAsync();
+    }
+
+    public Task UpdateSettingsAsync(SettingsUpdate update)
+    {
+        RequireNegotiated(nameof(UpdateSettingsAsync));
+        return _inner.UpdateSettingsAsync(update);
+    }
+
+    public Task<IpcEnvelope<WipeHistoryResult>> WipeHistoryAsync()
+    {
+        RequireNegotiated(nameof(WipeHistoryAsync));
+        return _inner.WipeHistoryAsync();
+    }
+
     private void RequireNegotiated(string methodName)
     {
         if (!IsNegotiated)

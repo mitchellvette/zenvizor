@@ -34,4 +34,18 @@ public static class IpcSchemaVersion
     /// <c>AlertDto</c> rows it carries. Phase 6 — initial.
     /// </summary>
     public const int Alerts = 1;
+
+    /// <summary>
+    /// Schema version of <see cref="Dto.SettingsSnapshot"/> /
+    /// <see cref="Dto.SettingsUpdate"/> / <see cref="Dto.WipeHistoryResult"/>
+    /// payloads.
+    /// </summary>
+    /// <remarks>
+    /// v2 (Phase 6.3): <c>StartMinimized</c> added as a required positional
+    /// field on <see cref="Dto.SettingsSnapshot"/>. A v1 payload won't
+    /// deserialize as v2, so the floor check on the client side is
+    /// load-bearing.
+    /// v1 (Phase 6.2): initial.
+    /// </remarks>
+    public const int Settings = 2;
 }

@@ -101,4 +101,38 @@ public interface IZenVizorIpc
     /// double-clicks must not throw).
     /// </summary>
     Task DismissAlertAsync(long alertId);
+
+    // ---- Phase 6.2 Settings surface ----
+
+    /// <summary>
+    /// Returns every runtime knob the Settings page binds to. The
+    /// <see cref="SettingsSnapshot.AutostartMode"/> field is reconciled
+    /// against the live SCM state before the response is built — the
+    /// settings-table mirror row is the cache, not the source of truth.
+    /// </summary>
+    Task<IpcEnvelope<SettingsSnapshot>> GetSettingsAsync();
+
+    /// <summary>
+    /// Applies a partial settings update. Every non-null field on the
+    /// update is persisted; nulls are left untouched. Validation rejects
+    /// negative retention days and undefined enum values; on rejection the
+    /// whole call faults with <see cref="IpcErrorCode.InvalidArgument"/>
+    /// and no fields are written.
+    /// <para>
+    /// When <see cref="SettingsUpdate.AutostartMode"/> is set the service
+    /// calls <c>ChangeServiceConfig</c> against its own service registration
+    /// from its LocalSystem context — the UI does NOT need elevation.
+    /// </para>
+    /// </summary>
+    Task UpdateSettingsAsync(SettingsUpdate update);
+
+    /// <summary>
+    /// Deletes every collected traffic / connection / rollup / alert /
+    /// session row from the database in a single transaction. Preserves
+    /// the <c>apps</c> catalog and <c>settings</c>. Called by the
+    /// Settings page's "Reset history" button after a user confirms;
+    /// idempotent — calling on an already-empty DB returns all-zero
+    /// counts, not an error.
+    /// </summary>
+    Task<IpcEnvelope<WipeHistoryResult>> WipeHistoryAsync();
 }

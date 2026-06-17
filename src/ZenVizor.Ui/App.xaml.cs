@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Wpf.Ui.Appearance;
+using ZenVizor.Ipc.Contracts.Dto;
+using ZenVizor.Ui.Services;
 
 namespace ZenVizor.Ui;
 
@@ -12,8 +14,32 @@ public partial class App : Application
     private static readonly Uri BrandAccentDarkUri =
         new("pack://application:,,,/Resources/BrandAccent.Dark.xaml", UriKind.Absolute);
 
+    // Phase 6.3 — single-instance enforcement. Held for the lifetime of the
+    // primary process; released on Exit. Null on secondary launches because
+    // those shut down before completing OnStartup.
+    private SingleInstanceCoordinator? _singleInstance;
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Single-instance gate — runs BEFORE any UI construction so a
+        // secondary launch doesn't allocate a window only to discard it.
+        // Mutex name is per-user (Local\) so each logged-in session gets
+        // its own primary, which is what we want for a per-user UI app.
+        _singleInstance = new SingleInstanceCoordinator();
+        if (!_singleInstance.TryClaimPrimary())
+        {
+            // Primary already running. Ask it to surface, then exit.
+            // Short timeout: a slow / hung primary should not block the
+            // user's second launch indefinitely.
+            SingleInstanceCoordinator.SignalExisting(TimeSpan.FromSeconds(2));
+            _singleInstance.Dispose();
+            _singleInstance = null;
+            Shutdown(0);
+            return;
+        }
+        _singleInstance.ShowRequested += OnShowRequestedFromSecondaryInstance;
+        _singleInstance.StartListener();
+
         // Apply the OS theme before MainWindow is constructed. base.OnStartup
         // triggers StartupUri (MainWindow.xaml) which runs InitializeComponent
         // -- that builds the chrome visual tree, resolves DynamicResource
@@ -37,7 +63,29 @@ public partial class App : Application
         // aren't in Light.baml/Dark.baml either — they're normally
         // populated by ApplySystemAccent), so disabling that path is both
         // safe and necessary.
-        ApplicationThemeManager.ApplySystemTheme(updateAccent: false);
+        //
+        // Phase 6.2 gating: read the cached theme preference from
+        // %LocalAppData%\ZenVizor\ui.theme. If the user has explicitly
+        // chosen Light or Dark, Apply that directly and skip
+        // SystemThemeWatcher.Watch in MainWindow.ctor (which would
+        // otherwise stomp the explicit choice back to whatever the OS
+        // happens to be). When the cache says System (or is absent), keep
+        // the prior behaviour — follow the OS. The cache is best-effort
+        // and degrades to System on any read error; the service-side
+        // settings row reconciles on first GetSettingsAsync.
+        var cachedTheme = ThemePreferenceStore.Load();
+        if (cachedTheme == AppTheme.Light)
+        {
+            ApplicationThemeManager.Apply(ApplicationTheme.Light, updateAccent: false);
+        }
+        else if (cachedTheme == AppTheme.Dark)
+        {
+            ApplicationThemeManager.Apply(ApplicationTheme.Dark, updateAccent: false);
+        }
+        else
+        {
+            ApplicationThemeManager.ApplySystemTheme(updateAccent: false);
+        }
 
         // Brand-accent dict has the same lifecycle as Wpf.Ui's ThemesDictionary:
         // initial Source URI swapped to the OS theme before the first frame is
@@ -66,6 +114,13 @@ public partial class App : Application
             });
 
         base.OnStartup(e);
+
+        // Phase 6.3 silent-launch is handled inside MainWindow's
+        // SourceInitialized hook (see MainWindow.xaml.cs). MainWindow is
+        // NOT yet constructed at this point — WPF processes StartupUri
+        // AFTER OnStartup returns and Application.Run begins the message
+        // pump, so Application.MainWindow is still null here. Hiding the
+        // window has to happen from inside the window's own lifecycle.
     }
 
     /// <summary>
@@ -170,6 +225,44 @@ public partial class App : Application
         {
             System.Diagnostics.Debug.WriteLine($"[direct-overrides] failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Fires when a secondary launch's pipe signal lands on the primary's
+    /// listener thread. Marshal to the dispatcher and ask MainWindow to
+    /// surface. The window may be hidden (close-to-tray or silent boot
+    /// launch) or minimized; <see cref="MainWindow"/> exposes
+    /// ShowAndActivate via the existing tray-click path.
+    /// </summary>
+    private void OnShowRequestedFromSecondaryInstance(object? sender, EventArgs e)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (MainWindow is null) return;
+            try
+            {
+                MainWindow.Show();
+                if (MainWindow.WindowState == WindowState.Minimized)
+                {
+                    MainWindow.WindowState = WindowState.Normal;
+                }
+                MainWindow.ShowInTaskbar = true;
+                MainWindow.Activate();
+            }
+            catch
+            {
+                // Best-effort — a failure here just means the user has to
+                // click the tray icon themselves.
+            }
+        });
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try { _singleInstance?.Dispose(); }
+        catch { }
+        _singleInstance = null;
+        base.OnExit(e);
     }
 
     private void SwapBrandAccentDictionary()

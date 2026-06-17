@@ -1,0 +1,532 @@
+<Page x:Class="ZenVizor.Ui.Views.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:views="clr-namespace:ZenVizor.Ui.Views"
+      Background="{DynamicResource ApplicationBackgroundBrush}"
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+
+    <!--  Phase 6.2 Settings. The whole page IS the scrollable surface
+          (scroll: page, not scroll: pane) — the inner section cards do not
+          carry their own scrollbars. Layered states (Loading / Disconnected
+          banner) sit as Grid siblings; the ScrollViewer is row 1 of the
+          outer Grid so the banner pins above the form.
+
+          Apply policy is hybrid (see SettingsPage.xaml.cs):
+            * Booleans / enums (autostart, toast, theme) — apply on change
+            * Retention NumberBoxes — 500ms debounced apply after last edit
+            * Reset history — explicit ContentDialog confirmation
+          The page never carries an Apply button; per-control disable
+          provides the in-flight affordance.  -->
+
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!--  SECTION.CARD — every grouped section sits inside this canonical
+              card recipe (metal.card + border.card + radius.card + shadow.card)
+              per the project memory. Padding=24 keeps the inner rows clear of
+              the chrome; vertical spacing between cards lives on the parent
+              StackPanel via per-card Margin (StackPanel.Spacing isn't a thing
+              on WPF's stock StackPanel).  -->
+        <Style x:Key="section.card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource metal.card}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource border.card}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource radius.card}" />
+            <Setter Property="Effect" Value="{DynamicResource shadow.card}" />
+            <Setter Property="Padding" Value="24" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <!--  SECTION.ROW — interior horizontal grid line separating rows
+              inside a section card. text.body strong on the left, control
+              on the right; padded so the hairline reads as a row joiner,
+              not a divider between sections.  -->
+        <Style x:Key="section.row.hairline" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource border.subtle}" />
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Margin" Value="0,16,0,16" />
+        </Style>
+
+        <!--  SETTING.LABEL — bold caption for each row's left column.  -->
+        <Style x:Key="setting.label" TargetType="TextBlock" BasedOn="{StaticResource text.body.strong}">
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <!--  SETTING.DESCRIPTION — secondary caption beneath the label.  -->
+        <Style x:Key="setting.description" TargetType="TextBlock" BasedOn="{StaticResource text.caption}">
+            <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--  Row 0 — page header (title + subtitle). Mirrors Alerts page.  -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,16" MaxWidth="640" HorizontalAlignment="Left">
+            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                          FontFamily="{StaticResource font.display}"
+                          FontSize="24"
+                          Text="Settings" />
+            <ui:TextBlock Style="{StaticResource text.caption}"
+                          Foreground="{DynamicResource text.secondary}"
+                          Text="Configure capture, retention, alerts, and appearance. Changes save automatically."
+                          TextWrapping="Wrap"
+                          Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!--  Row 1 — status banner. Default Collapsed; code-behind drives
+              Visibility + background + foreground + glyph from the VM's
+              Content + BannerText. Same treatment as AlertsPage.  -->
+        <Border Grid.Row="1"
+                x:Name="StatusBanner"
+                Visibility="Collapsed"
+                Margin="0,0,0,12"
+                Padding="12,8"
+                CornerRadius="{StaticResource radius.control}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                               Symbol="Warning20"
+                               FontSize="16"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                <TextBlock x:Name="StatusBannerText" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!--  Row 2 — scrollable form. Whole page scrolls (annotated
+              scroll: page in the brief); the ScrollViewer is the parent
+              of every section card. MaxWidth=720 keeps line lengths
+              readable on wide monitors.  -->
+        <Grid Grid.Row="2">
+            <!--  Populated state — section stack.  -->
+            <ScrollViewer x:Name="FormScroll"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer.Style>
+                    <Style TargetType="ScrollViewer">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="Populated">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Content}" Value="Error">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Content}" Value="Disconnected">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ScrollViewer.Style>
+                <!--  Section cards fill the page gutter. The outer Grid's
+                      Margin=24 already supplies the breathing room; no inner
+                      cap so each card spans the full width per the brief.  -->
+                <StackPanel HorizontalAlignment="Stretch">
+
+                    <!--  SECTION 1 — Service. Autostart + start-minimized.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Service" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="Controls how the ZenVizor service starts on this machine."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <!--  Row: Start at sign-in toggle.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Start with Windows" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="When on, ZenVizor begins capturing as soon as Windows boots. Turn off if you prefer to launch it yourself." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="AutostartToggle"
+                                                 IsChecked="{Binding AutostartEnabled, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnAutostartChanged"
+                                                 Unchecked="OnAutostartChanged" />
+                            </Grid>
+
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <!--  Row: Start minimized to tray. Local-cached so
+                                  App.OnStartup can read it synchronously without
+                                  awaiting GetSettingsAsync.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Start minimized to tray" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="When on, the ZenVizor window stays hidden on launch and only shows when you click the tray icon. Useful for boot-time launches where you don't want a window to pop up." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="StartMinimizedToggle"
+                                                 IsChecked="{Binding StartMinimized, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnStartMinimizedChanged"
+                                                 Unchecked="OnStartMinimizedChanged" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 2 — Capture (read-only diagnostic).
+                          PRD §15 locks the defaults; the actual values are
+                          inlined into the descriptions so users see meaning
+                          AND value in one read (no stray right-column number
+                          that duplicates what the prose already says).  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Capture" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="How often ZenVizor writes captured data to disk. These are locked defaults in this release."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource setting.label}"
+                                           Text="Flush interval" />
+                                <TextBlock Style="{StaticResource setting.description}"
+                                           Text="{Binding FlushIntervalDescription}" />
+                            </StackPanel>
+
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource setting.label}"
+                                           Text="Bucket size" />
+                                <TextBlock Style="{StaticResource setting.description}"
+                                           Text="{Binding BucketSizeDescription}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 3 — Retention. Five rows: each a NumberBox +
+                          Unit ComboBox composite. The composite's units convert
+                          to canonical days inside the VM's RetentionField; the
+                          ComboBox SelectedIndex maps 0=Days/1=Months/2=Years
+                          via OnRetentionUnitChanged.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Retention" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="All collected data stays on your machine. Nothing is sent to ZenVizor or any other service. These windows control how long each tier stays on disk before it's automatically removed once per day."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <ItemsControl x:Name="RetentionRows">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource setting.label}"
+                                                           Text="{Binding Label}" />
+                                                <TextBlock Style="{StaticResource setting.description}"
+                                                           Text="{Binding Description}" />
+                                            </StackPanel>
+                                            <!--  Width 120 + matching MinWidth ensures
+                                                  three-digit retention values render
+                                                  without clipping the spin/clear chrome;
+                                                  the per-row memory rule is "these fields
+                                                  never wrap or resize."  -->
+                                            <ui:NumberBox Grid.Column="1"
+                                                          Width="120"
+                                                          MinWidth="120"
+                                                          Margin="0,0,8,0"
+                                                          VerticalAlignment="Center"
+                                                          Minimum="1"
+                                                          Maximum="{Binding MaxForUnit}"
+                                                          Value="{Binding Field.UnitScopedValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          Tag="{Binding}"
+                                                          ValueChanged="OnRetentionValueChanged" />
+                                            <ComboBox Grid.Column="2"
+                                                      Width="120"
+                                                      MinWidth="120"
+                                                      VerticalAlignment="Center"
+                                                      SelectedIndex="{Binding UnitIndex, Mode=TwoWay}"
+                                                      Tag="{Binding}"
+                                                      SelectionChanged="OnRetentionUnitChanged">
+                                                <ComboBoxItem Content="Days" />
+                                                <ComboBoxItem Content="Months" />
+                                                <ComboBoxItem Content="Years" />
+                                            </ComboBox>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 4 — History. Reset history button →
+                          ContentDialog confirmation.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="History" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="Delete every collected traffic, connection, and alert row. Your settings are kept."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Reset history" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Permanently removes all collected data. ZenVizor will begin collecting fresh on the next capture tick." />
+                                    <TextBlock x:Name="ResetHistoryStatusText"
+                                               Style="{StaticResource text.caption}"
+                                               Foreground="{DynamicResource status.success}"
+                                               Margin="0,8,0,0"
+                                               TextWrapping="Wrap"
+                                               Visibility="Collapsed" />
+                                </StackPanel>
+                                <ui:Button Grid.Column="1"
+                                           x:Name="ResetHistoryButton"
+                                           VerticalAlignment="Center"
+                                           Background="{DynamicResource metal.control}"
+                                           BorderBrush="{DynamicResource border.card}"
+                                           BorderThickness="1"
+                                           Padding="14,6"
+                                           Click="OnResetHistoryClick">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Delete24"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+                                        <TextBlock Text="Reset history…"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </ui:Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 5 — Alerts. Toast toggle + verification.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Alerts" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="How ZenVizor lets you know when something happens."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Show desktop notifications" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="When on, every new alert also fires a Windows notification. The Alerts page always lists everything ZenVizor noticed." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="ToastToggle"
+                                                 IsChecked="{Binding ToastOnAlert, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnToastChanged"
+                                                 Unchecked="OnToastChanged" />
+                            </Grid>
+
+                            <!--  Send-test row. Visible only when the toggle is on.
+                                  Bypasses the real alert pipeline so users can
+                                  verify the OS-level toast plumbing without
+                                  waiting for an alert to fire — the toggle
+                                  acknowledges the preference; this button proves
+                                  the end-to-end path.  -->
+                            <Grid Margin="0,12,0,0"
+                                  Visibility="{Binding ToastOnAlert, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Style="{StaticResource setting.description}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,16,0"
+                                           Text="Fires a sample notification through the same path real alerts use." />
+                                <ui:Button Grid.Column="1"
+                                           x:Name="TestNotificationButton"
+                                           VerticalAlignment="Center"
+                                           Background="{DynamicResource metal.control}"
+                                           BorderBrush="{DynamicResource border.card}"
+                                           BorderThickness="1"
+                                           Padding="14,6"
+                                           Click="OnTestNotificationClick">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Alert24"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+                                        <TextBlock Text="Send test notification"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </ui:Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 6 — Appearance. Theme ComboBox.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Appearance" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="Match Windows or pin a theme."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Theme" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Follow system uses the same light or dark mode Windows is using right now." />
+                                </StackPanel>
+                                <ComboBox Grid.Column="1"
+                                          x:Name="ThemePicker"
+                                          Width="180"
+                                          VerticalAlignment="Center"
+                                          SelectedIndex="0"
+                                          SelectionChanged="OnThemeChanged">
+                                    <!--  SelectedIndex=0 ("Follow system") is the safe
+                                          first-render default — settles before code-behind
+                                          overrides from ThemePreferenceStore or the IPC
+                                          snapshot. Without it the ComboBox would render
+                                          blank if IPC is slow or down.  -->
+                                    <ComboBoxItem Content="Follow system" />
+                                    <ComboBoxItem Content="Light" />
+                                    <ComboBoxItem Content="Dark" />
+                                </ComboBox>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 7 — About. Static metadata + shell-open
+                          repo link. No in-process network traffic
+                          (Process.Start UseShellExecute hands off to the
+                          user's default browser).  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="About" />
+                            <!--  About metadata grid. Build hash row dropped per the
+                                  v1 polish pass — diagnostic build info still lives
+                                  in zvctl version output; this surface is for users,
+                                  not engineers.  -->
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="AboutLabels" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0"
+                                           Style="{StaticResource text.body}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="Version"
+                                           Margin="0,0,16,8" />
+                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                           x:Name="AboutVersion"
+                                           Style="{StaticResource text.body}"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0"
+                                           Style="{StaticResource text.body}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="By"
+                                           Margin="0,0,16,8" />
+                                <TextBlock Grid.Row="1" Grid.Column="1"
+                                           Style="{StaticResource text.body}"
+                                           Text="Trianglecat"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0"
+                                           Style="{StaticResource text.body}"
+                                           Foreground="{DynamicResource text.tertiary}"
+                                           Text="Repository"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,16,0" />
+                                <TextBlock Grid.Row="2" Grid.Column="1"
+                                           Style="{StaticResource text.body}"
+                                           Cursor="Hand"
+                                           VerticalAlignment="Center"
+                                           MouseLeftButtonUp="OnRepoLinkClick">
+                                    <!--  Style=text.body anchors the same LineHeight as
+                                          the other rows; without it WPF's default
+                                          TextBlock metrics produced a baseline mismatch
+                                          versus the styled rows above (Version / By).
+                                          VerticalAlignment=Center belt-and-braces since
+                                          the row is Auto-height.  -->
+                                    <Run Foreground="{DynamicResource accent.text}"
+                                         Text="https://github.com/mitchellvette/zenvizor" />
+                                </TextBlock>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!--  LOADING shell — centered ProgressRing (Alerts pattern).  -->
+            <ui:ProgressRing IsIndeterminate="True"
+                             Width="36"
+                             Height="36"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center">
+                <ui:ProgressRing.Style>
+                    <Style TargetType="ui:ProgressRing">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Content}" Value="Loading">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ui:ProgressRing.Style>
+            </ui:ProgressRing>
+        </Grid>
+    </Grid>
+</Page>

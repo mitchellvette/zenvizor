@@ -22,7 +22,10 @@ internal static class ProductionHandlerFactory
         Func<int, QueryWindow, TrafficGrain, AppDetailResult>? appDetailProvider = null,
         Func<int, QueryWindow, ConnectionListResult>? connectionsProvider = null,
         Func<QueryWindow, TrafficGrain, TrafficHistoryResult>? historyProvider = null,
-        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null)
+        Func<DateOnly, AnchorMode, DateOnly?, DailyReportResult>? dailyReportProvider = null,
+        Func<SettingsSnapshot>? settingsProvider = null,
+        Action<SettingsUpdate>? settingsApplier = null,
+        Func<WipeHistoryResult>? historyWiper = null)
     {
         var startedAt = (clock ?? (() => DateTimeOffset.UtcNow))().ToUnixTimeMilliseconds();
         return new ZenVizorIpcHandler(
@@ -35,6 +38,9 @@ internal static class ProductionHandlerFactory
             connectionsProvider: connectionsProvider,
             historyProvider: historyProvider,
             dailyReportProvider: dailyReportProvider,
+            settingsProvider: settingsProvider,
+            settingsApplier: settingsApplier,
+            historyWiper: historyWiper,
             clock: clock,
             maxWindowLookbackMs: maxWindowLookbackMs);
     }

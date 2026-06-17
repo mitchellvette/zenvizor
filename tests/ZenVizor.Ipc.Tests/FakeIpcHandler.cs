@@ -134,6 +134,44 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         return Task.CompletedTask;
     }
 
+    // ---- Phase 6.2 Settings surface: scriptable stubs for contract tests ----
+
+    public SettingsSnapshot Settings { get; set; } = new(
+        AutostartMode:               ServiceStartMode.Automatic,
+        ToastOnAlert:                true,
+        Theme:                       AppTheme.System,
+        FlushIntervalMs:             5000,
+        FlushBucketSeconds:          60,
+        RetentionSamplesDays:        30,
+        RetentionConnectionsDays:    30,
+        RetentionHourlyDays:         90,
+        RetentionDailyDays:          365,
+        RetentionAlertsDaysAfterAck: 90,
+        StartMinimized:              false);
+
+    public List<SettingsUpdate> AppliedUpdates { get; } = new();
+
+    public WipeHistoryResult WipeResult { get; set; } =
+        new(SamplesDeleted: 0, ConnectionsDeleted: 0, HourlyDeleted: 0,
+            DailyDeleted: 0, AlertsDeleted: 0, SessionsDeleted: 0);
+
+    public int WipeCount { get; private set; }
+
+    public Task<IpcEnvelope<SettingsSnapshot>> GetSettingsAsync() =>
+        Task.FromResult(new IpcEnvelope<SettingsSnapshot>(IpcSchemaVersion.Settings, Settings));
+
+    public Task UpdateSettingsAsync(SettingsUpdate update)
+    {
+        AppliedUpdates.Add(update);
+        return Task.CompletedTask;
+    }
+
+    public Task<IpcEnvelope<WipeHistoryResult>> WipeHistoryAsync()
+    {
+        WipeCount++;
+        return Task.FromResult(new IpcEnvelope<WipeHistoryResult>(IpcSchemaVersion.Settings, WipeResult));
+    }
+
     private static NegotiateVersionResult DefaultPolicy(string clientVersion) =>
         ProtocolVersion.IsCompatible(clientVersion)
             ? new NegotiateVersionResult(Accepted: true, ServerVersion: ProtocolVersion.Current, Reason: null)

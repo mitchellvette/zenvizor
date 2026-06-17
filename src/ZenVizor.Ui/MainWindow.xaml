@@ -355,14 +355,32 @@
         <tb:TaskbarIcon x:Name="Tray"
                         IconSource="pack://application:,,,/Assets/favicon.ico"
                         ToolTipText="ZenVizor"
-                        TrayLeftMouseDown="OnTrayLeftClick">
+                        TrayLeftMouseDown="OnTrayLeftClick"
+                        TrayBalloonTipClicked="OnTrayBalloonTipClicked">
             <tb:TaskbarIcon.ContextMenu>
-                <ContextMenu>
-                    <MenuItem Header="Show ZenVizor" Click="OnTrayShowClicked" />
+                <!--  Dynamic label on the first item: "Show ZenVizor" when
+                      the window is hidden, "Hide to tray" when it's visible.
+                      Header is rewritten in OnTrayContextMenuOpened so it
+                      reflects state at popup time.  -->
+                <ContextMenu Opened="OnTrayContextMenuOpened">
+                    <MenuItem x:Name="TrayShowHideItem"
+                              Header="Show ZenVizor"
+                              Click="OnTrayShowHideClicked" />
                     <Separator />
                     <MenuItem Header="Exit" Click="OnTrayExitClicked" />
                 </ContextMenu>
             </tb:TaskbarIcon.ContextMenu>
         </tb:TaskbarIcon>
+
+        <!--  Phase 6.2: ContentDialog host. Wpf.Ui's ContentDialog requires
+              a ContentPresenter as its DialogHost; the dialog renders
+              inside that presenter (overlaying the rest of the window via
+              z-order). Grid.RowSpan=3 covers TitleBar + content + bottom
+              bar so a confirm dialog occludes the chrome too — the brief's
+              modal expectation. Pages reach it via
+              MainWindow.RootContentDialog (see code-behind).  -->
+        <ContentPresenter x:Name="RootContentDialog"
+                          Grid.RowSpan="3"
+                          IsHitTestVisible="False" />
     </Grid>
 </ui:FluentWindow>

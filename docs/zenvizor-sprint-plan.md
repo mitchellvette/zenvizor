@@ -364,6 +364,112 @@ deep-link wiring.
 
 ---
 
+## Pre-MVP polish backlog
+
+UI / visual polish surfaced during Phase 6 hands-on QA. Smaller-than-A1/A2
+in surface area but ship-blockers for the 1.0 feel. Address before the
+installer freeze.
+
+### P1 — Amber / caution status banners regressed in dark mode
+
+**Discovered:** Phase 6.2 manual validation, 2026-06-16.
+
+**The problem:** The amber (caution) status banners that appear across
+multiple pages render with poor contrast in dark mode — the foreground
+text is difficult to read against the tinted background. Affects every
+page that surfaces a caution banner, not just Settings.
+
+**Fix path:** Re-audit the `status.caution.background` /
+`status.caution.text` (and `status.caution`) token pairs in
+`src/ZenVizor.Ui/Resources/DesignTokens.xaml` and `HighContrast.xaml`
+against the dark ramp. Verify WCAG AA contrast for body text on the
+tinted background in both light and dark. Update
+`docs/design/colors_and_type.css` + the crosswalk in the same commit
+per the design-system rule in CLAUDE.md.
+
+**Estimated effort:** Small — token tweak + visual sweep.
+
+### P2 — Alerts nav badge isn't seeded with active alerts on launch
+
+**Discovered:** Phase 6.2 manual validation, 2026-06-16.
+
+**The problem:** `MainWindow` only mutates the nav-rail badge counters
+on `AlertRaised` push events (`MainWindow.xaml.cs:36-43` documents the
+drift envelope). Alerts that were already Active in the DB at app launch
+do not appear in the badge until the user navigates to the Alerts page,
+which is what authoritatively calls `UpdateAlertsBadge`. Result: launch
+into an app with active alerts and the nav rail reads zero.
+
+**Fix path:** On `MainWindow.OnLoaded`, kick a one-shot fetch of the
+active-alert counts (either reuse `AlertsClient.GetAlertsAsync(State=Active)`
+and aggregate per-severity, or add a small `GetActiveAlertCountsAsync`
+IPC that returns per-severity counts cheaply). Seed
+`_badgeCritical / _badgeWarning / _badgeInfo` from the result before any
+push arrives, then call `RenderBadgeFromLocalCounts`. Aligns with the
+A2 follow-up's eventual count-summary projection — this is the cheap
+pre-A2 patch.
+
+**Estimated effort:** Small — one IPC fetch on Loaded + one render call.
+
+### P3 — Reverse DNS for endpoint columns on Per-App / drill-down
+
+**Discovered:** Phase 4 Per-App design discussion (predates this doc;
+captured retroactively 2026-06-16 because it was never written down at
+the time).
+
+**The problem:** Per-App drill-down rows display raw endpoint addresses
+in the connection table. IPv6 endpoints especially render as long
+hex-colon strings that are unreadable at a glance; even IPv4 entries
+would be more informative as the host name they resolve to
+(`52.96.45.16` vs `outlook.office.com`). Users currently have no easy
+way to tell what host an app was talking to without copy-paste into an
+external lookup.
+
+**The constraint:** Invariant #1 forbids ZenVizor from emitting any
+network traffic. Active reverse-DNS lookups (PTR queries) clearly
+violate that — they would be observable by our own capture engine and
+would fail the self-monitoring gate (Phase 6.8).
+
+**The candidate approach (needs re-verification):** A previous session
+asserted that resolution is achievable *passively* by reading from a
+service that already holds the cached mappings — most likely the
+Windows DNS Client (Dnscache) service's resolver cache, which other
+processes populate as they make their own lookups. Reading that cache
+would be a passive consumer pattern, not a query-originator, so it
+would not violate invariant #1. **This needs confirmation** before
+being committed to:
+1. Verify the API surface (likely `DnsGetCacheDataTable` /
+   `Get-DnsClientCache` semantics) and what it returns.
+2. Confirm reading it is genuinely passive (no implicit lookup
+   trigger on a miss).
+3. Confirm the cache is available to LocalSystem (the service) without
+   elevation prompts.
+4. Map the storage shape — the `connections` table already has a
+   reserved `resolved_host` column (per migration 001) that was
+   declared with exactly this future use in mind; the column is
+   currently always null. Wire the lookup into the attribution
+   pipeline so `connections.resolved_host` is populated when the
+   address is present in the cache.
+
+**Surface impact:** Per-App drill-down connection table renders
+`resolved_host` when non-null, falls back to the raw address otherwise.
+Same field also benefits the History page and any future export.
+
+**Why before MVP:** Raw IPv6 addresses in the drill-down are the first
+thing a non-technical user gets stuck on; without resolution the
+Per-App view's most-used column is opaque. The reserved column is
+already in the schema specifically for this — the work is plumbing,
+not new storage.
+
+**Estimated effort:** Medium — depends on whether the cache-read path
+holds up to scrutiny. If it does, it's a small attribution-pipeline
+change plus a UI column tweak. If it doesn't, we need a different
+passive source (e.g., reading from another locally-running passive
+DNS observer like Pi-hole-style logs, if any) or we accept raw
+addresses for v1.
+
+---
+
 ## Pre-v1 architectural follow-ups
 
 Findings surfaced during Phase 6 implementation that should land before v1
