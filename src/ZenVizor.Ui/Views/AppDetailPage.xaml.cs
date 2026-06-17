@@ -164,11 +164,8 @@ public partial class AppDetailPage : Page
         PageScroll.ScrollChanged += (_, _) => InfoPopup.IsOpen = false;
 
         DataContextChanged += (_, _) => OnAppIdReceived();
-        Loaded += async (_, _) =>
-        {
-            EnforceDataGridBounds();
-            await RefreshAsync();
-        };
+        Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
         SizeChanged += (_, _) => EnforceDataGridBounds();
 
         // Phase 5e — Wpf.Ui's CalendarDatePicker exposes Date as a DP but
@@ -179,6 +176,32 @@ public partial class AppDetailPage : Page
             CalendarDatePicker.DateProperty,
             typeof(CalendarDatePicker));
         dpd?.AddValueChanged(DatePicker, OnDatePickerDateChanged);
+    }
+
+    private async void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped += OnHistoryWiped;
+        }
+        EnforceDataGridBounds();
+        await RefreshAsync();
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped -= OnHistoryWiped;
+        }
+    }
+
+    private async void OnHistoryWiped(object? sender, EventArgs e)
+    {
+        // Per-app drill is only meaningful with an AppId. Without one we
+        // skip the refresh — the page will pick up the empty state on
+        // the next nav with a valid id.
+        if (AppId is int) await RefreshAsync();
     }
 
     /// <summary>

@@ -318,6 +318,92 @@ public sealed class DailyReportRepositoryTests : IDisposable
         result.Notable.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Notable_AlertId_ProjectsRealAlertWhenProducerInsertedDuringDay()
+    {
+        // Phase 6.4 deep-link: the Notable row should carry the alerts.alert_id
+        // that the producer inserted for the same (type, entity_kind, entity_ref)
+        // within the day window.
+        SeedApp(1, "updater_x.exe",
+            publisher: null,
+            signatureStatus: "Unsigned",
+            isUserWritable: true,
+            imagePath: @"C:\Users\mitch\AppData\Local\Temp\updater_x.exe",
+            firstSeen: DayStartMs + 1 * Hour);
+        SeedSession(11, appId: 1, pid: 8841, startTime: DayStartMs + 1 * Hour);
+        InsertSample(11, DayStartMs + 14 * Hour, bytesUp: 100, bytesDown: 200, "Wan");
+
+        // Producer's matching alerts row — entity_ref is the app_id as a string,
+        // matching what UnsignedFromUserPathRule writes.
+        InsertAlert(
+            type: "UnsignedFromUserPath",
+            entityKind: "App",
+            entityRef: "1",
+            severity: "Critical",
+            createdAtUnixMs: DayStartMs + 14 * Hour + 30 * 60_000,
+            title: "Unsigned binary from a user-writable path",
+            detail: "...",
+            sourceMonitor: "Capture");
+
+        var result = Run();
+
+        result.Notable.Should().ContainSingle();
+        result.Notable[0].AppId.Should().Be(1);
+        result.Notable[0].AlertId.Should().BeGreaterThan(0,
+            "the LEFT JOIN should project the real alerts.alert_id, not the Phase 5b sentinel");
+    }
+
+    [Fact]
+    public void Notable_AlertId_StaysZero_WhenNoMatchingAlertExists()
+    {
+        // The producer should have inserted by report time but doesn't have to
+        // have. The LEFT JOIN keeps Reports honest: zero sentinel means "no
+        // deep-link target" and the chip stays inert.
+        SeedApp(1, "updater_x.exe",
+            publisher: null,
+            signatureStatus: "Unsigned",
+            isUserWritable: true,
+            imagePath: @"C:\Users\mitch\AppData\Local\Temp\updater_x.exe",
+            firstSeen: DayStartMs + 1 * Hour);
+        SeedSession(11, appId: 1, pid: 8841, startTime: DayStartMs + 1 * Hour);
+        InsertSample(11, DayStartMs + 14 * Hour, bytesUp: 100, bytesDown: 200, "Wan");
+        // NO alerts row inserted.
+
+        var result = Run();
+
+        result.Notable.Should().ContainSingle();
+        result.Notable[0].AlertId.Should().Be(0);
+    }
+
+    [Fact]
+    public void Notable_AlertId_IgnoresAlertOutsideDayWindow()
+    {
+        // An alert raised yesterday for the same app must not link to today's
+        // Notable card — the day scope is part of the JOIN predicate.
+        SeedApp(1, "updater_x.exe",
+            signatureStatus: "Unsigned",
+            isUserWritable: true,
+            imagePath: @"C:\Users\mitch\AppData\Local\Temp\updater_x.exe",
+            firstSeen: DayStartMs + 1 * Hour);
+        SeedSession(11, appId: 1, pid: 8841, startTime: DayStartMs + 1 * Hour);
+        InsertSample(11, DayStartMs + 14 * Hour, bytesUp: 100, bytesDown: 200, "Wan");
+
+        // Yesterday's alert — should NOT be joined to today's Notable.
+        InsertAlert(
+            type: "UnsignedFromUserPath",
+            entityKind: "App",
+            entityRef: "1",
+            severity: "Critical",
+            createdAtUnixMs: DayStartMs - 6 * Hour,
+            title: "Unsigned binary from a user-writable path",
+            detail: "...",
+            sourceMonitor: "Capture");
+
+        var result = Run();
+        result.Notable.Should().ContainSingle();
+        result.Notable[0].AlertId.Should().Be(0);
+    }
+
     // ─── HasOverlap propagation ────────────────────────────────────────────
 
     [Fact]
@@ -458,6 +544,28 @@ public sealed class DailyReportRepositoryTests : IDisposable
         c.Parameters.AddWithValue("$cls", remoteClass);
         c.Parameters.AddWithValue("$u", bytesUp);
         c.Parameters.AddWithValue("$d", bytesDown);
+        c.ExecuteNonQuery();
+    }
+
+    private void InsertAlert(
+        string type, string entityKind, string entityRef, string severity,
+        long createdAtUnixMs, string title, string detail, string sourceMonitor)
+    {
+        using var conn = _connections.Open();
+        using var c = conn.CreateCommand();
+        c.CommandText = """
+            INSERT INTO alerts
+              (type, severity, created_at, source_monitor, entity_kind, entity_ref, title, detail)
+            VALUES ($type, $sev, $ts, $src, $ek, $er, $title, $detail);
+            """;
+        c.Parameters.AddWithValue("$type", type);
+        c.Parameters.AddWithValue("$sev", severity);
+        c.Parameters.AddWithValue("$ts", createdAtUnixMs);
+        c.Parameters.AddWithValue("$src", sourceMonitor);
+        c.Parameters.AddWithValue("$ek", entityKind);
+        c.Parameters.AddWithValue("$er", entityRef);
+        c.Parameters.AddWithValue("$title", title);
+        c.Parameters.AddWithValue("$detail", detail);
         c.ExecuteNonQuery();
     }
 

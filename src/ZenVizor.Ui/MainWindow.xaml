@@ -379,8 +379,15 @@
               bar so a confirm dialog occludes the chrome too — the brief's
               modal expectation. Pages reach it via
               MainWindow.RootContentDialog (see code-behind).  -->
+        <!--  IsHitTestVisible MUST NOT be set False here — WPF inherits
+              it to descendants, which would silently neuter every
+              ContentDialog shown inside this presenter (Wpf.Ui's
+              ContentDialog renders into it as Content, and a
+              False-inherited value blocks the dialog's own buttons +
+              click surface). When no dialog is showing, Content is null
+              so there's no visual to hit-test anyway — the empty
+              presenter is harmless on its own.  -->
         <ContentPresenter x:Name="RootContentDialog"
-                          Grid.RowSpan="3"
-                          IsHitTestVisible="False" />
+                          Grid.RowSpan="3" />
     </Grid>
 </ui:FluentWindow>

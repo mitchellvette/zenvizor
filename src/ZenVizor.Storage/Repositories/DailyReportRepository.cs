@@ -580,16 +580,34 @@ public sealed class DailyReportRepository
     // Apps that match RiskyPaths AND made actual outbound WAN flows during
     // the day (not just observed file activity). The pid+time come from the
     // earliest WAN sample in the day so the entity-ref row reads truthfully.
+    // LEFT JOIN to alerts on (type, entity_kind, entity_ref) so each
+    // Notable row carries the matching alerts.alert_id when one exists.
+    // The inner subquery picks the earliest alert per app within the day
+    // window (MIN(alert_id) on an AUTOINCREMENT column = earliest by
+    // created_at), keeping the link consistent with the day the report
+    // covers. COALESCE(..., 0) preserves the Phase 5b sentinel so the
+    // Reports UI's chip stays visible-but-inert for unmatched rows
+    // (producer hadn't run yet, alerts row was purged by retention, etc.).
     private const string SqlNotableUnsigned = """
-        SELECT a.app_id, a.image_name, a.image_path, ps.pid, MIN(s.bucket_start) AS first_wan_ms
+        SELECT a.app_id, a.image_name, a.image_path, ps.pid,
+               MIN(s.bucket_start) AS first_wan_ms,
+               COALESCE(al.alert_id, 0) AS alert_id
         FROM apps a
         JOIN process_sessions ps ON ps.app_id = a.app_id
         JOIN traffic_samples  s  ON s.session_id = ps.session_id
+        LEFT JOIN (
+            SELECT entity_ref, MIN(alert_id) AS alert_id
+            FROM alerts
+            WHERE type = 'UnsignedFromUserPath'
+              AND entity_kind = 'App'
+              AND created_at >= $start AND created_at < $end
+            GROUP BY entity_ref
+        ) al ON al.entity_ref = CAST(a.app_id AS TEXT)
         WHERE a.is_user_writable_path = 1
           AND a.signature_status IN ('Unsigned', 'Invalid')
           AND s.remote_class = 'Wan'
           AND s.bucket_start >= $start AND s.bucket_start < $end
-        GROUP BY a.app_id, ps.pid
+        GROUP BY a.app_id, ps.pid, al.alert_id
         ORDER BY a.app_id, first_wan_ms;
         """;
 
@@ -613,6 +631,11 @@ public sealed class DailyReportRepository
             var path      = reader.GetString(2);
             var pid       = reader.GetInt32(3);
             var firstWanMs = reader.GetInt64(4);
+            // Phase 6.4 — real alerts.alert_id projected via the LEFT JOIN.
+            // COALESCE-defaulted to 0 in SQL when no alerts row matches the
+            // (type, entity_kind, entity_ref) key. The Reports UI keeps the
+            // chip visible-but-inert at 0.
+            var alertId   = reader.GetInt32(5);
             var wanCount  = CountWanEndpoints(connection, appId, dayStart, dayEnd);
             var endpointPhrase = wanCount == 1
                 ? "It contacted 1 WAN endpoint during the day."
@@ -625,16 +648,7 @@ public sealed class DailyReportRepository
                 ImageName:       name,
                 Pid:             pid,
                 EventTimeUnixMs: firstWanMs,
-                // Synthesized for the report: there is no row in `alerts`
-                // backing these incidents in Phase 5b — the daily aggregator
-                // computes them straight from sessions/connections. A
-                // sequential 1,2,3 would COLLIDE with the real alerts.alert_id
-                // values once Phase 6 wires the alert pipeline. Sentinel 0
-                // signals "no Alerts deep-link yet"; the Reports UI keeps the
-                // inline "Alerts · #N" affordance visible-but-inert against
-                // a zero AlertId until Phase 6 supplies real IDs from the
-                // alerts table.
-                AlertId:         0));
+                AlertId:         alertId));
         }
         return rows;
     }

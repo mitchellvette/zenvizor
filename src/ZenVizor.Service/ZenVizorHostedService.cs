@@ -199,7 +199,7 @@ internal sealed class ZenVizorHostedService : IHostedService
                 id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             settingsProvider:    ()       => BuildSettingsSnapshot(settingsRepo, startModeManager),
             settingsApplier:     update   => ApplySettingsUpdate(settingsRepo, startModeManager, update),
-            historyWiper:        ()       => Wipe(retentionForWipe));
+            historyWiper:        ()       => WipeAndLog(retentionForWipe, alertProducer, aggregator, sessionTracker));
 
         // The alert broadcaster is the fan-out point for server-pushed
         // AlertRaised notifications. The Phase 6 alert producer calls
@@ -356,13 +356,16 @@ internal sealed class ZenVizorHostedService : IHostedService
 
     /// <summary>
     /// Wraps <see cref="RetentionRepository.WipeHistory"/> into the wire
-    /// shape. Exists as a method (rather than inline lambda in the handler
-    /// composition) so the projection from internal <c>WipeResult</c> to
-    /// <c>WipeHistoryResult</c> stays in one place.
+    /// shape. After the DB wipe, also clears the alert producer's in-memory
+    /// dedup cache via <see cref="AlertProducer.ForgetAll"/> so the next
+    /// qualifying observation re-raises a fresh alert rather than being
+    /// silently absorbed as a "still active" hit against the now-deleted
+    /// row.
     /// </summary>
-    private static WipeHistoryResult Wipe(RetentionRepository retention)
+    private static WipeHistoryResult Wipe(RetentionRepository retention, AlertProducer alertProducer)
     {
         var r = retention.WipeHistory();
+        alertProducer.ForgetAll();
         return new WipeHistoryResult(
             SamplesDeleted:     r.SamplesDeleted,
             ConnectionsDeleted: r.ConnectionsDeleted,
@@ -370,6 +373,43 @@ internal sealed class ZenVizorHostedService : IHostedService
             DailyDeleted:       r.DailyDeleted,
             AlertsDeleted:      r.AlertsDeleted,
             SessionsDeleted:    r.SessionsDeleted);
+    }
+
+    /// <summary>
+    /// Instance-method shim around <see cref="Wipe"/> that, after the DB
+    /// wipe + alert producer cache clear, also nukes the in-memory state
+    /// held by <see cref="TrafficAggregator"/> (pid → app_id cache,
+    /// per-flush sample / connection accumulators, rolling activity
+    /// window) and <see cref="SessionTracker"/> (tracked PIDs, pending
+    /// explicit closes). Mirrors what a process restart accomplishes for
+    /// these layers without paying the ETW resubscribe cost.
+    /// <para>
+    /// Logs each phase so the service log makes it visible from a single
+    /// "History wipe complete: ..." line that all three resets executed.
+    /// Empirical Phase 6.3 finding (2026-06-17): the alert producer cache
+    /// clear alone wasn't enough to re-arm re-firing — a service restart
+    /// was; this extends the reset to layers that were carrying
+    /// equivalent stale state.
+    /// </para>
+    /// </summary>
+    private WipeHistoryResult WipeAndLog(
+        RetentionRepository retention,
+        AlertProducer alertProducer,
+        TrafficAggregator aggregator,
+        SessionTracker sessionTracker)
+    {
+        var result = Wipe(retention, alertProducer);
+        var aggCounts = aggregator.ResetInMemoryState();
+        var sessionsDropped = sessionTracker.ResetTrackerState();
+        _logger.LogInformation(
+            "History wipe complete: samples={S} connections={C} hourly={H} daily={D} alerts={A} sessions={Ss}; " +
+            "producer cache cleared; aggregator reset (pidToAppId={Pid} samples={Sam} connections={Conn}); " +
+            "sessionTracker reset (tracked={Tracked}).",
+            result.SamplesDeleted, result.ConnectionsDeleted, result.HourlyDeleted,
+            result.DailyDeleted, result.AlertsDeleted, result.SessionsDeleted,
+            aggCounts.PidToAppIdEntries, aggCounts.SamplesEntries, aggCounts.ConnectionsEntries,
+            sessionsDropped);
+        return result;
     }
 
     private async Task RunRetentionLoopAsync(RetentionRepository retention, CancellationToken cancellationToken)

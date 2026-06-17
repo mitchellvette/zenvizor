@@ -29,6 +29,21 @@ public sealed class RollingActivityWindow
     public bool HasData => _lastBucket is not null;
 
     /// <summary>
+    /// Drops the sealed previous-bucket state. Called by
+    /// <see cref="TrafficAggregator.ResetInMemoryState"/> on the
+    /// service-side wipe path so the Dashboard's live activity surface
+    /// reads as "no data" immediately after Reset history, not the
+    /// previously-cached bucket rolled forward.
+    /// </summary>
+    public void Reset()
+    {
+        _lastBucket = null;
+        _lastBucketBreakdown = ClassBreakdown.Empty;
+        _lastBucketStartUnixMs = 0;
+        _lastBucketEndUnixMs = 0;
+    }
+
+    /// <summary>
     /// Seal a completed flush bucket. <paramref name="bucketStartUnixMs"/> is when
     /// accumulation into that bucket began (the previous flush timestamp, or the
     /// aggregator's construction time for the very first bucket).

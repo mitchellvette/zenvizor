@@ -349,6 +349,35 @@ public sealed class TrafficAggregator
     }
 
     /// <summary>
+    /// Drops every piece of long-running in-memory state the aggregator
+    /// holds. Called by the Settings "Reset history" flow on the service
+    /// side so the next qualifying observation sees a fresh aggregator
+    /// rather than one carrying entries that point at DB rows the wipe
+    /// just deleted. Mirrors what a process restart would naturally do
+    /// for this layer.
+    /// </summary>
+    /// <returns>
+    /// Per-bucket counts of cleared entries — logged by the caller so we
+    /// can confirm in the service log that the reset actually executed.
+    /// </returns>
+    public AggregatorResetCounts ResetInMemoryState()
+    {
+        lock (_gate)
+        {
+            var pidCount = _pidToAppId.Count;
+            var sampleCount = _samples.Count;
+            var connectionCount = _connections.Count;
+
+            _pidToAppId.Clear();
+            _samples = new Dictionary<SampleKey, SampleAcc>();
+            _connections = new Dictionary<ConnectionKey, ConnectionAcc>();
+            _activityWindow.Reset();
+
+            return new AggregatorResetCounts(pidCount, sampleCount, connectionCount);
+        }
+    }
+
+    /// <summary>
     /// Caller MUST hold <see cref="_gate"/>. Folds the swapped-out
     /// accumulators back into the live dictionaries — keys that re-appeared
     /// during the failed flush window get their bytes summed; keys that
@@ -522,3 +551,14 @@ public sealed class TrafficAggregator
         }
     }
 }
+
+/// <summary>
+/// Per-bucket counts of entries the aggregator dropped during a
+/// <see cref="TrafficAggregator.ResetInMemoryState"/> call. Used by the
+/// service-side wipe path to log what was cleared, so the service log
+/// makes it visible that the reset actually ran.
+/// </summary>
+public readonly record struct AggregatorResetCounts(
+    int PidToAppIdEntries,
+    int SamplesEntries,
+    int ConnectionsEntries);

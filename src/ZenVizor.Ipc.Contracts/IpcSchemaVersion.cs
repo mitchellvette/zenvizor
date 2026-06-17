@@ -27,7 +27,15 @@ public static class IpcSchemaVersion
     public const int Query = 1;
 
     /// <summary>Schema version of <see cref="Dto.DailyReportResult"/> payloads.</summary>
-    public const int DailyReport = 1;
+    /// <remarks>
+    /// v2 (Phase 6.4): <c>DailyReportNotable.AlertId</c> now carries the real
+    /// <c>alerts.alert_id</c> projected via LEFT JOIN, not the always-zero
+    /// sentinel Phase 5b emitted. Shape is unchanged (the field already
+    /// existed) but value semantics flip — bumping makes the upgrade
+    /// traceable in client-side diagnostics and the floor check.
+    /// v1 (Phase 5b): initial.
+    /// </remarks>
+    public const int DailyReport = 2;
 
     /// <summary>
     /// Schema version of <see cref="Dto.AlertsResult"/> payloads and the

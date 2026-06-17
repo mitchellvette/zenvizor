@@ -99,6 +99,14 @@ public sealed partial class ReportsPage : Page
         RepositionPeakOverlay();
         ChartTheming.Changed += OnThemeChanged;
 
+        // Subscribe to the wipe fan-out so the user sees an empty state
+        // immediately after Reset history, without having to navigate
+        // away and back.
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped += OnHistoryWiped;
+        }
+
         // Apply the initial MaxHeight bound BEFORE the first IPC fetch — the
         // backfill of TopApps rows must measure against a finite cap or the
         // virtualizer materializes every row at once (the original Phase 3
@@ -109,6 +117,8 @@ public sealed partial class ReportsPage : Page
         // Uncommon Talkers with real data from the service.
         await RefreshAsync();
     }
+
+    private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
 
     /// <summary>
     /// Bound the Top Apps DataGrid's height at runtime so WPF row
@@ -136,6 +146,10 @@ public sealed partial class ReportsPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         ChartTheming.Changed -= OnThemeChanged;
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped -= OnHistoryWiped;
+        }
     }
 
     private void OnThemeChanged()
@@ -360,7 +374,8 @@ public sealed partial class ReportsPage : Page
             Title:      n.Title,
             Detail:     n.Detail,
             EntityRef:  $"App · {n.ImageName} · pid {n.Pid} · {time}",
-            AlertsText: $"Alerts · #{n.AlertId}");
+            AlertsText: $"Alerts · #{n.AlertId}",
+            AlertId:    n.AlertId);
     }
 
     // Decide the data-bearing state from the result shape. The stub provider
@@ -814,6 +829,23 @@ public sealed partial class ReportsPage : Page
         nav.Navigate(typeof(AppDetailPage), new AppDetailNavParams(appId, date));
     }
 
+    // Phase 6.4 — Reports → Alerts deep-link. The chip is the only
+    // affordance on a Notable card that targets the Alerts page; clicking
+    // anywhere else on the card stays in Reports (no full-card drill).
+    // No-op when AlertId == 0 — the LEFT JOIN didn't find a matching row,
+    // so there's nothing to deep-link to.
+    private void OnAlertsChipClick(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not FrameworkElement fe) return;
+        if (fe.DataContext is not NotableCardViewModel vm) return;
+        if (vm.AlertId <= 0) return;
+
+        var nav = FindNavigationView(this);
+        if (nav is null) return;
+        nav.Navigate(typeof(AlertsPage), new AlertsNavParams(vm.AlertId));
+    }
+
     private static NavigationView? FindNavigationView(DependencyObject element)
     {
         var current = element;
@@ -1019,9 +1051,12 @@ public sealed record UncommonTalker(
 // Notable card view-model bound by reports.notable.card DataTemplate.
 // EntityRef + AlertsText are pre-formatted strings so the DataTemplate can
 // stay binding-only — no inline string formatting / converters in XAML.
+// AlertId is the raw value used by Phase 6.4's deep-link click handler;
+// AlertsText is the rendered "Alerts · #N" caption.
 public sealed record NotableCardViewModel(
     NotableSeverity Severity,
     string Title,
     string Detail,
     string EntityRef,
-    string AlertsText);
+    string AlertsText,
+    int AlertId);

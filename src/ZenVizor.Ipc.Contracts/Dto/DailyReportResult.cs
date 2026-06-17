@@ -141,8 +141,16 @@ public sealed record DailyReportTalker(
 /// stay empty until sprint Phase 6 widens the rule set.
 /// <para>
 /// <see cref="AlertId"/> is the cross-page reference into the Alerts
-/// feed (sprint Phase 6 wires the deep-link). Phase 5 leaves the inline
-/// "Alerts · #N" affordance visible-but-inert.
+/// feed. Phase 6.4 wires the deep-link end-to-end: the repository
+/// LEFT JOINs to the <c>alerts</c> table on
+/// <c>(type, entity_kind, entity_ref)</c> so each Notable row carries
+/// the matching <c>alerts.alert_id</c> when one exists. The Reports UI
+/// renders the chip as <c>Alerts · #{AlertId}</c>; clicking it
+/// navigates to the Alerts page filtered to State=All and scrolled to
+/// the matching row. A sentinel value of <c>0</c> means no matching
+/// alert row was found and the chip remains visible-but-inert (the
+/// producer should have inserted by report time, but the LEFT JOIN
+/// keeps Reports honest if it hasn't).
 /// </para>
 /// </summary>
 public sealed record DailyReportNotable(

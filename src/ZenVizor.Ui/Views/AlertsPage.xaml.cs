@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using ZenVizor.Ipc.Client;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
@@ -48,6 +50,26 @@ public partial class AlertsPage : Page
         }
         if (_alertsClient is null) return;
 
+        // Phase 6.4 — Reports → Alerts deep-link. NavigationView.Navigate
+        // delivers the AlertsNavParams envelope via DataContext; consume
+        // it BEFORE the PropertyChanged subscription so setting
+        // SelectedState = All doesn't fire a redundant RefreshAsync
+        // through OnVmPropertyChanged (the explicit RefreshAsync below
+        // covers it). DataContext is then restored to _vm so the bindings
+        // see the regular view-model surface, mirroring the
+        // AppDetailNavParams transient-swap pattern.
+        long? scrollToAlertId = null;
+        if (DataContext is AlertsNavParams navParams)
+        {
+            DataContext = _vm;
+            // Switch to State=All so a dismissed-but-deep-linked alert is
+            // still visible (default Active filter would hide it). Setter
+            // is direct mutation so no PropertyChanged subscriber fires
+            // yet — we haven't subscribed.
+            _vm.SelectedState = AlertState.All;
+            scrollToAlertId = navParams.AlertId;
+        }
+
         _alertsClient.AlertRaised += OnServiceAlertRaised;
         _vm.PropertyChanged += OnVmPropertyChanged;
 
@@ -61,10 +83,21 @@ public partial class AlertsPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.ServiceReconnected += OnServiceReconnected;
+            // Reset history wipes the alerts table on the service side;
+            // subscribe so the page repaints empty as soon as the user
+            // confirms the dialog (rather than after the next navigation).
+            mw.HistoryWiped += OnHistoryWiped;
         }
 
         await RefreshAsync();
+
+        if (scrollToAlertId is long targetId)
+        {
+            ScrollAndHighlight(targetId);
+        }
     }
+
+    private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
 
     private void OnPageUnloaded(object sender, RoutedEventArgs e)
     {
@@ -77,6 +110,7 @@ public partial class AlertsPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.ServiceReconnected -= OnServiceReconnected;
+            mw.HistoryWiped -= OnHistoryWiped;
         }
     }
 
@@ -497,4 +531,66 @@ public partial class AlertsPage : Page
         if (ActualHeight <= 0) return;
         AlertsList.MaxHeight = Math.Max(0, ActualHeight - 280);
     }
+
+    // ---- Phase 6.4 — scroll-to + highlight for the deep-link path ---------
+    //
+    // RefreshAsync has just populated the VM's Alerts collection; the
+    // ListView may not have materialized the target container yet (virtualized
+    // and we may be scrolling far into the feed). The pattern:
+    //   1. Find the AlertVm in the collection.
+    //   2. ScrollIntoView (virtualizing layouts realize the container as
+    //      a side effect, then container generation runs).
+    //   3. UpdateLayout to flush any pending measure/arrange so
+    //      ContainerFromItem returns a non-null ListViewItem.
+    //   4. Pulse the item with a brief opacity wink. The fade-in shape
+    //      reads as "this is the one" without flashing distracting
+    //      brushes; works through any future template change.
+    // No-op if the target isn't present (alert was purged, or the feed
+    // hasn't loaded it for some reason — better quiet than misleading).
+
+    private void ScrollAndHighlight(long alertId)
+    {
+        var target = _vm.Alerts.FirstOrDefault(a => a.AlertId == alertId);
+        if (target is null) return;
+
+        AlertsList.ScrollIntoView(target);
+        AlertsList.UpdateLayout();
+
+        if (AlertsList.ItemContainerGenerator.ContainerFromItem(target)
+            is not ListViewItem container) return;
+
+        PulseDeepLinkTarget(container);
+    }
+
+    private void PulseDeepLinkTarget(ListViewItem container)
+    {
+        // Wink from 0.35 → 1.0 over the standard arrival duration to draw
+        // the eye without the badge-pulse's full motion vocabulary
+        // (cross-page navigation already moved the user; the highlight
+        // just confirms "this row"). Easing matches the rest of the app's
+        // arrival motion.
+        var duration = (Duration)(TimeSpan)FindResource("motion.duration.arrival");
+        var ease = (IEasingFunction)FindResource("motion.ease.glide");
+        var anim = new DoubleAnimation
+        {
+            From = 0.35,
+            To = 1.0,
+            Duration = duration,
+            EasingFunction = ease,
+            FillBehavior = FillBehavior.Stop,
+        };
+        container.BeginAnimation(UIElement.OpacityProperty, anim);
+    }
 }
+
+/// <summary>
+/// Phase 6.4 — navigation parameter for opening AlertsPage scoped to a
+/// specific alert. Passed via
+/// <c>NavigationView.Navigate(typeof(AlertsPage), new AlertsNavParams(...))</c>
+/// from ReportsPage when the user clicks a Notable card's
+/// <c>Alerts · #N</c> chip. AlertsPage consumes the param on its next
+/// <c>OnPageLoaded</c>: switches the filter to State=All so a
+/// dismissed-but-deep-linked alert is still visible, then scrolls to and
+/// briefly highlights the matching row.
+/// </summary>
+public sealed record AlertsNavParams(long AlertId);

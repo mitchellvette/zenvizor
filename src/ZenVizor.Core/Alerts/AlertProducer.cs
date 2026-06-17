@@ -93,6 +93,18 @@ public sealed class AlertProducer : IAlertEventSink
             return;
         }
 
+        // Per-WAN-connection entry-point log — kept at Debug because real
+        // workloads fire this ~30+ times per 5s flush (Chrome alone tends
+        // to dominate). Production validation 2026-06-17 confirmed the
+        // producer IS being fed correctly; the three Information-level
+        // lines below (raised / dedupe-hit / SQL-gate blocked) are the
+        // ones worth surfacing in the day-to-day log. Re-enable this one
+        // via an appsettings.json override when a future regression
+        // makes the producer feed itself suspect again.
+        _logger.LogDebug(
+            "AlertProducer.OnSessionConnectedWan: app_id={AppId} session_id={SessionId} image={Image} sig={Sig} userPath={UserPath}",
+            ctx.AppId, evt.SessionId, ctx.ImageName, ctx.SignatureStatus, ctx.IsUserWritablePath);
+
         foreach (var rule in _rules)
         {
             try
@@ -145,7 +157,14 @@ public sealed class AlertProducer : IAlertEventSink
                 },
             };
             var newDetail = rule.RenderDetail(renderedCtx, newCount);
-            _sink.UpdateDetail(typeStr, kindStr, refStr, newDetail);
+            var updated = _sink.UpdateDetail(typeStr, kindStr, refStr, newDetail);
+            // Diagnostic: cache-hit branch never raises a fresh AlertRaised
+            // event. If this fires post-Wipe, the producer thinks the alert
+            // is still active in memory even though the row was deleted —
+            // ForgetAll didn't run, or didn't run on this binary.
+            _logger.LogInformation(
+                "AlertProducer dedupe-hit (cache): type={Type} ref={Ref} newCount={Count} updateDetailRows={Updated}",
+                typeStr, refStr, newCount, updated);
             return;
         }
 
@@ -173,8 +192,21 @@ public sealed class AlertProducer : IAlertEventSink
             // Pre-existing active or cooling-down row. Stay silent — no
             // cache entry, no UpdateDetail, no AlertRaised event. The row
             // already in the DB is authoritative for the active surface.
+            // Diagnostic: SQL gate blocked. Post-Wipe this should NEVER
+            // fire (alerts table is empty) — if it does, something is
+            // leaving rows behind or Wipe didn't actually run.
+            _logger.LogInformation(
+                "AlertProducer TryInsert blocked by SQL gate (no row created): type={Type} ref={Ref}",
+                typeStr, refStr);
             return;
         }
+
+        // Diagnostic: success path — new alert row created, AlertRaised
+        // about to fire. Post-Wipe + re-trigger this is the line that
+        // should land in the log for a healthy re-fire.
+        _logger.LogInformation(
+            "AlertProducer raised: alert_id={AlertId} type={Type} ref={Ref}",
+            alertId, typeStr, refStr);
 
         // We created the row. Cache the state for future increment-and-update
         // observations, raise the AlertDto for broadcast.
@@ -218,6 +250,25 @@ public sealed class AlertProducer : IAlertEventSink
         lock (_gate)
         {
             _active.Remove((type, entityRef));
+        }
+    }
+
+    /// <summary>
+    /// Drops every entry from the producer's in-memory dedup cache.
+    /// Called by the Settings Reset history flow on the service side so
+    /// that after the alerts table has been wiped, the next qualifying
+    /// observation lands as a fresh insert (raises a new push) instead of
+    /// being silently absorbed as a dedupe-hit that calls UpdateDetail
+    /// against a row that no longer exists. Without this, every alert
+    /// type that was active at wipe time stays "tracked" in memory for
+    /// the remainder of the process lifetime and Reset history quietly
+    /// disables re-firing.
+    /// </summary>
+    public void ForgetAll()
+    {
+        lock (_gate)
+        {
+            _active.Clear();
         }
     }
 

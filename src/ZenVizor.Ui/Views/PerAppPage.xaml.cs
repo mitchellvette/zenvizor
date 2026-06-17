@@ -58,6 +58,7 @@ public partial class PerAppPage : Page
         AppsGrid.ItemsSource = _rowsView.View;
 
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
         SizeChanged += (_, _) => EnforceAppsGridBound();
 
         _loadingCaptionTimer = new DispatcherTimer
@@ -79,9 +80,23 @@ public partial class PerAppPage : Page
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped += OnHistoryWiped;
+        }
         EnforceAppsGridBound();
         await RefreshAsync();
     }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped -= OnHistoryWiped;
+        }
+    }
+
+    private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
 
     /// <summary>
     /// See AppDetailPage.EnforceDataGridBounds for the rationale.

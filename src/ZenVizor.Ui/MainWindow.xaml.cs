@@ -59,6 +59,36 @@ public partial class MainWindow : FluentWindow
     /// </summary>
     public event EventHandler? ServiceReconnected;
 
+    /// <summary>
+    /// Fires on the dispatcher AFTER the Settings page's Reset history
+    /// flow has successfully wiped the service-side DB. Data pages
+    /// subscribe to re-issue their existing <c>RefreshAsync</c> so the
+    /// user sees the empty state immediately rather than after the next
+    /// page navigation. Shape-mirrors <see cref="ServiceReconnected"/>
+    /// so future A1 follow-up consolidation can fold both into a single
+    /// "data invalidated" signal without churn at the page level.
+    /// </summary>
+    public event EventHandler? HistoryWiped;
+
+    /// <summary>
+    /// Called by SettingsPage after a successful
+    /// <c>WipeHistoryAsync</c>. Resets the nav-rail badge counters
+    /// directly (no fan-out hop) so the badge clears even on subscribers
+    /// that haven't loaded yet, then raises the <see cref="HistoryWiped"/>
+    /// event so pages currently in the visual tree refresh their data.
+    /// Must be called on the dispatcher thread — SettingsPage runs on it
+    /// already.
+    /// </summary>
+    public void RaiseHistoryWiped()
+    {
+        _badgeCritical = 0;
+        _badgeWarning = 0;
+        _badgeInfo = 0;
+        UpdateAlertsBadgeInternal(activeCount: 0, highestSeverity: null);
+
+        HistoryWiped?.Invoke(this, EventArgs.Empty);
+    }
+
     // Alerts nav-rail badge — one-shot pulse storyboard built in code-behind
     // because the motion tokens are sys:TimeSpan / IEasingFunction resources,
     // and Storyboard.Duration is the WPF `Duration` struct that XAML

@@ -94,8 +94,28 @@ public partial class HistoryPage : Page
             ShowLoadingOverlay();
         };
 
-        Loaded += async (_, _) => await RefreshAsync();
+        Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
     }
+
+    private async void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped += OnHistoryWiped;
+        }
+        await RefreshAsync();
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.HistoryWiped -= OnHistoryWiped;
+        }
+    }
+
+    private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
 
     /// <summary>
     /// Mutate the existing <see cref="_xAxis"/> / <see cref="_yAxis"/>

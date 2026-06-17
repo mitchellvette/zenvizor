@@ -347,11 +347,20 @@
                                            Foreground="{DynamicResource accent.text}"
                                            Margin="14,0,4,0"
                                            VerticalAlignment="Center" />
+                            <!--  Phase 6.4 deep-link: chip click navigates to
+                                  AlertsPage filtered to the matching alert.
+                                  Hand cursor is fixed (the chip is always a
+                                  link visually); the click handler no-ops
+                                  when AlertId=0, keeping the affordance
+                                  honest for the unmatched-row case rather
+                                  than hiding it.  -->
                             <TextBlock FontFamily="{StaticResource font.mono}"
                                        FontSize="{StaticResource font.size.caption}"
                                        Foreground="{DynamicResource accent.text}"
                                        Text="{Binding AlertsText}"
-                                       VerticalAlignment="Center" />
+                                       VerticalAlignment="Center"
+                                       Cursor="Hand"
+                                       MouseLeftButtonUp="OnAlertsChipClick" />
                         </StackPanel>
                     </StackPanel>
                     <Path Grid.Column="3"

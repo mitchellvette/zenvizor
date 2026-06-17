@@ -332,6 +332,31 @@ public sealed class SessionTracker
         get { lock (_gate) return _byPid.Count; }
     }
 
+    /// <summary>
+    /// Drops every tracked PID and any pending explicit-close request.
+    /// Called by the Settings "Reset history" flow on the service side
+    /// (alongside <see cref="TrafficAggregator.ResetInMemoryState"/> and
+    /// <see cref="Alerts.AlertProducer.ForgetAll"/>) so the next qualifying
+    /// observation is treated as a brand-new session rather than a hit
+    /// against the pre-wipe in-memory map (whose <c>SessionId</c> values
+    /// point at <c>process_sessions</c> rows the wipe just deleted).
+    /// Currently-running real processes (browser, terminal, etc.) will
+    /// re-register the next time ETW or the IP-Helper poll observes them
+    /// — same behaviour as a service restart but without the ETW-resubscribe
+    /// cost.
+    /// </summary>
+    /// <returns>The number of tracked PIDs dropped; logged by the caller.</returns>
+    public int ResetTrackerState()
+    {
+        lock (_gate)
+        {
+            var dropped = _byPid.Count;
+            _byPid.Clear();
+            _explicitCloses.Clear();
+            return dropped;
+        }
+    }
+
     private static AppIdentity BuildAppIdentity(ProcessImageInfo image, EnrichmentResult enrichment) =>
         new(
             ImagePath: image.ImagePath,

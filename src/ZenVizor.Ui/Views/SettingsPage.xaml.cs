@@ -311,6 +311,15 @@ public partial class SettingsPage : Page
 
     private async void OnResetHistoryClick(object sender, RoutedEventArgs e)
     {
+        // Wpf.Ui's ContentDialog inherits its Background through the
+        // visual tree from the hosting window's chrome. Our app overrides
+        // ApplicationBackgroundBrush to Transparent for Mica showthrough
+        // (App.xaml.cs ApplyDirectLevelOverrides), so without these
+        // explicit values the dialog reads as an unstyled translucent
+        // sheet floating over Mica. Pin the card surface + border + radius
+        // recipe so it sits on top of the chrome as a proper card. Same
+        // tokens our section cards use, so the visual language stays
+        // consistent.
         var dialog = new ContentDialog
         {
             Title = "Reset history?",
@@ -321,6 +330,10 @@ public partial class SettingsPage : Page
             PrimaryButtonText = "Reset history",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
+            Background = (System.Windows.Media.Brush)FindResource("metal.card"),
+            BorderBrush = (System.Windows.Media.Brush)FindResource("border.card"),
+            BorderThickness = new Thickness(1),
+            Foreground = (System.Windows.Media.Brush)FindResource("text.primary"),
         };
 
         // Host the dialog in MainWindow's content presenter — required by
@@ -347,6 +360,12 @@ public partial class SettingsPage : Page
                 : $"Reset complete. Removed {total:N0} rows.";
             ResetHistoryStatusText.Text = _vm.ResetHistoryStatus;
             ResetHistoryStatusText.Visibility = Visibility.Visible;
+
+            // Fan out so every data page that's loaded refreshes its
+            // cached result against the now-empty DB, and the nav-rail
+            // badge counters reset. Pages that aren't currently loaded
+            // pick up fresh data on their next OnPageLoaded refresh.
+            host.RaiseHistoryWiped();
         }
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
