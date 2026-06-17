@@ -593,10 +593,15 @@ public partial class AppDetailPage : Page
         }
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
-            // Pipe down — critical-red banner, last-known data dimmed to 0.6.
+            // Pipe down — Phase 6.5 standardized to caution-amber +
+            // PlugDisconnected20 glyph across every page. Last-known data
+            // stays dimmed to 0.6 so the user can still read what was
+            // there before the pipe broke.
             _inErrorState = true;
-            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.critical.background");
-            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.critical");
+            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+            StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.PlugDisconnected20;
+            StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
+            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
             StatusBannerText.Text = "Service disconnected. Last refresh stale.";
             StatusBanner.Visibility = Visibility.Visible;
             SetDataOpacity(0.6);
@@ -604,9 +609,12 @@ public partial class AppDetailPage : Page
         }
         catch (Exception ex)
         {
-            // Any other query failure — caution-amber banner, same dim.
+            // Any other query failure — caution-amber banner with
+            // Warning20 glyph; same dim.
             _inErrorState = true;
             StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+            StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.Warning20;
+            StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
             StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
             StatusBannerText.Text = $"Query failed ({ex.GetType().Name}): {ex.Message}";
             StatusBanner.Visibility = Visibility.Visible;

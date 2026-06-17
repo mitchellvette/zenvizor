@@ -439,6 +439,24 @@
                                     <ComboBoxItem Content="Dark" />
                                 </ComboBox>
                             </Grid>
+
+                            <!--  Phase 6.5 — High Contrast notice. Visible only when
+                                  Windows High Contrast is active. SystemParameters
+                                  binding wouldn't be reactive across HC toggle, so
+                                  visibility is set in code-behind (RefreshThemeCardHighContrastNotice).  -->
+                            <Border x:Name="HighContrastNotice"
+                                    Visibility="Collapsed"
+                                    Margin="0,12,0,0"
+                                    Padding="12,8"
+                                    Background="{DynamicResource status.caution.background}"
+                                    BorderBrush="{DynamicResource status.caution}"
+                                    BorderThickness="0,0,0,2"
+                                    CornerRadius="{StaticResource radius.control}">
+                                <TextBlock Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           TextWrapping="Wrap"
+                                           Text="Windows High Contrast is active. The OS contrast theme overrides this app's light or dark choice; changing the picker has no visible effect until High Contrast is turned off." />
+                            </Border>
                         </StackPanel>
                     </Border>
 

@@ -435,8 +435,8 @@ public partial class MainWindow : FluentWindow
     /// <summary>
     /// Fires the one-shot pulse-ring animation on the Alerts nav-rail
     /// badge. Skipped silently when the badge is hidden (no active
-    /// alerts) or when OS animation is disabled
-    /// (<see cref="SystemParameters.ClientAreaAnimation"/>). Idempotent:
+    /// alerts) or when motion is disabled (OS animation flag OR Windows
+    /// High Contrast — see <see cref="MotionPolicy"/>). Idempotent:
     /// calling while a previous pulse is still in flight restarts the
     /// animation, never overlaps it.
     /// </summary>
@@ -444,7 +444,7 @@ public partial class MainWindow : FluentWindow
     {
         if (_alertsBadgePulseStoryboard is null) return;
         if (AlertsBadgeCount.Visibility != Visibility.Visible) return;
-        if (!SystemParameters.ClientAreaAnimation) return;
+        if (!MotionPolicy.AnimationsEnabled) return;
 
         // Stop a still-running pulse before starting a fresh one — Begin()
         // alone restarts in place, but Stop()+Begin() ensures the From

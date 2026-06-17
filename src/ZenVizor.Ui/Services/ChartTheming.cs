@@ -17,29 +17,56 @@ namespace ZenVizor.Ui.Services;
 /// <summary>
 /// Themed SkiaSharp paints for LiveCharts2 axis labels, grid separators, and
 /// legend text. SkiaSharp paints do NOT inherit Wpf.Ui DynamicResource, so
-/// chart text/grid colors must be computed in code from the current
-/// ApplicationTheme and re-applied on OS theme flip.
+/// chart text/grid colors must be computed in code from the current resource
+/// dictionary and re-applied on every event that changes which dictionary
+/// owns each token.
 ///
 /// Pages that own charts call <see cref="Apply"/> once at construction with
 /// the chart, then subscribe <see cref="Changed"/> and call Apply(chart)
 /// again on every flip.
 /// </summary>
 /// <remarks>
-/// The Wpf.Ui Dark.xaml + Light.xaml exact values are mirrored here so chart
-/// text matches body text in either theme:
-///   Dark:  TextFillColorPrimary = #FFFFFFFF   |  separators ~ 8% white
-///   Light: TextFillColorPrimary = #E4000000   |  separators ~ 8% black
+/// Three event sources fire <see cref="Changed"/>:
+/// <list type="bullet">
+///   <item><see cref="ApplicationThemeManager.Changed"/> — OS Light↔Dark flip
+///   (swaps BrandAccent.Light.xaml ↔ BrandAccent.Dark.xaml in App.xaml.cs).</item>
+///   <item><see cref="SystemParameters.StaticPropertyChanged"/> — Windows
+///   High Contrast toggle (merges/unmerges HighContrast.xaml in
+///   App.xaml.cs Phase 6.5 wiring).</item>
+/// </list>
+/// Colors are read from the existing chart-chrome tokens
+/// (chart.axis.label / chart.gridline / chart.legend.text) so HC overrides
+/// flow through automatically — no hardcoded SKColors per theme.
 /// </remarks>
 [SupportedOSPlatform("windows")]
 internal static class ChartTheming
 {
-    /// <summary>Fires when the OS theme flips (forwarded from
-    /// <see cref="ApplicationThemeManager.Changed"/>).</summary>
+    /// <summary>Fires when chart paints need to be re-applied (OS theme flip
+    /// OR Windows High Contrast toggle).</summary>
     public static event Action? Changed;
 
     static ChartTheming()
     {
-        ApplicationThemeManager.Changed += (_, _) => Changed?.Invoke();
+        ApplicationThemeManager.Changed += (_, _) => RaiseOnDispatcher();
+        // Phase 6.5 — HC flips re-paint chart chrome. The SystemParameters
+        // event fires on a worker thread, so we marshal the broadcast to
+        // the UI dispatcher centrally rather than asking every subscriber
+        // to remember to Dispatcher.Invoke. Pre-6.5 the event only fired
+        // from ApplicationThemeManager.Changed which is already UI-thread,
+        // so existing subscribers vary in whether they marshal — central
+        // marshaling here keeps both shapes safe.
+        SystemParameters.StaticPropertyChanged += (_, _) => RaiseOnDispatcher();
+    }
+
+    private static void RaiseOnDispatcher()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            Changed?.Invoke();
+            return;
+        }
+        _ = dispatcher.BeginInvoke(new Action(() => Changed?.Invoke()));
     }
 
     /// <summary>
@@ -166,13 +193,37 @@ internal static class ChartTheming
     private static SolidColorPaint SeparatorsPaint() =>
         new(SeparatorColor()) { StrokeThickness = 0.5f };
 
-    private static SKColor LabelColor() =>
-        ApplicationThemeManager.GetAppTheme() == ApplicationTheme.Dark
+    /// <summary>
+    /// Axis + legend label color. Reads <c>chart.axis.label</c> from the
+    /// current resource dictionary so theme flips AND HC overrides flow
+    /// through. Falls back to a Wpf.Ui-matched per-theme constant if the
+    /// resource is missing (defensive; should never fire because
+    /// DesignTokens.xaml always carries the key).
+    /// </summary>
+    private static SKColor LabelColor()
+    {
+        if (TryGetBrandColor("chart.axis.label", out var c))
+        {
+            return new SKColor(c.R, c.G, c.B, c.A);
+        }
+        return ApplicationThemeManager.GetAppTheme() == ApplicationTheme.Dark
             ? new SKColor(0xFF, 0xFF, 0xFF, 0xFF)
             : new SKColor(0x00, 0x00, 0x00, 0xE4);
+    }
 
-    private static SKColor SeparatorColor() =>
-        ApplicationThemeManager.GetAppTheme() == ApplicationTheme.Dark
+    /// <summary>
+    /// Grid separator color. Reads <c>chart.gridline</c> from the current
+    /// resource dictionary. Same flow-through rationale as
+    /// <see cref="LabelColor"/>; same defensive per-theme fallback.
+    /// </summary>
+    private static SKColor SeparatorColor()
+    {
+        if (TryGetBrandColor("chart.gridline", out var c))
+        {
+            return new SKColor(c.R, c.G, c.B, c.A);
+        }
+        return ApplicationThemeManager.GetAppTheme() == ApplicationTheme.Dark
             ? new SKColor(0xFF, 0xFF, 0xFF, 0x14)
             : new SKColor(0x00, 0x00, 0x00, 0x14);
+    }
 }

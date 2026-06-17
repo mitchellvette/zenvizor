@@ -569,6 +569,16 @@ public partial class AlertsPage : Page
         // (cross-page navigation already moved the user; the highlight
         // just confirms "this row"). Easing matches the rest of the app's
         // arrival motion.
+        //
+        // Phase 6.5 — skip the animation under reduced-motion / Windows
+        // HC. The row is already scrolled into view; without the wink
+        // the visual confirmation is just "this row is here," which is
+        // what HC users prefer over a fade-in.
+        if (!MotionPolicy.AnimationsEnabled)
+        {
+            container.Opacity = 1.0;
+            return;
+        }
         var duration = (Duration)(TimeSpan)FindResource("motion.duration.arrival");
         var ease = (IEasingFunction)FindResource("motion.ease.glide");
         var anim = new DoubleAnimation

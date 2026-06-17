@@ -11,6 +11,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.Kernel;
 using LiveChartsCore.Measure;
 using LiveChartsCore.SkiaSharpView;
+using Wpf.Ui.Controls;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
 
@@ -351,11 +352,14 @@ public partial class DashboardPage : Page
         {
             _consecutiveFailures++;
             var steady = _consecutiveFailures > SteadyDisconnectFailureThreshold;
+            // Phase 6.5 — disconnect banner is always caution-amber +
+            // PlugDisconnected20 glyph; the retrying vs steady-stale
+            // distinction lives in the copy, not the color.
             ShowBanner(
-                isCritical: steady,
+                glyph: SymbolRegular.PlugDisconnected20,
                 copy: steady
-                    ? $"Service disconnected ({update.FailureReason}); last refresh stale"
-                    : $"Service disconnected ({update.FailureReason}); retrying");
+                    ? $"Service disconnected ({update.FailureReason}). Last refresh stale."
+                    : $"Service disconnected ({update.FailureReason}); retrying.");
 
             // Disconnect: preserve last-known content (chart history, talkers
             // list, status card values) and dim the lot. Chart spinner stays
@@ -381,7 +385,7 @@ public partial class DashboardPage : Page
         // shows the canonical empty-state copy, status cards stay em-dash.
         if (snap.WindowSeconds <= 0)
         {
-            ShowBanner(isCritical: false, copy: "Warming up. First flush bucket lands within ~5 s.", warmingClass: true);
+            ShowBanner(glyph: SymbolRegular.Warning20, copy: "Warming up. First flush bucket lands within ~5 s.", warmingClass: true);
             SetStatusCardsPlaceholder();
             ChartLoadingOverlay.Visibility = Visibility.Visible;
             ChartXAxisOverlay.Visibility = Visibility.Collapsed;
@@ -454,28 +458,21 @@ public partial class DashboardPage : Page
         TalkersEmptyText.Visibility = Talkers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ShowBanner(bool isCritical, string copy, bool warmingClass = false)
+    private void ShowBanner(SymbolRegular glyph, string copy, bool warmingClass = false)
     {
-        Brush bg, fg;
-        if (warmingClass)
-        {
-            // Caution-class paint, semantically tagged as warming so future
-            // repoints don't have to thread through every caution banner.
-            bg = (Brush)FindResource("status.warming.background");
-            fg = (Brush)FindResource("status.caution.text");
-        }
-        else if (isCritical)
-        {
-            bg = (Brush)FindResource("status.critical.background");
-            fg = (Brush)FindResource("status.critical");
-        }
-        else
-        {
-            bg = (Brush)FindResource("status.caution.background");
-            fg = (Brush)FindResource("status.caution.text");
-        }
+        // Phase 6.5 — banner paint is always caution-class (amber on
+        // light, deeper amber on dark). The disconnect vs warming
+        // difference is the glyph + copy, not the color. warmingClass
+        // selects the dedicated warming.background token so future
+        // repoints can repaint warming banners app-wide without
+        // touching every plain caution surface.
+        var bgKey = warmingClass ? "status.warming.background" : "status.caution.background";
+        var bg = (Brush)FindResource(bgKey);
+        var fg = (Brush)FindResource("status.caution.text");
 
         StatusBanner.Background = bg;
+        StatusBannerGlyph.Symbol = glyph;
+        StatusBannerGlyph.Foreground = fg;
         StatusBannerText.Foreground = fg;
         StatusBannerText.Text = copy;
         StatusBanner.Visibility = Visibility.Visible;

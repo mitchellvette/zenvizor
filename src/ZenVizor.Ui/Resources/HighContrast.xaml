@@ -5,23 +5,28 @@
     <!--
         ZenVizor — Windows High Contrast token overrides.
 
-        ⚠ STATUS: NOT YET WIRED INTO THE APP. The intended lifecycle (described
-        below) is the design contract; the actual subscribe / merge / unmerge
-        is tracked as design-system.md §11 item 9 ("HC merge wiring"). App.xaml
-        currently merges DesignTokens.xaml + BrandAccent.{Light,Dark}.xaml but
-        NOT this dictionary, so an OS HC flip today doesn't change anything
-        the app paints. This file is kept current with the brand-token set so
-        the eventual wiring is a one-line merge plus the subscribe.
+        STATUS: WIRED Phase 6.5 (2026-06-17). App.xaml.cs subscribes to
+        SystemParameters.StaticPropertyChanged and merges/unmerges this
+        dictionary as the LAST entry in
+        Application.Current.Resources.MergedDictionaries when
+        SystemParameters.HighContrast flips. ApplyDirectLevelOverrides
+        early-returns under HC so brand direct-level writes don't shadow
+        Wpf.Ui's own HC chrome. Verification: docs/phase-6.5-verification.md.
 
-        INTENDED LIFECYCLE (post-wiring): merge only when
-        SystemParameters.HighContrast == true. The HC ResourceDictionary
-        becomes the LAST entry in Application.Current.Resources.MergedDictionaries
-        so its keys win over DesignTokens.xaml + BrandAccent.*. App startup
-        subscribes to SystemParameters.StaticPropertyChanged (or
-        SystemEvents.UserPreferenceChanged with category=Color) and
-        merges/unmerges as HC flips. See the verification gate in
-        docs/design-system.md for the toggle recipe (Settings ->
-        Accessibility -> Contrast themes -> Aquatic, etc).
+        SUPPORT BOUNDARY — DARK-BACKDROP HC THEMES ONLY. ZenVizor's HC
+        treatment is tuned for the three dark-backdrop themes Windows
+        ships (Aquatic / Dusk / Night sky). The DESERT theme is HC's
+        only light-backdrop variant; under Desert, Wpf.Ui's own chrome
+        (button backgrounds, ContextMenu surfaces, NavigationView
+        chrome regions we don't override) continues painting from
+        whichever ApplicationTheme the user had chosen pre-HC — almost
+        always Dark — so Desert mode reads as a near-Dark UI rather
+        than the light-backdrop OS contract. Properly fixing Desert
+        would require either snapping ApplicationTheme to Light when
+        an OS HC light theme is active, OR overriding every Wpf.Ui
+        chrome brush in this dictionary. Both are substantive token
+        walks deferred until a user actually depends on Desert.
+        Mentioned to the user via the HC notice on Settings Theme card.
 
         WHY THIS EXISTS: ZenVizor hard-overrides every brush. WPF normally
         yields to SystemColors for the controls it touches — but only when
@@ -95,6 +100,7 @@
     <SolidColorBrush x:Key="status.caution.text"        Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
     <SolidColorBrush x:Key="status.critical"            Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
     <SolidColorBrush x:Key="status.critical.background" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="status.critical.text"       Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
     <SolidColorBrush x:Key="status.neutral"             Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
     <SolidColorBrush x:Key="status.neutral.background"  Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
 

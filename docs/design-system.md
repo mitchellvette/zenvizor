@@ -203,9 +203,10 @@ aliases a Wpf.Ui Color resource via
 | `status.success`               | Success foreground. Brand-tuned by `BrandAccent.xaml`: `#06B6A3` light / `#2BD1BD` dark.   | `SystemFillColorSuccess` (overridden) |
 | `status.success.background`    | Success banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                | `SystemFillColorSuccessBackground` (overridden) |
 | `status.caution`               | Caution foreground — dots / graphics / icon fills. Brand-tuned: `#EC9A0B` light / `#F1AD34` dark. | `SystemFillColorCaution` (overridden) |
-| `status.caution.text`          | Caution **text** on the caution-tint background. Darker amber so small body text clears AA on the light tint; bright amber already passes on the dark tint. v1 ships the light value as a constant. | constant `#8A5A00`                   |
+| `status.caution.text`          | Caution **text** on the caution-tint background. Darker amber so small body text clears AA on the light tint; bright amber already passes on the dark tint. Theme-aware via `BrandAccent.{Light,Dark}.xaml` — `#8A5A00` light / `#F1AD34` dark. | brand constants (per-theme)         |
 | `status.caution.background`    | Caution banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                | `SystemFillColorCautionBackground` (overridden) |
-| `status.critical`              | Error foreground. Brand-tuned: `#D62B62` light / `#F5547F` dark.                            | `SystemFillColorCritical` (overridden) |
+| `status.critical`              | Critical foreground — dots / graphics / pill fills. Brand-tuned: `#D62B62` light / `#F5547F` dark. | `SystemFillColorCritical` (overridden) |
+| `status.critical.text`         | Critical **text** on the critical-tint background. Light reuses the brand magenta; dark uses a lighter coral-pink (`#FBA3B7`) so text and the same-hue alpha-tinted background separate cleanly. Theme-aware via `BrandAccent.{Light,Dark}.xaml`. | brand constants (per-theme)         |
 | `status.critical.background`   | Error banner background. Alpha-tinted brand value via `BrandAccent.xaml`.                  | `SystemFillColorCriticalBackground` (overridden) |
 | `status.neutral`               | Neutral / informational                                                                   | `SystemFillColorNeutral`             |
 | `status.neutral.background`    | Neutral banner background                                                                 | `SystemFillColorNeutralBackground`   |
@@ -787,6 +788,7 @@ Use a contrast checker (e.g. Stark, or Edge DevTools accessibility tab against a
 
 - **`accent.fill` surfaces with on-accent (white) text** — every filled accent button, pill, selection indicator. Must clear **4.5:1** in BOTH Light and Dark themes. (Why this is specifically called out: dark theme's `accent.default` is one stop lighter than `accent.fill`; mistakenly using `accent.default` as a filled background fails AA against white in dark mode. This audit catches that.)
 - **Caution-tint surfaces with `status.caution.text`** — every warning banner. Must clear **4.5:1** in light theme on the caution background; **3:1** for large text. In dark theme, bright `status.caution` reused as text against the dark tint must clear 4.5:1.
+- **Critical-tint surfaces with `status.critical.text`** — every error/disconnect banner foreground + glyph + alert severity strip text. Must clear **4.5:1** in light theme on `status.critical.background`; **3:1** for large text. In dark theme, the brighter pink (`#FBA3B7`) reused as text against the dark `#2EF5547F` tint must clear 4.5:1.
 - **Chart axis labels** (`chart.axis.label` = `text.tertiary`) on `surface.card` — confirm at least 3:1 (large text); axis labels are subdued by design but must not vanish.
 
 Fail this gate if any audited surface falls below threshold; raise the

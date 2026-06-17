@@ -137,10 +137,10 @@
             <Setter Property="Foreground" Value="{DynamicResource accent.text}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -206,10 +206,10 @@
             <Setter Property="Foreground" Value="{DynamicResource status.success}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
                     <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
@@ -225,10 +225,10 @@
             <Setter Property="Foreground" Value="{DynamicResource status.success}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Invalid">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unchecked">
                     <Setter Property="Foreground" Value="{DynamicResource status.neutral}" />
@@ -381,7 +381,7 @@
                 <DataTrigger Binding="{Binding Severity}" Value="Critical">
                     <Setter TargetName="SevBar"   Property="Background" Value="{DynamicResource status.critical}" />
                     <Setter TargetName="IconTile" Property="Background" Value="{DynamicResource status.critical.background}" />
-                    <Setter TargetName="IconGlyph" Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter TargetName="IconGlyph" Property="Foreground" Value="{DynamicResource status.critical.text}" />
                     <Setter TargetName="IconGlyph" Property="Symbol"     Value="ShieldError20" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Severity}" Value="Warning">
@@ -1545,7 +1545,7 @@
                                 VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="ShieldError24"
                                            FontSize="16"
-                                           Foreground="{DynamicResource status.critical}"
+                                           Foreground="{DynamicResource status.critical.text}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
                         </Border>

@@ -38,6 +38,24 @@
     <Color x:Key="SystemFillColorCautionBackground">#2EF1AD34</Color>   <!-- 18% alpha -->
     <Color x:Key="SystemFillColorCriticalBackground">#2EF5547F</Color>  <!-- 18% alpha -->
 
+    <!--  status.caution.text — body text on the dark caution tint. The
+          bright amber (#F1AD34, same hue as status.caution itself)
+          clears AA against the dark tint and was the source-of-truth in
+          docs/design/colors_and_type.css line 459. Pre-Phase 6.5 this
+          key was hardcoded to the LIGHT-theme #8A5A00 in DesignTokens.xaml
+          (the P1 amber-banner regression in dark mode); fix is to make
+          the key theme-aware via BrandAccent.{Light,Dark}.xaml. -->
+    <SolidColorBrush x:Key="status.caution.text" Color="#F1AD34" />
+
+    <!--  status.critical.text — body text on the dark critical tint.
+          Light coral pink (#FBA3B7), brighter than status.critical
+          (#F5547F) so text and the same-hue alpha-tinted background
+          separate cleanly. Clears AA comfortably against the composited
+          #2EF5547F-on-#232735 backdrop. Pre-Phase-6.5 the dark theme
+          used status.critical for both fg and bg of the critical banner
+          surface (same-hue washy). -->
+    <SolidColorBrush x:Key="status.critical.text" Color="#FBA3B7" />
+
     <!--  status.neutral — brand cool blue-violet (lighter ramp for dark
           backdrop legibility, #7e8ef7). NOT Wpf.Ui's SystemFillColorNeutral
           (warm gray). Used by alert Info severity (dot / tile bg / badge).

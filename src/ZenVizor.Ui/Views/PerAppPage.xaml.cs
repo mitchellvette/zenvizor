@@ -198,10 +198,11 @@ public partial class PerAppPage : Page
     }
 
     /// <summary>
-    /// Pipe down (caught via HistoryQueryClient.IsConnectionLost). Critical
-    /// paint per brief §4. Rows + summary retain last-known values dimmed
-    /// to DimmedOpacity — NOT cleared — so the user can still see the
-    /// most recent state while disconnected.
+    /// Pipe down (caught via HistoryQueryClient.IsConnectionLost). Phase 6.5
+    /// standardized this to caution-amber + PlugDisconnected20 glyph across
+    /// every page. Rows + summary retain last-known values dimmed to
+    /// DimmedOpacity — NOT cleared — so the user can still see the most
+    /// recent state while disconnected.
     /// </summary>
     private void ApplyDisconnectedState()
     {
@@ -210,8 +211,10 @@ public partial class PerAppPage : Page
         EmptyText.Visibility = Visibility.Collapsed;
         EmptyFilteredText.Visibility = Visibility.Collapsed;
 
-        StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.critical.background");
-        StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.critical");
+        StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+        StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.PlugDisconnected20;
+        StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
+        StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
         StatusBannerText.Text = "Service disconnected. Last refresh stale.";
         StatusBanner.Visibility = Visibility.Visible;
 
@@ -221,7 +224,8 @@ public partial class PerAppPage : Page
 
     /// <summary>
     /// Non-connection query failure (e.g. SqliteException). Caution paint
-    /// with the technical exception text — operators read this to triage.
+    /// with the Warning20 glyph and the technical exception text — operators
+    /// read this to triage.
     /// </summary>
     private void ApplyErrorState(Exception ex)
     {
@@ -231,6 +235,8 @@ public partial class PerAppPage : Page
         EmptyFilteredText.Visibility = Visibility.Collapsed;
 
         StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
+        StatusBannerGlyph.Symbol = Wpf.Ui.Controls.SymbolRegular.Warning20;
+        StatusBannerGlyph.SetResourceReference(Wpf.Ui.Controls.SymbolIcon.ForegroundProperty, "status.caution.text");
         StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
         StatusBannerText.Text = $"Query failed ({ex.GetType().Name}): {ex.Message}";
         StatusBanner.Visibility = Visibility.Visible;

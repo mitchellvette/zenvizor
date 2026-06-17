@@ -166,8 +166,17 @@
                             Background="{DynamicResource status.caution.background}"
                             Padding="8"
                             CornerRadius="{StaticResource radius.control}">
-                        <TextBlock x:Name="StatusBannerText"
-                                   Foreground="{DynamicResource status.caution.text}" />
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                                           Symbol="Warning20"
+                                           FontSize="16"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0" />
+                            <TextBlock x:Name="StatusBannerText"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource status.caution.text}" />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
                 <ui:TextBlock Style="{StaticResource text.caption}"

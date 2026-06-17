@@ -58,6 +58,25 @@
     <Color x:Key="SystemFillColorCautionBackground">#29EC9A0B</Color>   <!-- 16% alpha -->
     <Color x:Key="SystemFillColorCriticalBackground">#1FD62B62</Color>  <!-- 12% alpha -->
 
+    <!--  status.caution.text — body text on the soft caution tint. Light
+          theme uses the darker amber (#8A5A00) so 12-14 px body clears
+          AA against the pale caution background (~5.2:1). Dark theme
+          override in BrandAccent.Dark.xaml uses the bright amber.
+          Source of truth: docs/design/colors_and_type.css
+          status-caution-text (per-theme). -->
+    <SolidColorBrush x:Key="status.caution.text" Color="#8A5A00" />
+
+    <!--  status.critical.text — body text on the soft critical tint.
+          Light theme reuses the brand status.critical hue (#D62B62) —
+          the dark magenta clears AA against the pale critical background
+          without any luminance shift. Dark theme override in
+          BrandAccent.Dark.xaml uses a lighter coral-pink so text and
+          background separate cleanly on the dark tint (the pre-Phase-6.5
+          gap where TEXT was painting status.critical = #F5547F on a
+          status.critical.background = #2EF5547F same-hue tint — washy
+          and unreadable). -->
+    <SolidColorBrush x:Key="status.critical.text" Color="#D62B62" />
+
     <!--  status.neutral — brand cool blue-violet (#4d5fd0), NOT Wpf.Ui's
           SystemFillColorNeutral (warm gray). DesignTokens.xaml aliases
           status.neutral.Color to SystemFillColorNeutral; overriding the

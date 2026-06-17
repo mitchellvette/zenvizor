@@ -953,9 +953,16 @@ public sealed partial class ReportsPage : Page
 
     private void ApplyDisconnectedState()
     {
+        // Phase 6.5 standardized service-disconnect to caution-amber +
+        // PlugDisconnected20 glyph across every page. (The pre-6.5 code
+        // here also pointed at a non-existent "status.critical.text"
+        // token; SetResourceReference left the brush unresolved, so the
+        // banner text painted with the inherited Foreground rather than
+        // the intended critical red. That silent bug goes away with the
+        // canonicalization.)
         SetBanner(SymbolRegular.PlugDisconnected20,
-                  "status.critical.background",
-                  "status.critical.text",
+                  "status.caution.background",
+                  "status.caution.text",
                   "Service disconnected. Last refresh stale.");
         DimDataRows(0.6);
         ExportButton.IsEnabled = false;

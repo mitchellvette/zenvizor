@@ -115,6 +115,12 @@ public partial class SettingsPage : Page
             mw.ServiceReconnected += OnServiceReconnected;
         }
 
+        // Phase 6.5 — HC notice on the Theme card. Show the notice when
+        // Windows HC is active and subscribe to flips while the page is
+        // mounted so the notice appears/disappears in real time.
+        RefreshThemeCardHighContrastNotice();
+        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
+
         await RefreshAsync();
     }
 
@@ -125,7 +131,21 @@ public partial class SettingsPage : Page
         {
             mw.ServiceReconnected -= OnServiceReconnected;
         }
+        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
         _retentionDebounce.Stop();
+    }
+
+    private void OnSystemParametersChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // StaticPropertyChanged fires on a worker thread; marshal to the UI.
+        _ = Dispatcher.BeginInvoke(new Action(RefreshThemeCardHighContrastNotice));
+    }
+
+    private void RefreshThemeCardHighContrastNotice()
+    {
+        HighContrastNotice.Visibility = SystemParameters.HighContrast
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
@@ -184,15 +204,16 @@ public partial class SettingsPage : Page
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
             _vm.Content = SettingsViewModel.PageContent.Disconnected;
-            ShowBanner(critical: true,
-                "Service disconnected. Settings can be viewed but not changed.");
+            ShowBanner(critical: false,
+                "Service disconnected. Settings can be viewed but not changed.",
+                glyph: SymbolRegular.PlugDisconnected20);
         }
         catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
         {
             // Service binary predates Phase 6.2 — the settings IPC isn't
-            // exposed yet. Surface as a calm informational banner rather
-            // than an alarming red one; defaults remain visible (theme
-            // came from the local cache) and the user knows how to fix.
+            // exposed yet. Surface as a calm informational banner;
+            // defaults remain visible (theme came from the local cache)
+            // and the user knows how to fix.
             _vm.Content = SettingsViewModel.PageContent.Error;
             ShowBanner(critical: false,
                 "Settings can't be loaded. The ZenVizor service is older than this app; " +
@@ -370,8 +391,9 @@ public partial class SettingsPage : Page
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
             _vm.Content = SettingsViewModel.PageContent.Disconnected;
-            ShowBanner(critical: true,
-                "Service disconnected. Couldn't reset history.");
+            ShowBanner(critical: false,
+                "Service disconnected. Couldn't reset history.",
+                glyph: SymbolRegular.PlugDisconnected20);
         }
         catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
         {
@@ -444,8 +466,9 @@ public partial class SettingsPage : Page
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
             _vm.Content = SettingsViewModel.PageContent.Disconnected;
-            ShowBanner(critical: true,
-                "Service disconnected. Your change wasn't saved.");
+            ShowBanner(critical: false,
+                "Service disconnected. Your change wasn't saved.",
+                glyph: SymbolRegular.PlugDisconnected20);
         }
         catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
         {
@@ -494,11 +517,22 @@ public partial class SettingsPage : Page
         FormScroll.IsEnabled = _vm.Content != SettingsViewModel.PageContent.Disconnected;
     }
 
-    private void ShowBanner(bool critical, string text)
+    /// <summary>
+    /// Paints the inline status banner above the Settings form. The
+    /// <paramref name="critical"/> flag is RESERVED for a future
+    /// destructive-state surface (data-integrity error, config corruption);
+    /// every Phase 6.5 caller passes <c>false</c>. Routine service-
+    /// disconnect uses the caution paint with the dedicated
+    /// <see cref="Wpf.Ui.Controls.SymbolRegular.PlugDisconnected20"/>
+    /// glyph; any other transient error uses the default
+    /// <see cref="Wpf.Ui.Controls.SymbolRegular.Warning20"/> glyph.
+    /// </summary>
+    private void ShowBanner(bool critical, string text, SymbolRegular glyph = SymbolRegular.Warning20)
     {
         StatusBanner.Background = (System.Windows.Media.Brush)FindResource(
             critical ? "status.critical.background" : "status.caution.background");
-        var fg = critical ? "status.critical" : "status.caution.text";
+        var fg = critical ? "status.critical.text" : "status.caution.text";
+        StatusBannerGlyph.Symbol = glyph;
         StatusBannerGlyph.Foreground = (System.Windows.Media.Brush)FindResource(fg);
         StatusBannerText.Foreground = (System.Windows.Media.Brush)FindResource(fg);
         StatusBannerText.Text = text;

@@ -36,18 +36,30 @@
                       Text="Current activity" />
 
         <!--  Row 1 — state-driven banner. Single element; ApplyUpdate
-              swaps Background/Foreground/copy across warming, transient
-              disconnect (caution), and steady disconnect (critical).
-              Collapsed when none apply.  -->
+              swaps Background/Foreground/glyph/copy across warming
+              (Warning20) and disconnect (PlugDisconnected20). Phase 6.5
+              standardized service-disconnect to caution-amber + glyph
+              across every page; the retrying vs. steady distinction
+              survives in the copy ("retrying" vs "Last refresh stale.")
+              rather than as a color split. Collapsed when none apply.  -->
         <Border x:Name="StatusBanner"
                 Grid.Row="1"
                 Visibility="Collapsed"
                 Margin="0,12,0,0"
-                Padding="8"
+                Padding="12,8"
                 CornerRadius="{StaticResource radius.control}">
-            <TextBlock x:Name="StatusBannerText"
-                       Text=""
-                       TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="StatusBannerGlyph"
+                               Symbol="Warning20"
+                               FontSize="16"
+                               Foreground="{DynamicResource status.caution.text}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                <TextBlock x:Name="StatusBannerText"
+                           Text=""
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+            </StackPanel>
         </Border>
 
         <!--  Row 2 — content. DimmableContent.Opacity flips to 0.6 during

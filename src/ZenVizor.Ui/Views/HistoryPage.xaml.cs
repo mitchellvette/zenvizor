@@ -166,13 +166,14 @@ public partial class HistoryPage : Page
         }
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
         {
-            // Pipe down — critical-red banner, last-known data dimmed to 0.6.
-            // No em-dash in the copy (memory rule); period form matches
-            // AppDetailPage.xaml.cs:487.
-            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.critical.background");
+            // Pipe down — Phase 6.5 standardized to caution-amber +
+            // PlugDisconnected20 glyph across every page. Last-known data
+            // stays dimmed to 0.6 so the user can still read what was
+            // there before the pipe broke.
+            StatusBanner.SetResourceReference(Border.BackgroundProperty, "status.caution.background");
             StatusBannerGlyph.Symbol = SymbolRegular.PlugDisconnected20;
-            StatusBannerGlyph.SetResourceReference(SymbolIcon.ForegroundProperty, "status.critical");
-            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.critical");
+            StatusBannerGlyph.SetResourceReference(SymbolIcon.ForegroundProperty, "status.caution.text");
+            StatusBannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "status.caution.text");
             StatusBannerText.Text = "Service disconnected. Last refresh stale.";
             StatusBanner.Visibility = Visibility.Visible;
             SetDataOpacity(0.6);

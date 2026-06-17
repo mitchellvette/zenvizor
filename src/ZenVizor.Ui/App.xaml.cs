@@ -13,6 +13,8 @@ public partial class App : Application
         new("pack://application:,,,/Resources/BrandAccent.Light.xaml", UriKind.Absolute);
     private static readonly Uri BrandAccentDarkUri =
         new("pack://application:,,,/Resources/BrandAccent.Dark.xaml", UriKind.Absolute);
+    private static readonly Uri HighContrastUri =
+        new("pack://application:,,,/Resources/HighContrast.xaml", UriKind.Absolute);
 
     // Phase 6.3 — single-instance enforcement. Held for the lifetime of the
     // primary process; released on Exit. Null on secondary launches because
@@ -113,6 +115,24 @@ public partial class App : Application
                 _ = Dispatcher.BeginInvoke(new Action(ApplyDirectLevelOverrides), DispatcherPriority.ApplicationIdle);
             });
 
+        // Phase 6.5 — Windows High Contrast wiring. The HighContrast.xaml
+        // dict ships fully populated (every semantic token re-pointed onto
+        // SystemColors.* keys) but was never merged into the app resource
+        // surface, so flipping HC at the OS level did nothing. Merge it
+        // LAST so its keys win over DesignTokens + BrandAccent, and gate
+        // the merge on SystemParameters.HighContrast so the dict only
+        // participates when HC is actually active.
+        //
+        // Subscribe to SystemParameters.StaticPropertyChanged: that's the
+        // canonical signal for SystemParameters.HighContrast flipping
+        // (more targeted than SystemEvents.UserPreferenceChanged, which
+        // fires for any Color-category change). The event arrives on a
+        // worker thread, so marshal back to the dispatcher before touching
+        // Application.Current.Resources.
+        RefreshHighContrastMerge();
+        SystemParameters.StaticPropertyChanged += (_, _) =>
+            _ = Dispatcher.BeginInvoke(new Action(RefreshHighContrastMerge), DispatcherPriority.ApplicationIdle);
+
         base.OnStartup(e);
 
         // Phase 6.3 silent-launch is handled inside MainWindow's
@@ -134,6 +154,19 @@ public partial class App : Application
     /// </summary>
     private void ApplyDirectLevelOverrides()
     {
+        // Phase 6.5 — short-circuit under Windows High Contrast. Every
+        // value below is a brand-aligned override (violet accent, opaque
+        // brand cards, custom NavigationView selection chrome). Pushing
+        // them at direct level would shadow both Wpf.Ui's own HC handling
+        // AND the HighContrast.xaml dict (which is merged last but only
+        // applies at the MergedDictionaries level, not direct). In HC,
+        // the OS palette is the contract — let SystemColors and Wpf.Ui's
+        // HC chrome paint without brand interference.
+        if (SystemParameters.HighContrast)
+        {
+            return;
+        }
+
         try
         {
             var isDark = ApplicationThemeManager.GetAppTheme() == ApplicationTheme.Dark;
@@ -263,6 +296,49 @@ public partial class App : Application
         catch { }
         _singleInstance = null;
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Phase 6.5 — adds or removes <c>HighContrast.xaml</c> from the
+    /// app's merged dictionaries to match
+    /// <see cref="SystemParameters.HighContrast"/>. Merges the dict as
+    /// the LAST entry so its tokens win over DesignTokens + BrandAccent
+    /// + NavigationViewBrand. Idempotent: a no-op when the current merge
+    /// state already matches.
+    /// </summary>
+    /// <remarks>
+    /// Also re-invokes <see cref="ApplyDirectLevelOverrides"/> on the HC
+    /// transition. The direct-level overrides early-return under HC, so
+    /// when the user FLIPS HC OFF mid-session we need to re-stamp the
+    /// brand values that the early-return skipped during the HC stretch.
+    /// </remarks>
+    private void RefreshHighContrastMerge()
+    {
+        var highContrast = SystemParameters.HighContrast;
+        ResourceDictionary? existing = null;
+        foreach (var dict in Resources.MergedDictionaries)
+        {
+            if (dict.Source?.OriginalString.Contains("HighContrast.xaml", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                existing = dict;
+                break;
+            }
+        }
+
+        if (highContrast && existing is null)
+        {
+            // Merge LAST so HC keys win over DesignTokens + BrandAccent.
+            Resources.MergedDictionaries.Add(new ResourceDictionary { Source = HighContrastUri });
+        }
+        else if (!highContrast && existing is not null)
+        {
+            Resources.MergedDictionaries.Remove(existing);
+        }
+
+        // Re-stamp the brand direct-level overrides on HC-off transitions.
+        // Queued at ApplicationIdle so any Wpf.Ui handlers that fire in
+        // response to the SystemParameters change run first.
+        _ = Dispatcher.BeginInvoke(new Action(ApplyDirectLevelOverrides), DispatcherPriority.ApplicationIdle);
     }
 
     private void SwapBrandAccentDictionary()

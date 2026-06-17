@@ -177,18 +177,22 @@
           status.caution.text is the AA-safe text colour on a caution tint
           background. The plain status.caution is bright amber (for dots /
           graphics / icon fills); using it as text on the soft caution
-          background fails AA at small body sizes in light theme. The brand
-          value for caution.text in light is #8A5A00 (~5.2:1 on light tint);
-          in dark, the bright amber already passes against the dark tint and
-          can be reused, but we encode them separately so the migration to
-          theme-aware brushes is mechanical. v1 carries the light value as a
-          constant; HighContrast.xaml overrides to SystemColors.ControlTextBrush. -->
+          background fails AA at small body sizes in light theme. Brand
+          values: light = #8A5A00 (~5.2:1 on the light tint); dark =
+          #F1AD34 (the bright amber, which already clears AA on the dark
+          tint per docs/design/colors_and_type.css line 459).
+
+          The key is theme-aware — owned by BrandAccent.{Light,Dark}.xaml,
+          which is merged AFTER this dict and swapped on every OS Light/Dark
+          flip. DesignTokens.xaml does NOT carry a fallback value: the brand
+          dict is always merged at startup (App.xaml line 32), so the key
+          is reliably present. HighContrast.xaml overrides this key to
+          SystemColors.WindowTextBrush per its own collapse policy. -->
 
     <SolidColorBrush x:Key="status.success"            Color="{DynamicResource SystemFillColorSuccess}" />
     <SolidColorBrush x:Key="status.success.background" Color="{DynamicResource SystemFillColorSuccessBackground}" />
     <SolidColorBrush x:Key="status.caution"            Color="{DynamicResource SystemFillColorCaution}" />
     <SolidColorBrush x:Key="status.caution.background" Color="{DynamicResource SystemFillColorCautionBackground}" />
-    <SolidColorBrush x:Key="status.caution.text"       Color="#8A5A00" />
     <SolidColorBrush x:Key="status.critical"           Color="{DynamicResource SystemFillColorCritical}" />
     <SolidColorBrush x:Key="status.critical.background" Color="{DynamicResource SystemFillColorCriticalBackground}" />
     <SolidColorBrush x:Key="status.neutral"            Color="{DynamicResource SystemFillColorNeutral}" />

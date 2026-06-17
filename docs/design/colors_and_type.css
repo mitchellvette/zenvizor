@@ -110,8 +110,21 @@
         avoid the dark drop dominating busy cards. Track here until decided.)
      ── Status text ──
      status.caution.text    #8A5A00 (light)    #8A5A00 (light)       synced
-                            mirror caution     mirror caution
-                            (dark)             (dark)
+                            #F1AD34 (dark)     #F1AD34 (dark)
+                            (theme-aware via   (--status-caution-text
+                             BrandAccent.      per-theme block)
+                             {Light,Dark}.xaml)
+                            Phase 6.5 P1: was hardcoded to #8A5A00 in both
+                            themes in DesignTokens.xaml — caused amber-banner
+                            body text to fail AA on dark caution tint.
+     status.critical.text   #D62B62 (light)    #D62B62 (light)       synced
+                            #FBA3B7 (dark)     #FBA3B7 (dark)
+                            (theme-aware via   (--status-critical-text
+                             BrandAccent.      per-theme block)
+                             {Light,Dark}.xaml)
+                            Phase 6.5 add: pre-6.5 critical banner TEXT
+                            painted status.critical (same hue as the
+                            tinted background) in dark, washy.
 
    Identical in both (no delta to track): space.4/8/12/16/20/24/32/40/48/64,
    font.size.body (14), font.size.caption (12), radius.xs (4), radius.pill,
@@ -369,6 +382,7 @@
   --status-caution:    #ec9a0b;  --status-caution-bg: rgba(236,154,11,0.16);
   --status-caution-text: #8a5a00;  /* caution.text — darker amber for TEXT on the caution tint (~5.2:1 AA); --status-caution stays bright for dots/graphics */
   --status-critical:   #d62b62;  --status-critical-bg: rgba(214,43,98,0.12);
+  --status-critical-text: #d62b62;  /* critical.text — light theme reuses the brand magenta; the dark pale-pink tint has plenty of luminance contrast against the dark magenta */
   --status-neutral:    #4d5fd0;  --status-neutral-bg: rgba(77,95,208,0.13);
   /* Service-status dot (status.connected / .warming / .disconnected) */
   --status-connected:    #06b6a3;
@@ -458,6 +472,7 @@
   --status-caution:    #f1ad34;  --status-caution-bg: rgba(241,173,52,0.18);
   --status-caution-text: var(--status-caution);  /* bright amber already clears AA on the dark tint */
   --status-critical:   #f5547f;  --status-critical-bg: rgba(245,84,127,0.18);
+  --status-critical-text: #fba3b7;  /* critical.text — light coral pink so TEXT separates cleanly from the same-hue alpha-tinted background. status-critical stays for dots / graphics / pill fills */
   --status-neutral:    #7e8ef7;  --status-neutral-bg: rgba(126,142,247,0.16);
   --status-connected:    #2bd1bd;
   --status-warming:      #f1ad34;
@@ -514,7 +529,7 @@
     --accent-subtle:rgba(130,84,230,0.18); --accent-text:var(--violet-300); --accent-glow:rgba(130,84,230,0.45);
     --status-success:#2bd1bd; --status-success-bg:rgba(43,209,189,0.16);
     --status-caution:#f1ad34; --status-caution-bg:rgba(241,173,52,0.18); --status-caution-text:#f1ad34;
-    --status-critical:#f5547f; --status-critical-bg:rgba(245,84,127,0.18);
+    --status-critical:#f5547f; --status-critical-bg:rgba(245,84,127,0.18); --status-critical-text:#fba3b7;
     --status-neutral:#7e8ef7; --status-neutral-bg:rgba(126,142,247,0.16);
     --status-connected:#2bd1bd; --status-warming:#f1ad34; --status-warming-bg:rgba(241,173,52,0.18); --status-disconnected:#f5547f;
     --chart-up-series:var(--violet-400); --chart-down-series:var(--teal-400);
@@ -575,7 +590,7 @@
   /* semantic (caution/critical/neutral <- warning/danger/info) */
   --success:   var(--status-success);   --success-bg: var(--status-success-bg);
   --warning:   var(--status-caution);   --warning-bg: var(--status-caution-bg);   --warning-text: var(--status-caution-text);
-  --danger:    var(--status-critical);  --danger-bg:  var(--status-critical-bg);
+  --danger:    var(--status-critical);  --danger-bg:  var(--status-critical-bg);  --danger-text:  var(--status-critical-text);
   --info:      var(--status-neutral);   --info-bg:    var(--status-neutral-bg);
   /* data series */
   --series-up:   var(--chart-up-series);

@@ -172,7 +172,7 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Severity}" Value="Critical">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Severity}" Value="Warning">
                     <Setter Property="Foreground" Value="{DynamicResource status.caution}" />
@@ -211,7 +211,7 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Severity}" Value="Critical">
-                    <Setter Property="Foreground" Value="{DynamicResource status.critical}" />
+                    <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Severity}" Value="Warning">
                     <Setter Property="Foreground" Value="{DynamicResource status.caution.text}" />
