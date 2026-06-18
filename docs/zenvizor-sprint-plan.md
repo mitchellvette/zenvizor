@@ -333,7 +333,7 @@ deep-link wiring.
 **Scope**
 
 - **Seam #2:** alert pipeline + `Alert` entity + `GetAlerts`/`AcknowledgeAlert` + `AlertRaised` push + Alerts feed UI + optional toast.
-- **First real alert:** *unsigned binary from a user-writable path making network connections* (purely local, no new monitor, no network).
+- **First real alert:** *unsigned binary from a user-writable path making network connections* (purely local, no new monitor, no network). The remaining five `AlertType` enum values ship as vocabulary placeholders in Phase 6.0; **pre-MVP backlog item P4 expands this to all six producers wired** — that gate must close before the installer freeze.
 - Settings: **autostart toggle** (service start mode incl. "off" for fast-boot users), retention windows, purge history, flush/bucket intervals, toast toggle, theme.
 - Tray polish; close-to-tray/Exit finalized.
 - **WiX .msi:** installs/registers the service with the chosen start mode, installs the UI, sets DB ACLs and `%ProgramData%\ZenVizor\` layout; clean uninstall; `wix build` CLI-drivable in CI.
@@ -467,6 +467,94 @@ change plus a UI column tweak. If it doesn't, we need a different
 passive source (e.g., reading from another locally-running passive
 DNS observer like Pi-hole-style logs, if any) or we accept raw
 addresses for v1.
+
+### P4 — Wire the remaining five alert producers
+
+**Discovered:** Phase 6.6 manual validation, 2026-06-17 — `zvctl alerts
+catalog` surfaced that 5 of 6 enum values were vocabulary placeholders
+with no `IAlertRule` implementation behind them. The original Phase 6
+scope locked the MVP gate to "**one** real alert wired"
+(`UnsignedFromUserPath`); on review, MVP should ship the full catalog,
+not a single producer plus five labels for post-MVP wiring.
+
+**The problem:** The `AlertType` enum, the `IAlertRule` /
+`AlertProducer` plumbing, the persisted `alerts` schema, the UI feed,
+the why-copy lookup, and the catalog vocabulary all already cover six
+types. Only one — `UnsignedFromUserPath` — has a producer registered
+with the host service. The other five (`InvalidSignature`,
+`FirstRunWanTalker`, `UnusualDailyVolume`, `LargeDownload`,
+`OutboundHeavy`) never raise. The architecture seam is the entire
+point — five empty slots cost almost nothing because the producer
+iterates `IEnumerable<IAlertRule>` and the IPC / UI surfaces are
+type-agnostic; the cost is just writing each rule's evaluation
+predicate + cooldown + detail-render against the existing
+`NewSessionContext` / rollup feed.
+
+**Per-type implementation notes:**
+
+1. **`InvalidSignature`** — Critical, `SourceMonitor.Capture`. Mirror
+   of `UnsignedFromUserPathRule` but predicate fires on
+   `signature_status = Invalid`, not `Unsigned + user-writable`.
+   Entity = App. 24 h cooldown per rule. Reuses the same
+   `NewSessionContext` and detail-render scaffolding.
+2. **`FirstRunWanTalker`** — Info, `SourceMonitor.Capture`. Predicate:
+   `app.first_seen_unix_ms` within last N seconds (proposed 60 s)
+   AND a WAN-class session opened. Entity = App. Cooldown = forever
+   per app (one-shot per first-seen). Needs `first_seen_unix_ms`
+   plumbed onto `NewSessionContext` (currently the producer has
+   `IsUserWritablePath` + `SignatureStatus` + `WanConnection` but no
+   first-seen anchor — small additive change to the context shape).
+3. **`UnusualDailyVolume`** — Warning, `SourceMonitor.Rollup`. Runs on
+   the daily-rollup tick, not per-session. Predicate: app's
+   day-bucket bytes ≥ median(last 14 days) + k·MAD(last 14 days)
+   with k tunable (proposed k=4). Entity = App. One raise per app per
+   day. Needs a `IRollupAlertSink` parallel to the existing per-event
+   sink so `Rollup`-source rules get their own evaluation hook on
+   day-roll. Storage repo already carries the data needed
+   (`daily_app_traffic` rows).
+4. **`LargeDownload`** — Info, `SourceMonitor.Capture`. Predicate: a
+   single connection's accumulated `bytes_down` crosses a threshold
+   (proposed 50 MB) within a sliding window (proposed 60 s). Entity =
+   Session. Cooldown = 24 h per (app, remote_class) so chronic
+   high-download apps (cloud sync, Steam) don't spam. Needs a
+   per-connection bytes accumulator the producer can subscribe to
+   (the aggregator already keeps `ConnectionAcc`; the rule reads
+   from it on each flush).
+5. **`OutboundHeavy`** — Warning, `SourceMonitor.Capture`. Predicate:
+   over the last N minutes, an app's outbound bytes ≥ R × inbound
+   AND outbound ≥ floor (proposed R=3, N=15, floor=10 MB). Entity =
+   App. 24 h cooldown. Reads from the same aggregator state
+   `LargeDownload` does; predicate fires on flush rather than on
+   session-open.
+
+**Shared architecture work:**
+
+- Extend `NewSessionContext` (or add a parallel `RollupContext` for
+  Rollup-source rules) so first-seen and rollup row data flow in.
+- Add a producer entry-point for Rollup rules — `OnDailyRollupTick`
+  parallel to `OnSessionConnectedWan` — that iterates the
+  `IRollupAlertRule` set after the rollup repo commits.
+- Each new rule lands a unit test in `ZenVizor.Core.Tests` per the
+  `UnsignedFromUserPathRule` test precedent.
+- Update the `zvctl alerts catalog` Producer column markers when
+  each rule lands. (`Program.cs:GetCatalogEntry` is the single
+  source for the wired flag — five `false` → `true` flips total.)
+
+**Why before MVP:** "One alert wired, five vocabulary placeholders"
+is a soft posture for a first release of an alerting product —
+demoware-shaped rather than usable. The seam is already paid for;
+the rules are individually small (each ~50-100 LOC + a test); and
+without them the user-visible value of the Alerts surface is one
+alert type's worth of signal. Ship the catalog the catalog page
+advertises.
+
+**Estimated effort:** Medium overall — small per rule, plus the
+Rollup hook plumbing once. Per-rule budgets: `InvalidSignature`
+~2 h (clone of Unsigned), `FirstRunWanTalker` ~3 h (context shape
+change), `LargeDownload` + `OutboundHeavy` ~4 h each (aggregator
+accumulator integration), `UnusualDailyVolume` ~6 h (rollup hook +
+median+MAD test surface). Call it ~3 days end-to-end including
+tests + catalog-page wiring updates.
 
 ---
 

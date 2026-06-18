@@ -44,7 +44,7 @@ public sealed class MigratorTests : IDisposable
 
         var applied = migrator.Migrate(_dbPath);
 
-        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5, 6, 7 });
+        applied.Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5, 6, 7, 8 });
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class MigratorTests : IDisposable
             "SELECT version, name FROM schema_migrations ORDER BY version;",
             r => (Version: r.GetInt32(0), Name: r.GetString(1)));
 
-        rows.Should().HaveCount(7);
+        rows.Should().HaveCount(8);
         rows[0].Version.Should().Be(1);
         rows[0].Name.Should().Be("initial");
         rows[1].Version.Should().Be(2);
@@ -96,6 +96,8 @@ public sealed class MigratorTests : IDisposable
         rows[5].Name.Should().Be("phase6_settings");
         rows[6].Version.Should().Be(7);
         rows[6].Name.Should().Be("phase6_start_minimized");
+        rows[7].Version.Should().Be(8);
+        rows[7].Name.Should().Be("phase6_7_alert_thresholds");
     }
 
     [Fact]

@@ -91,10 +91,29 @@ internal sealed class ZenVizorHostedService : IHostedService
         //      AlertRaised event that the broadcaster wires below. ----
         var alertsRepo  = new AlertsRepository(connections);
         var alertSink   = new AlertsRepositorySink(alertsRepo);
-        var alertRules  = new IAlertRule[] { new UnsignedFromUserPathRule() };
+
+        // Phase 6.7 P4 — first-seen lookup cache. apps.first_seen is
+        // write-once per row, so a per-app ConcurrentDictionary is
+        // sufficient — no expiry, no refresh. Misses fall through to a
+        // single SELECT against the repo; the result is cached for the
+        // lifetime of the service process. Consumers: FirstRunWanTalkerRule.
+        var appFirstSeenRepo = new AppFirstSeenRepository(connections);
+        var firstSeenCache = new System.Collections.Concurrent.ConcurrentDictionary<int, long>();
+        long FirstSeenLookup(int appId) =>
+            firstSeenCache.GetOrAdd(appId, id => appFirstSeenRepo.GetFirstSeenUnixMs(id));
+
+        // Phase 6.7 P4 — register Rules 1 + 2 from the alert catalog.
+        // Rules 3-5 land in subsequent slices (S2 + S3 work).
+        var alertRules  = new IAlertRule[]
+        {
+            new UnsignedFromUserPathRule(),
+            new InvalidSignatureRule(),
+            new FirstRunWanTalkerRule(),
+        };
         var alertProducer = new AlertProducer(
             alertRules,
             alertSink,
+            appFirstSeenLookup: FirstSeenLookup,
             logger: _loggerFactory.CreateLogger<AlertProducer>());
 
         // ProcessLifecycleResolver is the Phase-3 fix for short-lived process
@@ -170,6 +189,7 @@ internal sealed class ZenVizorHostedService : IHostedService
         var queryRepo       = new AppHistoryQueryRepository(connections);
         var dailyReportRepo = new DailyReportRepository(connections);
         var settingsRepo    = new SettingsRepository(connections);
+        var alertSettingsLookup = new CachedAlertSettingsLookup(settingsRepo);
         var retentionForWipe = new RetentionRepository(
             connections, _loggerFactory.CreateLogger<RetentionRepository>());
         var startModeManager = new ServiceStartModeManager(
@@ -198,7 +218,7 @@ internal sealed class ZenVizorHostedService : IHostedService
             alertDismisser:      id       => alertsRepo.Dismiss(
                 id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             settingsProvider:    ()       => BuildSettingsSnapshot(settingsRepo, startModeManager),
-            settingsApplier:     update   => ApplySettingsUpdate(settingsRepo, startModeManager, update),
+            settingsApplier:     update   => ApplySettingsUpdate(settingsRepo, startModeManager, update, alertSettingsLookup),
             historyWiper:        ()       => WipeAndLog(retentionForWipe, alertProducer, aggregator, sessionTracker));
 
         // The alert broadcaster is the fan-out point for server-pushed
@@ -319,7 +339,10 @@ internal sealed class ZenVizorHostedService : IHostedService
             RetentionHourlyDays:         settings.GetInt(SettingsRepository.Keys.HourlyDays,          90),
             RetentionDailyDays:          settings.GetInt(SettingsRepository.Keys.DailyDays,           365),
             RetentionAlertsDaysAfterAck: settings.GetInt(SettingsRepository.Keys.AlertsDaysAfterAck,  90),
-            StartMinimized:              settings.GetBool(SettingsRepository.Keys.StartMinimized,    false));
+            StartMinimized:              settings.GetBool(SettingsRepository.Keys.StartMinimized,    false),
+            AlertLargeDownloadMb:        settings.GetInt(SettingsRepository.Keys.AlertLargeDownloadMb,            50),
+            AlertOutboundHeavyFloorMb:   settings.GetInt(SettingsRepository.Keys.AlertOutboundHeavyFloorMb,       10),
+            AlertUnusualDailyVolumeKTimesTen: settings.GetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, 25));
     }
 
     /// <summary>
@@ -331,7 +354,8 @@ internal sealed class ZenVizorHostedService : IHostedService
     private static void ApplySettingsUpdate(
         SettingsRepository settings,
         ServiceStartModeManager startModeManager,
-        SettingsUpdate update)
+        SettingsUpdate update,
+        CachedAlertSettingsLookup alertSettingsLookup)
     {
         if (update.AutostartMode is { } mode)
         {
@@ -352,6 +376,24 @@ internal sealed class ZenVizorHostedService : IHostedService
         if (update.RetentionDailyDays           is { } d) settings.SetInt(SettingsRepository.Keys.DailyDays,          d);
         if (update.RetentionAlertsDaysAfterAck  is { } e) settings.SetInt(SettingsRepository.Keys.AlertsDaysAfterAck, e);
         if (update.StartMinimized               is { } m) settings.SetBool(SettingsRepository.Keys.StartMinimized,    m);
+
+        // Phase 6.7 — alert producer thresholds. Range validation (1-1024 MB
+        // for byte thresholds, 10-100 for k×10) is light here; the IPC
+        // handler validation block above already gates the wire-level shape
+        // before we land in this routine. Producer reads via
+        // IAlertSettingsLookup on every flush so updates take effect on the
+        // next flush tick without a service restart.
+        var alertWritten = false;
+        if (update.AlertLargeDownloadMb            is { } ldmb) { settings.SetInt(SettingsRepository.Keys.AlertLargeDownloadMb,            ldmb); alertWritten = true; }
+        if (update.AlertOutboundHeavyFloorMb       is { } ohmb) { settings.SetInt(SettingsRepository.Keys.AlertOutboundHeavyFloorMb,       ohmb); alertWritten = true; }
+        if (update.AlertUnusualDailyVolumeKTimesTen is { } uvk) { settings.SetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, uvk); alertWritten = true; }
+        if (alertWritten)
+        {
+            // Producer rules read via alertSettingsLookup on every flush;
+            // re-cache the new values atomically so the next flush picks
+            // them up without a service restart.
+            alertSettingsLookup.Refresh();
+        }
     }
 
     /// <summary>

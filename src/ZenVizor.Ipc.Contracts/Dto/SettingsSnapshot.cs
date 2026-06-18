@@ -45,6 +45,25 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// <c>%LocalAppData%\ZenVizor\ui.start-minimized</c> so the boot-time launch
 /// can read it synchronously before any IPC.
 /// </param>
+/// <param name="AlertLargeDownloadMb">
+/// LargeDownload rule threshold (Phase 6.7). Single-connection bytes-down
+/// total within a 60 s sliding window that qualifies as "large". Default
+/// 50 MB; range 1-1024.
+/// </param>
+/// <param name="AlertOutboundHeavyFloorMb">
+/// OutboundHeavy rule minimum outbound bytes over the 15-minute rolling
+/// window for an app to qualify (Phase 6.7). Default 10 MB; range 1-1024.
+/// The 3:1 outbound/inbound ratio is locked separately.
+/// </param>
+/// <param name="AlertUnusualDailyVolumeKTimesTen">
+/// UnusualDailyVolume sensitivity multiplier × 10 (so the wire format
+/// stays integer, Phase 6.7). Default 25 (= k of 2.5); range 10-100
+/// (k of 1.0 to 10.0). Formula: alert when day total ≥ k × median(last
+/// 14 days) AND day delta over median ≥ 50 MB hard-coded floor.
+/// Documented divergence from the original brief: this is k × median,
+/// not median + k × MAD — chose intuitive slider semantics over robust
+/// statistics. Revisit if low-variance apps generate noise.
+/// </param>
 public sealed record SettingsSnapshot(
     ServiceStartMode AutostartMode,
     bool ToastOnAlert,
@@ -56,4 +75,7 @@ public sealed record SettingsSnapshot(
     int RetentionHourlyDays,
     int RetentionDailyDays,
     int RetentionAlertsDaysAfterAck,
-    bool StartMinimized);
+    bool StartMinimized,
+    int AlertLargeDownloadMb,
+    int AlertOutboundHeavyFloorMb,
+    int AlertUnusualDailyVolumeKTimesTen);

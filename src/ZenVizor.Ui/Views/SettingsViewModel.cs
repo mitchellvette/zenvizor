@@ -80,6 +80,36 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetField(ref _startMinimized, value);
     }
 
+    // ── Alert thresholds (Phase 6.7) ────────────────────────────────────
+
+    private int _alertLargeDownloadMb = 50;
+    /// <summary>LargeDownload rule MB threshold. Range 1-1024.</summary>
+    public int AlertLargeDownloadMb
+    {
+        get => _alertLargeDownloadMb;
+        set => SetField(ref _alertLargeDownloadMb, value);
+    }
+
+    private int _alertOutboundHeavyFloorMb = 10;
+    /// <summary>OutboundHeavy minimum outbound MB. Range 1-1024.</summary>
+    public int AlertOutboundHeavyFloorMb
+    {
+        get => _alertOutboundHeavyFloorMb;
+        set => SetField(ref _alertOutboundHeavyFloorMb, value);
+    }
+
+    private double _alertUnusualDailyVolumeK = 2.5;
+    /// <summary>
+    /// UnusualDailyVolume sensitivity multiplier. Wire format on the IPC
+    /// is integer × 10 (so 2.5 ↔ 25); the VM exposes the decimal form to
+    /// the UI for natural display + edit. Range 1.0-10.0.
+    /// </summary>
+    public double AlertUnusualDailyVolumeK
+    {
+        get => _alertUnusualDailyVolumeK;
+        set => SetField(ref _alertUnusualDailyVolumeK, value);
+    }
+
     // ── Capture (read-only diagnostic) ──────────────────────────────────
 
     private int _flushIntervalMs = 5000;
@@ -261,6 +291,10 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
         HydrateField(HourlyRollups,      s.RetentionHourlyDays,         RetentionUnit.Days);
         HydrateField(DailyRollups,       s.RetentionDailyDays,          RetentionUnit.Years);
         HydrateField(AlertsAfterDismiss, s.RetentionAlertsDaysAfterAck, RetentionUnit.Days);
+
+        AlertLargeDownloadMb       = s.AlertLargeDownloadMb;
+        AlertOutboundHeavyFloorMb  = s.AlertOutboundHeavyFloorMb;
+        AlertUnusualDailyVolumeK   = s.AlertUnusualDailyVolumeKTimesTen / 10.0;
     }
 
     private static void HydrateField(RetentionField field, int days, RetentionUnit defaultUnit)

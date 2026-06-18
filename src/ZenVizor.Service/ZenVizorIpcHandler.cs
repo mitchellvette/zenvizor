@@ -144,7 +144,10 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         RetentionHourlyDays: 90,
         RetentionDailyDays: 365,
         RetentionAlertsDaysAfterAck: 90,
-        StartMinimized: false);
+        StartMinimized: false,
+        AlertLargeDownloadMb: 50,
+        AlertOutboundHeavyFloorMb: 10,
+        AlertUnusualDailyVolumeKTimesTen: 25);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {
@@ -367,6 +370,14 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         ValidateRetentionDays(nameof(SettingsUpdate.RetentionHourlyDays),          update.RetentionHourlyDays);
         ValidateRetentionDays(nameof(SettingsUpdate.RetentionDailyDays),           update.RetentionDailyDays);
         ValidateRetentionDays(nameof(SettingsUpdate.RetentionAlertsDaysAfterAck),  update.RetentionAlertsDaysAfterAck);
+
+        // Phase 6.7 — alert threshold ranges. Megabyte values are clamped at
+        // 1-1024 (1 MB to 1 GB) so the UI NumberBox can stay narrow; k×10
+        // at 10-100 maps to k of 1.0-10.0.
+        ValidateMbRange(nameof(SettingsUpdate.AlertLargeDownloadMb),       update.AlertLargeDownloadMb);
+        ValidateMbRange(nameof(SettingsUpdate.AlertOutboundHeavyFloorMb),  update.AlertOutboundHeavyFloorMb);
+        ValidateKx10Range(nameof(SettingsUpdate.AlertUnusualDailyVolumeKTimesTen),
+                          update.AlertUnusualDailyVolumeKTimesTen);
     }
 
     private static void ValidateRetentionDays(string field, int? days)
@@ -380,6 +391,26 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         {
             throw InvalidArgument(
                 $"{field} must be between 1 and 3650 days (received {days}).");
+        }
+    }
+
+    private static void ValidateMbRange(string field, int? mb)
+    {
+        if (mb is null) return;
+        if (mb < 1 || mb > 1024)
+        {
+            throw InvalidArgument(
+                $"{field} must be between 1 and 1024 MB (received {mb}).");
+        }
+    }
+
+    private static void ValidateKx10Range(string field, int? kx10)
+    {
+        if (kx10 is null) return;
+        if (kx10 < 10 || kx10 > 100)
+        {
+            throw InvalidArgument(
+                $"{field} must be between 10 and 100 (k = 1.0 to 10.0; received {kx10}).");
         }
     }
 

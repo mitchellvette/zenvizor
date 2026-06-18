@@ -33,7 +33,10 @@ public sealed class SettingsContractTests
         RetentionHourlyDays:         90,
         RetentionDailyDays:          365,
         RetentionAlertsDaysAfterAck: 90,
-        StartMinimized:              false);
+        StartMinimized:              false,
+        AlertLargeDownloadMb:        50,
+        AlertOutboundHeavyFloorMb:   10,
+        AlertUnusualDailyVolumeKTimesTen: 25);
 
     [Fact]
     public async Task GetSettings_AfterNegotiation_StampsSchemaVersionAndReturnsProviderPayload()

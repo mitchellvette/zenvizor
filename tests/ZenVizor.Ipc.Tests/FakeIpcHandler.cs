@@ -147,7 +147,10 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         RetentionHourlyDays:         90,
         RetentionDailyDays:          365,
         RetentionAlertsDaysAfterAck: 90,
-        StartMinimized:              false);
+        StartMinimized:              false,
+        AlertLargeDownloadMb:        50,
+        AlertOutboundHeavyFloorMb:   10,
+        AlertUnusualDailyVolumeKTimesTen: 25);
 
     public List<SettingsUpdate> AppliedUpdates { get; } = new();
 

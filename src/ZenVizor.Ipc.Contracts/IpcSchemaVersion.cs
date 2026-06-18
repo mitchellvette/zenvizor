@@ -49,11 +49,16 @@ public static class IpcSchemaVersion
     /// payloads.
     /// </summary>
     /// <remarks>
+    /// v3 (Phase 6.7): three alert-threshold fields added as required
+    /// positional fields on <see cref="Dto.SettingsSnapshot"/> —
+    /// <c>AlertLargeDownloadMb</c>, <c>AlertOutboundHeavyFloorMb</c>,
+    /// <c>AlertUnusualDailyVolumeKTimesTen</c>. A v2 payload won't
+    /// deserialize as v3; floor check is load-bearing.
     /// v2 (Phase 6.3): <c>StartMinimized</c> added as a required positional
     /// field on <see cref="Dto.SettingsSnapshot"/>. A v1 payload won't
     /// deserialize as v2, so the floor check on the client side is
     /// load-bearing.
     /// v1 (Phase 6.2): initial.
     /// </remarks>
-    public const int Settings = 2;
+    public const int Settings = 3;
 }

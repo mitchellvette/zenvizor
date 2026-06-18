@@ -165,6 +165,87 @@ reportCommand.SetHandler(async ctx =>
 });
 root.AddCommand(reportCommand);
 
+// ---- Phase 6.6 alerts subcommands ----
+//
+// Nested group: `zvctl alerts <list|dismiss|catalog>`. The Alerts feed
+// is paged by neither time window nor rank (per the discovery-over-
+// ranking principle), so `list` prints every returned row and surfaces
+// the server's HasMore signal verbatim rather than capping with --top.
+
+var alertsCommand = new Command("alerts", "Read and dismiss alerts; print the catalog of types.");
+
+var alertsStateOption = new Option<string>(
+    aliases: new[] { "--state", "-s" },
+    description: "Server filter: active | dismissed | all. Default: active.",
+    getDefaultValue: () => "active");
+var alertsSeverityOption = new Option<string?>(
+    aliases: new[] { "--severity" },
+    description: "Client-side filter on severity: critical | warning | info.",
+    getDefaultValue: () => null);
+var alertsTypeOption = new Option<string?>(
+    aliases: new[] { "--type", "-t" },
+    description: "Client-side filter on AlertType enum name (case-insensitive; see `zvctl alerts catalog`).",
+    getDefaultValue: () => null);
+var alertsMaxRowsOption = new Option<int>(
+    aliases: new[] { "--max-rows" },
+    description: "Server transport cap. Default 500 (matches AlertsFilter default). Increase if HasMore flagged.",
+    getDefaultValue: () => 500);
+var alertsListJsonOption = new Option<bool>(
+    aliases: new[] { "--json", "-j" },
+    description: "Emit raw IpcEnvelope<AlertsResult> JSON.");
+alertsMaxRowsOption.AddValidator(result =>
+{
+    if (result.GetValueOrDefault<int>() <= 0)
+    {
+        result.ErrorMessage = "--max-rows must be a positive integer.";
+    }
+});
+
+var alertsListCommand = new Command("list", "List alerts matching the filter (newest first).");
+alertsListCommand.AddOption(alertsStateOption);
+alertsListCommand.AddOption(alertsSeverityOption);
+alertsListCommand.AddOption(alertsTypeOption);
+alertsListCommand.AddOption(alertsMaxRowsOption);
+alertsListCommand.AddOption(alertsListJsonOption);
+alertsListCommand.SetHandler(async ctx =>
+{
+    var state = ctx.ParseResult.GetValueForOption(alertsStateOption)!;
+    var sev = ctx.ParseResult.GetValueForOption(alertsSeverityOption);
+    var typ = ctx.ParseResult.GetValueForOption(alertsTypeOption);
+    var max = ctx.ParseResult.GetValueForOption(alertsMaxRowsOption);
+    var j = ctx.ParseResult.GetValueForOption(alertsListJsonOption);
+    ctx.ExitCode = await RunAlertsListAsync(state, sev, typ, max, j);
+});
+alertsCommand.AddCommand(alertsListCommand);
+
+var alertIdArg = new Argument<long>(
+    "alertId",
+    "Numeric alert id (from `zvctl alerts list`).");
+
+var alertsDismissCommand = new Command("dismiss", "Mark an alert as dismissed. Idempotent — already-dismissed and unknown ids succeed silently on the wire; CLI echoes confirmation either way.");
+alertsDismissCommand.AddArgument(alertIdArg);
+alertsDismissCommand.SetHandler(async ctx =>
+{
+    var id = ctx.ParseResult.GetValueForArgument(alertIdArg);
+    ctx.ExitCode = await RunAlertsDismissAsync(id);
+});
+alertsCommand.AddCommand(alertsDismissCommand);
+
+var alertsCatalogJsonOption = new Option<bool>(
+    aliases: new[] { "--json", "-j" },
+    description: "Emit the catalog as JSON.");
+
+var alertsCatalogCommand = new Command("catalog", "Print the AlertType catalog: locked severity, source monitor, producer-wired status, one-line description.");
+alertsCatalogCommand.AddOption(alertsCatalogJsonOption);
+alertsCatalogCommand.SetHandler(ctx =>
+{
+    var j = ctx.ParseResult.GetValueForOption(alertsCatalogJsonOption);
+    ctx.ExitCode = RunAlertsCatalog(j);
+});
+alertsCommand.AddCommand(alertsCatalogCommand);
+
+root.AddCommand(alertsCommand);
+
 return await root.InvokeAsync(args);
 
 static async Task<int> RunPingAsync()
@@ -668,6 +749,206 @@ static string FormatDelta(double pct) =>
     pct >= 0
         ? "+" + pct.ToString("0.0", CultureInfo.InvariantCulture) + "%"
         : pct.ToString("0.0", CultureInfo.InvariantCulture) + "%";
+
+// ---- Phase 6.6 alerts handlers ----
+
+static AlertState ParseAlertState(string spec) =>
+    spec?.ToLowerInvariant() switch
+    {
+        "active"    or null or "" => AlertState.Active,
+        "dismissed"               => AlertState.Dismissed,
+        "all"                     => AlertState.All,
+        _ => throw new ArgumentException(
+            $"--state '{spec}': use active | dismissed | all."),
+    };
+
+static NotableSeverity? ParseSeverityFilter(string? spec)
+{
+    if (string.IsNullOrWhiteSpace(spec)) return null;
+    return spec.ToLowerInvariant() switch
+    {
+        "critical" => NotableSeverity.Critical,
+        "warning"  => NotableSeverity.Warning,
+        "info"     => NotableSeverity.Info,
+        _ => throw new ArgumentException(
+            $"--severity '{spec}': use critical | warning | info."),
+    };
+}
+
+static AlertType? ParseAlertTypeFilter(string? spec)
+{
+    if (string.IsNullOrWhiteSpace(spec)) return null;
+    // Case-insensitive exact match against the AlertType enum names. The
+    // brief deliberately ships no short aliases — users discover the names
+    // via `zvctl alerts catalog`, which prints them in the same form.
+    if (Enum.TryParse<AlertType>(spec, ignoreCase: true, out var t))
+    {
+        return t;
+    }
+    var allowed = string.Join(" | ", Enum.GetNames<AlertType>());
+    throw new ArgumentException(
+        $"--type '{spec}': not a known AlertType. Allowed: {allowed}.");
+}
+
+static async Task<int> RunAlertsListAsync(
+    string stateText, string? severityText, string? typeText, int maxRows, bool json)
+{
+    try
+    {
+        var state = ParseAlertState(stateText);
+        var severityFilter = ParseSeverityFilter(severityText);
+        var typeFilter = ParseAlertTypeFilter(typeText);
+        var filter = new AlertsFilter(state, MaxRows: maxRows);
+
+        await using var client = await ZenVizorPipeClient.ConnectAsync();
+        var envelope = await client.Proxy.GetAlertsAsync(filter);
+
+        if (json)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(envelope, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        var payload = envelope.UnwrapWithSchemaCheck(nameof(AlertsResult), IpcSchemaVersion.Alerts);
+        PrintAlertsList(payload, severityFilter, typeFilter);
+        return 0;
+    }
+    catch (Exception ex) { return ReportError(ex); }
+}
+
+static void PrintAlertsList(
+    AlertsResult payload, NotableSeverity? severityFilter, AlertType? typeFilter)
+{
+    IEnumerable<AlertDto> rows = payload.Alerts;
+    if (severityFilter is { } sev) rows = rows.Where(a => a.Severity == sev);
+    if (typeFilter is { } typ)     rows = rows.Where(a => a.Type == typ);
+    var list = rows.ToList();
+
+    if (list.Count == 0)
+    {
+        Console.WriteLine("(no alerts matched the filter)");
+        return;
+    }
+
+    const int idCol = 6, sevCol = 10, typeCol = 24, createdCol = 19, entityCol = 18;
+    Console.WriteLine(
+        $"{Pad("Id", idCol)} {Pad("Severity", sevCol)} {Pad("Type", typeCol)} " +
+        $"{Pad("Created", createdCol)} {Pad("Entity", entityCol)} Title");
+    Console.WriteLine(new string('-', idCol + sevCol + typeCol + createdCol + entityCol + 12));
+
+    foreach (var a in list)
+    {
+        var sevLabel = a.AcknowledgedAtUnixMs.HasValue
+            ? $"{a.Severity} (dismissed)"
+            : a.Severity.ToString();
+        var entityLabel = $"{a.EntityKind}:{a.EntityRef}";
+        Console.WriteLine(
+            $"{RPad(a.AlertId.ToString(CultureInfo.InvariantCulture), idCol)} " +
+            $"{Pad(sevLabel, sevCol)} {Pad(a.Type.ToString(), typeCol)} " +
+            $"{Pad(FormatTime(a.CreatedAtUnixMs), createdCol)} {Pad(entityLabel, entityCol)} {a.Title}");
+        if (!string.IsNullOrEmpty(a.Detail))
+        {
+            Console.WriteLine($"      {a.Detail}");
+        }
+    }
+
+    var activeCount = list.Count(a => !a.AcknowledgedAtUnixMs.HasValue);
+    var dismissedCount = list.Count - activeCount;
+    Console.WriteLine();
+    Console.WriteLine($"{list.Count} alerts ({activeCount} active, {dismissedCount} dismissed).");
+    if (payload.HasMore)
+    {
+        Console.WriteLine(
+            $"NOTE  server truncated at MaxRows={payload.Filter.MaxRows}. " +
+            "Pass --max-rows N to widen.");
+    }
+}
+
+static async Task<int> RunAlertsDismissAsync(long alertId)
+{
+    try
+    {
+        await using var client = await ZenVizorPipeClient.ConnectAsync();
+        await client.Proxy.DismissAlertAsync(alertId);
+        // DismissAlertAsync is idempotent server-side — already-dismissed
+        // or unknown ids succeed silently. CLI echoes confirmation either
+        // way so a script gets one consistent signal on exit 0.
+        Console.WriteLine($"Dismissed alert #{alertId}.");
+        return 0;
+    }
+    catch (Exception ex) { return ReportError(ex); }
+}
+
+/// <summary>
+/// Locked metadata for each <see cref="AlertType"/> — severity (catalog §1.4),
+/// source monitor, producer-wired flag, and the one-line description that
+/// already lives in <see cref="AlertType"/>'s XML doc summary. Centralized
+/// here so `zvctl alerts catalog` is the contract surface a scripting
+/// consumer reads instead of grepping the enum file.
+/// </summary>
+static (NotableSeverity Severity, SourceMonitor Source, bool ProducerWired, string Description) GetCatalogEntry(AlertType type) => type switch
+{
+    AlertType.UnsignedFromUserPath => (NotableSeverity.Critical, SourceMonitor.Capture, true,
+        "Unsigned binary from a user-writable folder making network connections."),
+    AlertType.InvalidSignature => (NotableSeverity.Critical, SourceMonitor.Capture, true,
+        "Signed binary whose signature does not verify."),
+    AlertType.FirstRunWanTalker => (NotableSeverity.Info, SourceMonitor.Capture, true,
+        "A newly-created app reached the network within seconds of first-seen."),
+    AlertType.UnusualDailyVolume => (NotableSeverity.Warning, SourceMonitor.Rollup, false,
+        "An app's daily bytes are robustly above its 14-day baseline (median + MAD)."),
+    AlertType.LargeDownload => (NotableSeverity.Info, SourceMonitor.Capture, false,
+        "A single connection pulled down a large download in a short window."),
+    AlertType.OutboundHeavy => (NotableSeverity.Warning, SourceMonitor.Capture, false,
+        "An app's outbound bytes dominate inbound by a configured ratio over the absolute floor."),
+    _ => (NotableSeverity.Info, SourceMonitor.Capture, false, "(unknown type)"),
+};
+
+static int RunAlertsCatalog(bool json)
+{
+    try
+    {
+        var types = Enum.GetValues<AlertType>();
+
+        if (json)
+        {
+            var rows = types.Select(t =>
+            {
+                var (sev, src, wired, desc) = GetCatalogEntry(t);
+                return new
+                {
+                    Type = t.ToString(),
+                    Severity = sev.ToString(),
+                    Source = src.ToString(),
+                    ProducerWired = wired,
+                    Description = desc,
+                };
+            });
+            Console.WriteLine(JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        const int typeCol = 24, sevCol = 10, srcCol = 10, wiredCol = 10;
+        Console.WriteLine(
+            $"{Pad("Type", typeCol)} {Pad("Severity", sevCol)} {Pad("Source", srcCol)} " +
+            $"{Pad("Producer", wiredCol)} Description");
+        Console.WriteLine(new string('-', typeCol + sevCol + srcCol + wiredCol + 30));
+        foreach (var t in types)
+        {
+            var (sev, src, wired, desc) = GetCatalogEntry(t);
+            var wiredLabel = wired ? "wired" : "(none)";
+            Console.WriteLine(
+                $"{Pad(t.ToString(), typeCol)} {Pad(sev.ToString(), sevCol)} {Pad(src.ToString(), srcCol)} " +
+                $"{Pad(wiredLabel, wiredCol)} {desc}");
+        }
+        Console.WriteLine();
+        Console.WriteLine(
+            $"{types.Length} alert types. " +
+            $"{types.Count(t => GetCatalogEntry(t).ProducerWired)} producer-wired in this build; " +
+            "the rest are vocabulary placeholders for post-MVP rules.");
+        return 0;
+    }
+    catch (Exception ex) { return ReportError(ex); }
+}
 
 static int ReportError(Exception ex)
 {

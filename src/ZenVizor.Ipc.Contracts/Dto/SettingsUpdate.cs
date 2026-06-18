@@ -20,4 +20,7 @@ public sealed record SettingsUpdate
     public int? RetentionDailyDays { get; init; }
     public int? RetentionAlertsDaysAfterAck { get; init; }
     public bool? StartMinimized { get; init; }
+    public int? AlertLargeDownloadMb { get; init; }
+    public int? AlertOutboundHeavyFloorMb { get; init; }
+    public int? AlertUnusualDailyVolumeKTimesTen { get; init; }
 }

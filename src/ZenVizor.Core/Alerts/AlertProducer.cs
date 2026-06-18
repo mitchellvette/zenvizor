@@ -47,6 +47,7 @@ public sealed class AlertProducer : IAlertEventSink
     private readonly IAlertRule[] _rules;
     private readonly IAlertSink _sink;
     private readonly Func<long> _now;
+    private readonly Func<int, long>? _appFirstSeenLookup;
     private readonly ILogger _logger;
 
     // Per-active-alert state. Keyed by the storage-string forms of (type, entity_ref)
@@ -58,12 +59,21 @@ public sealed class AlertProducer : IAlertEventSink
         IEnumerable<IAlertRule> rules,
         IAlertSink sink,
         Func<long>? nowProvider = null,
+        Func<int, long>? appFirstSeenLookup = null,
         ILogger<AlertProducer>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
         _rules = rules.ToArray();
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _now = nowProvider ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        // Optional. Null in test paths and in production builds where no
+        // rule reads it. Phase 6.7 FirstRunWanTalkerRule is the first
+        // consumer; host service wires it to a cached SQLite query over
+        // apps.first_seen. Zero on miss (race: app inserted after the
+        // lookup snapshot) keeps the rule predicate clean — a zero
+        // first-seen reads as "infinitely old" which is the correct
+        // negative for FirstRunWanTalker.
+        _appFirstSeenLookup = appFirstSeenLookup;
         _logger = (ILogger?)logger ?? NullLogger.Instance;
     }
 
@@ -84,6 +94,19 @@ public sealed class AlertProducer : IAlertEventSink
         try
         {
             ctx = NewSessionContext.From(evt);
+            // Enrich with the app's first-seen timestamp when the lookup is
+            // wired (Phase 6.7+). FirstRunWanTalkerRule reads this; rules
+            // that don't care simply leave it at the default zero. Lookup
+            // failures (zero return) are treated as "no first-seen known"
+            // — the rule's predicate correctly rejects.
+            if (_appFirstSeenLookup is not null)
+            {
+                var firstSeen = _appFirstSeenLookup(ctx.AppId);
+                if (firstSeen > 0)
+                {
+                    ctx = ctx with { AppFirstSeenUnixMs = firstSeen };
+                }
+            }
         }
         catch (Exception ex)
         {

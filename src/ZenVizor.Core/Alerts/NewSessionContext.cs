@@ -15,6 +15,17 @@ namespace ZenVizor.Core.Alerts;
 /// original timestamp from a prior raise, so the rendered string is stable
 /// across subsequent observations.
 /// </para>
+/// <para>
+/// <see cref="AppFirstSeenUnixMs"/> is the <c>apps.first_seen</c> timestamp
+/// for this app, resolved lazily by the producer's first-seen lookup. Used
+/// by <see cref="FirstRunWanTalkerRule"/> to gate on "this app was created
+/// within the last N seconds." Resolved at <see cref="From"/> time — the
+/// producer is responsible for plumbing the lookup; <see cref="From"/>
+/// itself doesn't know about it (would couple the context constructor to
+/// the producer's DI graph). Zero when the producer has no lookup wired
+/// (test path) or the lookup returns no row (race: app inserted after
+/// the lookup snapshot).
+/// </para>
 /// </summary>
 public sealed record NewSessionContext(
     int AppId,
@@ -24,7 +35,8 @@ public sealed record NewSessionContext(
     string SignatureStatus,
     bool IsUserWritablePath,
     PendingConnection WanConnection,
-    long FlushTimeUnixMs)
+    long FlushTimeUnixMs,
+    long AppFirstSeenUnixMs = 0)
 {
     public static NewSessionContext From(NewSessionEvent evt)
     {
