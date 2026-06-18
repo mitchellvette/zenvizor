@@ -377,9 +377,12 @@ Phase 6.8 is split for sequencing — see the rationale in the
 QA passes by deferring the acceptance gates until the polish items
 have landed). **Mandatory order:**
 
-> **Phase 6.8a → Pre-MVP polish (P2, P3) → Pre-v1 follow-ups (A1, A2) → Phase 6.8b.**
+> **Phase 6.8a → Pre-MVP polish (P2) → Pre-v1 follow-ups (A1, A2) → Phase 6.8b → Phase 7 → Phase 8.**
 
-P1 closed in 6.5. P4 closed in 6.7.
+P1 closed in 6.5. P4 closed in 6.7. P2/A1/A2 closed 2026-06-18.
+P3 + P5 were promoted into full phases (Phase 8 and Phase 7
+respectively, see below) when the single-fix sketches turned out to
+be known-incomplete in both cases.
 
 ### Phase 6.8a — installer scaffolding (NEXT)
 
@@ -411,38 +414,43 @@ install/uninstall QA to 6.8b.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] `wix build installer/ZenVizor.wixproj -c Release` succeeds locally
-      (no errors, MSI produced).
+- [x] `wix build installer/ZenVizor.wixproj -c Release` succeeds locally
+      (no errors, MSI produced). *(verified 2026-06-18, 759cb90)*
 - [ ] `msiexec /i ZenVizor.msi /qn /log install.log` succeeds in a
       Windows Sandbox or CI runner. Service `ZenVizor` registers; the
-      DB directory ACL matches the dev install.
+      DB directory ACL matches the dev install. *(deferred to 6.8b — manual gate)*
 - [ ] `msiexec /x ZenVizor.msi /qn /log uninstall.log` removes service,
-      removes binaries, leaves `%ProgramData%\ZenVizor\` intact.
+      removes binaries, leaves `%ProgramData%\ZenVizor\` intact. *(deferred to 6.8b)*
 - [ ] `msiexec /x ZenVizor.msi REMOVE_DATA=1 /qn` also wipes the data
-      directory.
-- [ ] CI workflow produces the MSI artifact on every push to `main`.
+      directory. *(deferred to 6.8b)*
+- [x] CI workflow produces the MSI artifact on every push to `main`.
+      *(landed 2026-06-18, 759cb90)*
 
 ### Pre-MVP polish items (between 6.8a and 6.8b)
 
-Land in any order — they're independent. See the existing P2 / P3 / P5
-sections below for full briefs.
-
 - **P2** — Alerts nav badge isn't seeded with active alerts on launch.
-- **P3** — Reverse DNS for endpoint columns on Per-App / drill-down.
-- **P5** — MSI does not install or verify the .NET 10 desktop runtime
-  prerequisite. High priority before MVP — installer succeeds on a host
-  without .NET 10, but the service will fail to start.
+  **(closed 2026-06-18 — c1473c7)**
+
+P3 (reverse DNS) and P5 (.NET runtime prereq) were promoted to their
+own phases — **Phase 8** and **Phase 7** respectively — when scoping
+the polish backlog (2026-06-18 chat). The single-fix sketches the
+briefs originally proposed were known-incomplete in both cases (the
+DNS cache-read produces partial coverage; the registry-based runtime
+check inspects a key that doesn't exist on machines with the runtime
+actually installed). Doing each piece once, architecturally correctly,
+beats shipping a partial fix in v1 and re-doing the work post-MVP.
 
 ### Pre-v1 architectural follow-ups (also between 6.8a and 6.8b)
 
 - **A1** — Universal page-reactive `ServiceReconnected` event for
   the four `HistoryQueryClient`-holding pages (Scope 2 of Phase 6.1a).
+  **(closed 2026-06-18 — 6a724aa)**
 - **A2** — Centralize query clients at app scope (Scope 3 of Phase
-  6.1a). Lands cleanly after A1.
+  6.1a). Lands cleanly after A1. **(closed 2026-06-18 — 26e9a8c)**
 
-A1 should land before A2 — A2's centralization removes per-page
-reconnect handlers that A1 introduces, so doing them out of order
-means writing and immediately deleting code.
+A1 landed before A2 — A2's centralization removed the per-page
+reconnect handlers A1 introduced, so the order avoided writing and
+immediately deleting code.
 
 ### Phase 6.8b — manual acceptance gates (after polish)
 
@@ -527,60 +535,17 @@ pre-A2 patch.
 
 ### P3 — Reverse DNS for endpoint columns on Per-App / drill-down
 
-**Discovered:** Phase 4 Per-App design discussion (predates this doc;
-captured retroactively 2026-06-16 because it was never written down at
-the time).
-
-**The problem:** Per-App drill-down rows display raw endpoint addresses
-in the connection table. IPv6 endpoints especially render as long
-hex-colon strings that are unreadable at a glance; even IPv4 entries
-would be more informative as the host name they resolve to
-(`52.96.45.16` vs `outlook.office.com`). Users currently have no easy
-way to tell what host an app was talking to without copy-paste into an
-external lookup.
-
-**The constraint:** Invariant #1 forbids ZenVizor from emitting any
-network traffic. Active reverse-DNS lookups (PTR queries) clearly
-violate that — they would be observable by our own capture engine and
-would fail the self-monitoring gate (Phase 6.8).
-
-**The candidate approach (needs re-verification):** A previous session
-asserted that resolution is achievable *passively* by reading from a
-service that already holds the cached mappings — most likely the
-Windows DNS Client (Dnscache) service's resolver cache, which other
-processes populate as they make their own lookups. Reading that cache
-would be a passive consumer pattern, not a query-originator, so it
-would not violate invariant #1. **This needs confirmation** before
-being committed to:
-1. Verify the API surface (likely `DnsGetCacheDataTable` /
-   `Get-DnsClientCache` semantics) and what it returns.
-2. Confirm reading it is genuinely passive (no implicit lookup
-   trigger on a miss).
-3. Confirm the cache is available to LocalSystem (the service) without
-   elevation prompts.
-4. Map the storage shape — the `connections` table already has a
-   reserved `resolved_host` column (per migration 001) that was
-   declared with exactly this future use in mind; the column is
-   currently always null. Wire the lookup into the attribution
-   pipeline so `connections.resolved_host` is populated when the
-   address is present in the cache.
-
-**Surface impact:** Per-App drill-down connection table renders
-`resolved_host` when non-null, falls back to the raw address otherwise.
-Same field also benefits the History page and any future export.
-
-**Why before MVP:** Raw IPv6 addresses in the drill-down are the first
-thing a non-technical user gets stuck on; without resolution the
-Per-App view's most-used column is opaque. The reserved column is
-already in the schema specifically for this — the work is plumbing,
-not new storage.
-
-**Estimated effort:** Medium — depends on whether the cache-read path
-holds up to scrutiny. If it does, it's a small attribution-pipeline
-change plus a UI column tweak. If it doesn't, we need a different
-passive source (e.g., reading from another locally-running passive
-DNS observer like Pi-hole-style logs, if any) or we accept raw
-addresses for v1.
+**Superseded by Phase 8 — see below.** Promoted into a full phase
+on 2026-06-18 when reviewed against the Interlude entry "Hostname
+resolution (passive-DNS observer) — promoted into MVP" (above): the
+DNS-cache-read approach P3 originally proposed produces only partial
+coverage (the Windows DNS cache evicts entries after ~30 min, so
+connections older than that lose resolution) and would need to be
+replaced by the ETW passive-DNS observer anyway. Doing the ETW path
+once — architecturally correct, full coverage, populates
+`connections.resolved_host` from the same DNS-response stream the
+user's other processes already trigger — is strictly cleaner than
+shipping a partial fix in v1 and re-doing the work post-MVP.
 
 ### P4 — Wire the remaining five alert producers
 
@@ -672,62 +637,27 @@ tests + catalog-page wiring updates.
 
 ### P5 — .NET 10 desktop runtime prerequisite not handled by the MSI
 
-**Discovered:** Phase 6.8a installer scaffolding, 2026-06-18.
+**Superseded by Phase 7 — see below.** Promoted into a full phase
+on 2026-06-18 when the brief's recommended approach was reviewed
+against reality on the dev box. The launch-condition treatment
+P5 originally recommended (treatment (b)) inspects the registry key
+`HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App`
+for a 10.x entry — but that key **does not exist on machines that
+have the .NET 10 desktop runtime actually installed and working**.
+On the dev box, with `dotnet --list-runtimes` showing
+`Microsoft.WindowsDesktop.App 10.0.8`, the only subkey under
+`InstalledVersions\x64` is `sharedhost\Version`. A
+RegistrySearch-based launch condition built against the documented
+path would therefore block legitimate installs.
 
-**The problem:** The MSI built in Phase 6.8a packs framework-dependent
-(FDD) binaries — `ZenVizor.Service.exe`, `ZenVizor.Ui.exe`, and
-`zvctl.exe` all expect the .NET 10 desktop runtime to be installed
-separately on the host. On a clean Windows machine without .NET 10:
-
-1. `msiexec /i ZenVizor.msi /qn` succeeds. Files install, ACLs apply,
-   the service is registered.
-2. The post-install `ServiceControl Start="install"` step tries to
-   start the service, which immediately exits with a host-load failure
-   ("You must install .NET Desktop Runtime to run this application").
-3. The msiexec install command returns a non-zero exit code (the
-   ServiceControl Start failure propagates), but binaries and the
-   service entry are still on disk. End state: a "half-installed"
-   product that the user can't run and may not realize why.
-
-This was deferred deliberately from Phase 6.8a as the smallest-scope
-option (a) per the implementation discussion (2026-06-18 chat) so the
-scaffolding + CI pipeline could land first. It is **high priority**
-to close before v1 ships — users should not be able to install into a
-broken state.
-
-**Fix path:** Pick one of two treatments at implementation time:
-
-- **(b) Launch condition.** Add a `<Launch Condition>` to
-  `installer/ZenVizor.wxs` that checks the
-  `HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App`
-  registry tree for a 10.x entry. If absent, block the install with a
-  clear message ("ZenVizor requires the .NET 10 Desktop Runtime. Install
-  it from https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe
-  then re-run setup."). Smallest diff, but the user still has to install
-  a second thing. Use a property like `NETCOREDESKTOPAPP_INSTALLED` that
-  AppSearch fills via `RegistrySearch` over the relevant registry key.
-- **(c) Burn bootstrapper (.exe).** Wrap the MSI in a WiX `<Bundle>`
-  that chains the .NET 10 Desktop Runtime installer + the ZenVizor MSI.
-  The user double-clicks `ZenVizorSetup.exe`; the bootstrapper checks
-  for the runtime, fetches/installs it if missing, then runs the MSI.
-  Larger scope (new wixproj for the bundle, `WixToolset.Bal.wixext` UI,
-  CI extension to also build the bundle), but produces the
-  fewest-clicks user experience.
-
-(b) is the right call for the v1 cut — it's reversible (we can always
-add a Burn bootstrapper later) and surfaces the prereq cleanly without
-needing to host a chained-runtime payload on a download server. (c) is
-the natural follow-up if user feedback indicates the prereq check is a
-friction point.
-
-**Surface impact:** Phase 6.8b's clean-machine install gate currently
-needs a manual "install .NET 10 Desktop Runtime first" step ahead of
-the MSI install. P5 closes that gap.
-
-**Estimated effort:** Small for (b) — one `<Launch>` element + a
-`<Property>` + an AppSearch `<RegistrySearch>` row. Maybe 2 h
-including test on a clean VM. (c) is ~1 day end-to-end including
-the new bundle wixproj + CI extension + smoke test.
+Detecting the runtime reliably needs either Burn's canonical detection
+logic (Microsoft-blessed, maintained against future installer
+changes), or a brittle file-system probe under
+`[ProgramFiles64Folder]dotnet\shared\Microsoft.WindowsDesktop.App\10.*`.
+Burn is also the right answer for the user-facing install UX —
+a single `ZenVizorSetup.exe` that installs the runtime if missing and
+then runs the MSI, embedded for offline installability. Phase 7 below
+is that work, scoped end-to-end.
 
 ---
 
@@ -810,7 +740,7 @@ tests. Worth scoping after Scope 2 ships because Scope 2 is the
 incremental win that buys the time to do Scope 3 right.
 
 **Why before v1:** The current pattern is fine for four pages but
-multiplies if a future page (e.g., a Phase 7 host view, a forensics
+multiplies if a future page (e.g., a post-MVP host view or forensics
 view) needs the same data. The refactor is much easier now (six call
 sites) than later (eight, ten, twelve).
 
@@ -822,6 +752,187 @@ rather than a layering violation.
 
 ---
 
+## Phase 7 — Burn bootstrapper (MSI + .NET 10 runtime)
+
+**Goal:** Ship `ZenVizorSetup.exe` as the canonical install artifact —
+a single double-click that detects the .NET 10 desktop runtime,
+installs it if missing, and runs the Phase 6.8a MSI. Closes the
+runtime-prereq gap that P5 exposed without committing to a brittle
+registry-check workaround.
+
+**Scope**
+
+- `installer/Bundle/ZenVizor.Bundle.wixproj` + `ZenVizor.Bundle.wxs`
+  alongside the existing MSI wixproj. WiX `<Bundle>` element with
+  `WixToolset.Bal.wixext` for the default UI (pin to 6.0.1 — the
+  MIT line; do **not** advance to 7+ per the OSMF licensing
+  constraint already documented in `Directory.Packages.props`).
+- **Embed** the .NET 10 Desktop Runtime `.exe` payload inside the
+  bundle (`<ExePackage Cache="keep" Vital="yes">` referencing the
+  redist binary committed to or fetched at build time into
+  `installer/Bundle/payloads/`). Embedded > chained: ZenVizor is a
+  network monitoring tool whose target audience includes restricted
+  environments. The ~50–60 MB size increase is the right tradeoff
+  for offline installability; avoids dependency on a Microsoft
+  download URL surviving across the product's lifetime.
+- Detect-existing logic via `<bal:WixStandardBootstrapperApplication>`
+  + Burn's canonical `<ExePackage DetectCondition>` shape — Burn
+  ships with its own runtime-detection logic that's maintained
+  against future installer-layout changes. We do NOT roll our own
+  RegistrySearch.
+- Bundle UpgradeCode locked the same way the MSI's is. The bundle
+  major-upgrade pattern supersedes the MSI's; both versions advance
+  in lockstep with the product `<Version>` in `Directory.Build.props`.
+- CI workflow `.github/workflows/ci.yml` extension: after the
+  existing `dotnet build installer/ZenVizor.wixproj` step, also
+  `dotnet build installer/Bundle/ZenVizor.Bundle.wixproj` and upload
+  `ZenVizorSetup.exe` as a separate artifact alongside the bare MSI.
+- Update the project README + any operator docs that still tell
+  users to install .NET first.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] WiX Bal extension 6.0.1 confirmed MIT-licensed (no OSMF
+      flip mid-build).
+- [ ] `dotnet build installer/Bundle/ZenVizor.Bundle.wixproj -c Release`
+      succeeds locally and in CI; produces `ZenVizorSetup.exe`
+      ≤ ~120 MB (45 MB MSI + ~60 MB embedded runtime).
+- [ ] CI uploads `ZenVizorSetup.exe` on every push to `main`.
+- [ ] Bundle UpgradeCode locked and pinned via the
+      `installer/Bundle/ZenVizor.Bundle.wxs` source.
+
+**Acceptance criteria — manual (human QA — clean Windows Sandbox)**
+
+- [ ] Windows Sandbox **without .NET 10 desktop runtime pre-installed**:
+      `ZenVizorSetup.exe` detects the missing runtime, installs it,
+      then installs ZenVizor. End state: service running, UI launches,
+      Add/Remove Programs shows ZenVizor.
+- [ ] Windows Sandbox **with .NET 10 already installed**: `ZenVizorSetup.exe`
+      detects the runtime and skips the runtime install; MSI install
+      proceeds.
+- [ ] Uninstall via Add/Remove Programs leaves the .NET 10 runtime in
+      place (it is shared with other apps) — only the ZenVizor MSI
+      payload is removed. `%ProgramData%\ZenVizor\` preserved by default.
+- [ ] Bundle reinstall over a prior version upgrades cleanly (major
+      upgrade) without two side-by-side entries.
+
+**Sequencing note:** Phase 7 runs after Phase 6.8b manual gates. 6.8b
+validates the MSI on its own (user pre-installs .NET 10 on the test
+box). Phase 7 then adds the bootstrapper layer on top and validates
+the chained-install UX in Sandbox.
+
+---
+
+## Phase 8 — ETW passive DNS observer + hostname resolution
+
+**Goal:** Populate the reserved `connections.resolved_host` column
+from passively-observed DNS-response traffic — strictly invariant-#1
+safe — so AppDetail's Connections grid reads "talked to
+**outlook.office.com**" instead of an opaque IPv6 string. Closes
+the gap P3 sketched without shipping the partial-coverage cache-read
+workaround.
+
+The Interlude entry "Hostname resolution (passive-DNS observer) —
+promoted into MVP" (above, ~line 195) is the canonical scope brief
+authored when this work was promoted into MVP. Phase 8 is the
+sequenced delivery of that brief.
+
+**Scope**
+
+- New `IMonitor` implementation: `PassiveDnsMonitor` (or a second
+  `ICaptureSource` if the seam shape calls for it — review at
+  implementation time). Strictly passive — observes existing
+  DNS-response traffic on the host; never originates a query.
+- ETW provider selection: prefer `Microsoft-Windows-DNS-Client`
+  (high-level, parsed records straight from the resolver). Fall back
+  to `Microsoft-Windows-Kernel-Network` UDP/53 payloads + an RFC 1035
+  parser if the high-level provider is unreliable on the project's
+  target SKUs (Win 10/11 Home + Pro). Decision gate: a 30-min smoke
+  on the dev box exercising `dotnet --list-runtimes` style traffic
+  + `dig`/`nslookup` mix; if the high-level provider returns all
+  expected records (incl. CNAME chains, AAAA), use it. If gaps,
+  fall back to UDP/53.
+- In-memory IP → hostname store with TTL respect + CNAME chain
+  resolution (most-specific name wins; honour the response's TTL,
+  expire on tick). Bounded LRU cap (proposed 64k entries — same
+  order-of-magnitude as the Windows DNS cache) to prevent memory
+  growth on hosts with long-running services that talk to many
+  endpoints.
+- Storage wire-up: at flush time, before writing `connections` rows
+  the aggregator looks up `remote_addr` in the store and populates
+  `resolved_host` when present. Existing rows stay null (no
+  backfill — we don't have historical DNS data, see "Storage
+  backfill" below).
+- IPC schema bump: `IpcSchemaVersion.Query` v1 → v2.
+  `ConnectionRow.ResolvedHost` new optional field. Negotiation path
+  already handles older clients (server returns v2 envelope; v1
+  clients ignore the unknown field per the additive-tolerance rule).
+- UI: `AppDetailPage.xaml` Connections grid's "Remote endpoint"
+  column renders `ResolvedHost` when non-null with the raw address
+  as a smaller-font subscript (mockup-style); falls back to raw
+  address when null. Per-App expanded view gets the same treatment
+  if/when it surfaces connections directly.
+- Self-monitoring invariant gate: the new ETW subscriber is in the
+  capture path. Phase 6.8b's "zero own traffic" check (already in
+  the canonical manual gate list) continues to verify that ZenVizor
+  PIDs emit no outbound traffic; Phase 8 expands the code surface
+  the gate covers but the gate itself doesn't change.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] Synthetic DNS-response fixture stream (hand-crafted RFC 1035
+      payloads incl. A, AAAA, CNAME chain) feeds `PassiveDnsMonitor`'s
+      `ICaptureSource`-equivalent and produces exact-expected IP →
+      hostname entries in the store. Determinism gate per the
+      "synthetic events assert exact rows" rule (CLAUDE.md "Testing
+      conventions").
+- [ ] TTL expiry test: an entry past its response TTL is evicted on
+      the next tick; a new lookup for the same IP returns null until
+      a fresh response arrives.
+- [ ] CNAME chain test: a response with a CNAME chain
+      (e.g., `outlook.office.com` → `outlook.office365.com.s-0001.s-msedge.net`
+      → A record) resolves to the most-specific user-facing name in
+      the store.
+- [ ] Storage wire-up: aggregator + DNS store produces the expected
+      `connections.resolved_host` value at flush, given a fixture
+      session whose `remote_addr` matches a fixture DNS A record.
+- [ ] IPC contract test for the v2 envelope round-trips
+      `ResolvedHost` for present + null cases.
+- [ ] LRU bound test: store at capacity drops oldest entries; never
+      grows unbounded.
+
+**Acceptance criteria — manual (human QA — real Windows box)**
+
+- [ ] Run ZenVizor for ≥ 30 min of normal use. AppDetail Connections
+      grid on a known app (e.g., browser) shows hostname resolution
+      for at least the most-recent connections; verify the displayed
+      hostname against the user's actual DNS history (browser dev
+      tools, `Get-DnsClientCache`).
+- [ ] IPv6-heavy app (`outlook.office.com`, `*.cdn.cloudflare.net`)
+      renders human-readable hostnames rather than long hex-colon IPs.
+- [ ] **Self-monitoring zero-own-traffic gate** (invariant #1 — same
+      gate as 6.8b, run again to verify the new ETW subscriber adds
+      no outbound). ZenVizor PIDs continue to attribute zero outbound
+      bytes; no rows in `connections` belong to either ZenVizor PID.
+- [ ] Performance: idle CPU < 1%, service working set < ~80 MB still
+      hold with the DNS subscriber active. DNS-response traffic is
+      low-rate so this should be uneventful, but it's worth verifying
+      end-to-end.
+
+**Storage backfill (deferred):** Existing `connections` rows stay
+null. Back-population would require historical DNS data we don't
+have. New rows post-Phase-8 install populate normally. This is a
+documented "you see hostnames starting from when Phase 8 lands"
+property of the rollout.
+
+**Sequencing note:** Phase 8 runs after Phase 7. The order isn't
+strictly mandatory — installer and capture surface are orthogonal —
+but Phase 7's bundle has to pack the Phase 8 service binaries, so
+Phase 8 first means re-cutting the bundle. Phase 7 first lets the
+installer artifact stabilise before the capture surface grows.
+
+---
+
 ## MVP definition of done
 
-All Phase 0–6 acceptance criteria pass (CI + manual). The product: passively captures up/down traffic; attributes it to process incl. svchost service names and signer/path enrichment; shows a near-live dashboard; stores tiered history with user-defined windows and configurable retention; produces a daily report with CSV/HTML export; raises local alerts via an extensible pipeline; installs/uninstalls cleanly via .msi; runs within the performance budget; and **emits no network traffic of its own**, verified by self-monitoring. The collector contract, alert pipeline, and versioned IPC envelope seams (plus the reserved `devices` table) are in place so the post-MVP modules in PRD §10 can be added without re-architecting.
+All Phase 0–8 acceptance criteria pass (CI + manual). The product: passively captures up/down traffic; attributes it to process incl. svchost service names and signer/path enrichment; shows a near-live dashboard; stores tiered history with user-defined windows and configurable retention; produces a daily report with CSV/HTML export; raises local alerts via an extensible pipeline; **resolves remote endpoint addresses to hostnames** from passively-observed DNS traffic (Phase 8); **installs via a single `ZenVizorSetup.exe`** that bundles the .NET 10 desktop runtime for offline installability (Phase 7); uninstalls cleanly; runs within the performance budget; and **emits no network traffic of its own**, verified by self-monitoring. The collector contract, alert pipeline, and versioned IPC envelope seams (plus the reserved `devices` table) are in place so the post-MVP modules in PRD §10 can be added without re-architecting.
