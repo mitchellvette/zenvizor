@@ -364,6 +364,117 @@ deep-link wiring.
 
 ---
 
+## Phase 6 closeout — remaining work and ordering
+
+Phase 6.0–6.7 landed end of 2026-06-17. Six producers wired,
+zvctl `alerts` subcommands shipped, Settings UI with the three
+threshold knobs hot-reloads via `CachedAlertSettingsLookup`, IPC
+schema at `Settings v3 / Alerts v1 / Query v1 / DailyReport v2 /
+ActivitySnapshot v2`, 459 headless tests pass. Last commit: `c6cf1cc`.
+
+Phase 6.8 is split for sequencing — see the rationale in the
+2026-06-18 chat thread (TL;DR: avoid two manual MSI install/uninstall
+QA passes by deferring the acceptance gates until the polish items
+have landed). **Mandatory order:**
+
+> **Phase 6.8a → Pre-MVP polish (P2, P3) → Pre-v1 follow-ups (A1, A2) → Phase 6.8b.**
+
+P1 closed in 6.5. P4 closed in 6.7.
+
+### Phase 6.8a — installer scaffolding (NEXT)
+
+**Goal:** Land the WiX project + CI build step so every push
+produces an `.msi` artifact. Headless-only — defer human
+install/uninstall QA to 6.8b.
+
+**Scope**
+
+- `installer/` directory (referenced in CLAUDE.md, not yet created).
+  `ZenVizor.wixproj` + `ZenVizor.wxs` authored against current
+  binary layout (`src/ZenVizor.Service/bin/Release/`, `src/ZenVizor.Ui/bin/Release/`,
+  `src/ZenVizor.Cli/bin/Release/`).
+- Service registration via the WiX `util:ServiceConfig` /
+  `ServiceInstall` elements (same SC entries `install-dev.ps1`
+  produces today — start mode demand by default).
+- ACL setup for `%ProgramData%\ZenVizor\` (SYSTEM + Administrators
+  full, INTERACTIVE none — `%ProgramData%\ZenVizor\` itself is the
+  thing the UI must NOT have direct DB access to; the IPC named
+  pipe is the only INTERACTIVE-readable surface).
+- Upgrade rules (major-upgrade pattern, `UpgradeCode` GUID locked).
+- Uninstall cleanup — service stops + uninstalls; `%ProgramData%\ZenVizor\`
+  preserved by default (data) with optional `REMOVE_DATA=1` property
+  to wipe. Mirror of `uninstall-dev.ps1 -PurgeData`.
+- Start menu shortcut for `ZenVizor.Ui.exe`.
+- `.github/workflows/installer.yml` (or extend the existing CI workflow):
+  `wix build installer/ZenVizor.wixproj` runs on every push; MSI
+  artifact uploaded.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] `wix build installer/ZenVizor.wixproj -c Release` succeeds locally
+      (no errors, MSI produced).
+- [ ] `msiexec /i ZenVizor.msi /qn /log install.log` succeeds in a
+      Windows Sandbox or CI runner. Service `ZenVizor` registers; the
+      DB directory ACL matches the dev install.
+- [ ] `msiexec /x ZenVizor.msi /qn /log uninstall.log` removes service,
+      removes binaries, leaves `%ProgramData%\ZenVizor\` intact.
+- [ ] `msiexec /x ZenVizor.msi REMOVE_DATA=1 /qn` also wipes the data
+      directory.
+- [ ] CI workflow produces the MSI artifact on every push to `main`.
+
+### Pre-MVP polish items (between 6.8a and 6.8b)
+
+Land in any order — they're independent. See the existing P2 / P3
+sections below for full briefs.
+
+- **P2** — Alerts nav badge isn't seeded with active alerts on launch.
+- **P3** — Reverse DNS for endpoint columns on Per-App / drill-down.
+
+### Pre-v1 architectural follow-ups (also between 6.8a and 6.8b)
+
+- **A1** — Universal page-reactive `ServiceReconnected` event for
+  the four `HistoryQueryClient`-holding pages (Scope 2 of Phase 6.1a).
+- **A2** — Centralize query clients at app scope (Scope 3 of Phase
+  6.1a). Lands cleanly after A1.
+
+A1 should land before A2 — A2's centralization removes per-page
+reconnect handlers that A1 introduces, so doing them out of order
+means writing and immediately deleting code.
+
+### Phase 6.8b — manual acceptance gates (after polish)
+
+**Goal:** Run the human-QA gates against the most-MVP-like build —
+all polish items already in.
+
+**Scope**
+
+- Fresh MSI install on a clean Windows machine (the project has a
+  dedicated test box; psexec is the alternative if a clean VM
+  isn't available).
+- Toggling autostart off → service does not start at boot →
+  toggling back on restores it.
+- Trigger each of the six alert types per the gates in
+  `docs/phase-6.7-verification.md`; confirm desktop notification +
+  nav badge updates fire for each.
+- **Self-monitoring zero-own-traffic gate (invariant #1 acceptance):**
+  run ZenVizor pointed at itself for a realistic period (≥ 1 hour).
+  Verify that `apps` does not contain `ZenVizor.Service.exe` or
+  `ZenVizor.Ui.exe` with any outbound bytes; `connections` table
+  contains no rows attributed to either PID; CaptureStats
+  `ObservationsUnattributed` does not include traffic-emitting events
+  attributed to the ZenVizor process tree.
+- Full-system pass: attribution sane (incl. svchost service names),
+  live + history + daily report reconcile, performance within budget
+  (idle CPU < 1%, service working set < ~80 MB).
+- Clean uninstall.
+
+**Acceptance criteria — manual**
+
+The full list in the Phase 6 acceptance block above is the canonical
+checklist. The split just defers when it runs.
+
+---
+
 ## Pre-MVP polish backlog
 
 UI / visual polish surfaced during Phase 6 hands-on QA. Smaller-than-A1/A2
