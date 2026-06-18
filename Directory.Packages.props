@@ -71,4 +71,13 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
   </ItemGroup>
 
+  <ItemGroup Label="Installer (WiX)">
+    <!-- WiX 6.0.1 is the last MIT-licensed release. v7+ requires the OSMF
+         EULA; do not upgrade past 6.x without revisiting the licensing
+         posture of the project. The WiX SDK itself is pinned via the
+         <Project Sdk="WixToolset.Sdk/6.0.1"> reference in
+         installer/ZenVizor.wixproj. -->
+    <PackageVersion Include="WixToolset.Util.wixext" Version="6.0.1" />
+  </ItemGroup>
+
 </Project>

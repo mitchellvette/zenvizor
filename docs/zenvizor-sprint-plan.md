@@ -424,11 +424,14 @@ install/uninstall QA to 6.8b.
 
 ### Pre-MVP polish items (between 6.8a and 6.8b)
 
-Land in any order — they're independent. See the existing P2 / P3
+Land in any order — they're independent. See the existing P2 / P3 / P5
 sections below for full briefs.
 
 - **P2** — Alerts nav badge isn't seeded with active alerts on launch.
 - **P3** — Reverse DNS for endpoint columns on Per-App / drill-down.
+- **P5** — MSI does not install or verify the .NET 10 desktop runtime
+  prerequisite. High priority before MVP — installer succeeds on a host
+  without .NET 10, but the service will fail to start.
 
 ### Pre-v1 architectural follow-ups (also between 6.8a and 6.8b)
 
@@ -666,6 +669,65 @@ change), `LargeDownload` + `OutboundHeavy` ~4 h each (aggregator
 accumulator integration), `UnusualDailyVolume` ~6 h (rollup hook +
 median+MAD test surface). Call it ~3 days end-to-end including
 tests + catalog-page wiring updates.
+
+### P5 — .NET 10 desktop runtime prerequisite not handled by the MSI
+
+**Discovered:** Phase 6.8a installer scaffolding, 2026-06-18.
+
+**The problem:** The MSI built in Phase 6.8a packs framework-dependent
+(FDD) binaries — `ZenVizor.Service.exe`, `ZenVizor.Ui.exe`, and
+`zvctl.exe` all expect the .NET 10 desktop runtime to be installed
+separately on the host. On a clean Windows machine without .NET 10:
+
+1. `msiexec /i ZenVizor.msi /qn` succeeds. Files install, ACLs apply,
+   the service is registered.
+2. The post-install `ServiceControl Start="install"` step tries to
+   start the service, which immediately exits with a host-load failure
+   ("You must install .NET Desktop Runtime to run this application").
+3. The msiexec install command returns a non-zero exit code (the
+   ServiceControl Start failure propagates), but binaries and the
+   service entry are still on disk. End state: a "half-installed"
+   product that the user can't run and may not realize why.
+
+This was deferred deliberately from Phase 6.8a as the smallest-scope
+option (a) per the implementation discussion (2026-06-18 chat) so the
+scaffolding + CI pipeline could land first. It is **high priority**
+to close before v1 ships — users should not be able to install into a
+broken state.
+
+**Fix path:** Pick one of two treatments at implementation time:
+
+- **(b) Launch condition.** Add a `<Launch Condition>` to
+  `installer/ZenVizor.wxs` that checks the
+  `HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App`
+  registry tree for a 10.x entry. If absent, block the install with a
+  clear message ("ZenVizor requires the .NET 10 Desktop Runtime. Install
+  it from https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe
+  then re-run setup."). Smallest diff, but the user still has to install
+  a second thing. Use a property like `NETCOREDESKTOPAPP_INSTALLED` that
+  AppSearch fills via `RegistrySearch` over the relevant registry key.
+- **(c) Burn bootstrapper (.exe).** Wrap the MSI in a WiX `<Bundle>`
+  that chains the .NET 10 Desktop Runtime installer + the ZenVizor MSI.
+  The user double-clicks `ZenVizorSetup.exe`; the bootstrapper checks
+  for the runtime, fetches/installs it if missing, then runs the MSI.
+  Larger scope (new wixproj for the bundle, `WixToolset.Bal.wixext` UI,
+  CI extension to also build the bundle), but produces the
+  fewest-clicks user experience.
+
+(b) is the right call for the v1 cut — it's reversible (we can always
+add a Burn bootstrapper later) and surfaces the prereq cleanly without
+needing to host a chained-runtime payload on a download server. (c) is
+the natural follow-up if user feedback indicates the prereq check is a
+friction point.
+
+**Surface impact:** Phase 6.8b's clean-machine install gate currently
+needs a manual "install .NET 10 Desktop Runtime first" step ahead of
+the MSI install. P5 closes that gap.
+
+**Estimated effort:** Small for (b) — one `<Launch>` element + a
+`<Property>` + an AppSearch `<RegistrySearch>` row. Maybe 2 h
+including test on a clean VM. (c) is ~1 day end-to-end including
+the new bundle wixproj + CI extension + smoke test.
 
 ---
 

@@ -67,3 +67,25 @@ jobs:
         with:
           name: build-artifacts
           path: artifacts/binaries
+
+      # Installer (Phase 6.8a). Pinned to WiX 6.0.1 — the last MIT-licensed
+      # release. v7+ requires the OSMF EULA; do not upgrade past 6.x without
+      # revisiting the licensing posture.
+      - name: Install WiX 6.0.1 toolset
+        if: success()
+        run: |
+          dotnet tool install --global wix --version 6.0.1
+          wix extension add --global WixToolset.Util.wixext/6.0.1
+
+      - name: Build installer (MSI)
+        if: success()
+        run: >
+          dotnet build installer/ZenVizor.wixproj
+          --configuration ${{ env.CONFIGURATION }}
+
+      - name: Upload installer artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: installer/bin/x64/${{ env.CONFIGURATION }}/ZenVizor.msi

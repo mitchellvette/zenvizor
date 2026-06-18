@@ -1,0 +1,27 @@
+<Project Sdk="WixToolset.Sdk/6.0.1">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>ZenVizor</OutputName>
+    <Platforms>x64</Platforms>
+    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <!-- WiX SDK auto-provides $(var.Configuration) and $(var.Platform). We
+         only need to surface the product Version from Directory.Build.props. -->
+    <DefineConstants>Version=$(Version)</DefineConstants>
+
+    <!-- ICE69 fires on non-advertised shortcuts whose Target is a file in a
+         different component. The canonical WiX pattern for per-machine EXE
+         + per-user shortcut REQUIRES that split (see ICE38/ICE43/ICE57). When
+         the two components live in the same Feature they are always
+         installed/uninstalled together, so the ICE69 cross-component
+         reference is harmless. Documented in ZenVizor.wxs above the
+         ComponentGroup "StartMenu". -->
+    <SuppressIces>ICE69</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" />
+  </ItemGroup>
+
+</Project>

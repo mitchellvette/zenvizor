@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    ZenVizor — production MSI installer.
+
+    Layout produced (per-machine, x64):
+        %ProgramFiles%\ZenVizor\Service\    - Service binaries + dependencies
+        %ProgramFiles%\ZenVizor\Ui\         - UI binaries + dependencies
+        %ProgramFiles%\ZenVizor\Cli\        - zvctl + dependencies (added to system PATH)
+        %ProgramData%\ZenVizor\             - DB + config (ACL: SYSTEM + Administrators only)
+
+    Service registration: name="ZenVizor", LocalSystem, start mode demand.
+    Uninstall preserves %ProgramData%\ZenVizor\ by default; pass REMOVE_DATA=1 to wipe.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="ZenVizor"
+           Manufacturer="ZenVizor"
+           Version="$(var.Version)"
+           UpgradeCode="DAB3A65D-8347-44EE-8946-B8CD57474539"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <!--
+        UpgradeCode above is LOCKED FOR THE LIFETIME OF THE PRODUCT. Changing
+        it after the first public release would cause future installers to
+        coexist with the prior version in Add/Remove Programs instead of
+        upgrading it. DO NOT CHANGE.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <Media Id="1" Cabinet="ZenVizor.cab" EmbedCab="yes" />
+
+    <!-- Public property: pass REMOVE_DATA=1 on uninstall to wipe %ProgramData%\ZenVizor\. -->
+    <Property Id="REMOVE_DATA" Secure="yes" />
+
+    <!-- Install layout under Program Files (x64). -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ZenVizor">
+        <Directory Id="ServiceDir" Name="Service" />
+        <Directory Id="UiDir" Name="Ui" />
+        <Directory Id="CliDir" Name="Cli" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ProgramData data directory; ACL applied below. -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="ZenVizorDataDir" Name="ZenVizor" />
+    </StandardDirectory>
+
+    <!-- Start menu folder. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ZenVizorStartMenuFolder" Name="ZenVizor" />
+    </StandardDirectory>
+
+    <!--
+        Service component: holds ZenVizor.Service.exe + ServiceInstall + ServiceControl.
+        Co-located dependencies are harvested into auto-components below via <Files>.
+    -->
+    <ComponentGroup Id="ServiceFiles" Directory="ServiceDir">
+
+      <Component Id="ZenVizorServiceExe" Bitness="always64">
+        <File Id="ZenVizorServiceExeFile"
+              Source="..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\ZenVizor.Service.exe"
+              KeyPath="yes" />
+        <ServiceInstall Id="ZenVizorServiceInstall"
+                        Name="ZenVizor"
+                        DisplayName="ZenVizor"
+                        Description="ZenVizor passive network monitor."
+                        Type="ownProcess"
+                        Start="demand"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="yes" />
+        <ServiceControl Id="ZenVizorServiceControl"
+                        Name="ZenVizor"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- Auto-harvest the rest of the service output. WiX 6's <Files>
+           element has no Exclude attribute, so we enumerate all non-.exe
+           extensions present in the build output (verified against
+           src\ZenVizor.Service\bin\Release\net10.0-windows\). If a new
+           extension appears in a future build (e.g. a dependency adds
+           .config files), it must be added here. -->
+      <Files Include="..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.dll;..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.pdb;..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.json;..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.a;..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.so;..\src\ZenVizor.Service\bin\$(var.Configuration)\net10.0-windows\**\*.dylib" />
+
+    </ComponentGroup>
+
+    <!--
+        UI component: holds ZenVizor.Ui.exe + Start menu shortcut.
+        Dependencies harvested via <Files>.
+    -->
+    <ComponentGroup Id="UiFiles" Directory="UiDir">
+
+      <Component Id="ZenVizorUiExe" Bitness="always64">
+        <File Id="ZenVizorUiExeFile"
+              Source="..\src\ZenVizor.Ui\bin\$(var.Configuration)\net10.0-windows\ZenVizor.Ui.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <Files Include="..\src\ZenVizor.Ui\bin\$(var.Configuration)\net10.0-windows\**\*.dll;..\src\ZenVizor.Ui\bin\$(var.Configuration)\net10.0-windows\**\*.pdb;..\src\ZenVizor.Ui\bin\$(var.Configuration)\net10.0-windows\**\*.json;..\src\ZenVizor.Ui\bin\$(var.Configuration)\net10.0-windows\**\*.dylib" />
+
+    </ComponentGroup>
+
+    <!--
+        Non-advertised start menu shortcut to a per-machine EXE. The
+        canonical WiX pattern requires splitting the shortcut into its
+        own component with an HKCU registry keypath (per ICE38/ICE43/ICE57:
+        per-user shortcut data must anchor on per-user storage). That split
+        triggers ICE69 ("shortcut target lives in another component"), which
+        is documented as a false positive when both components are in the
+        same feature (and they are — see Feature 'Main' below). ICE69 is
+        suppressed in installer/ZenVizor.wixproj.
+    -->
+    <ComponentGroup Id="StartMenu" Directory="ZenVizorStartMenuFolder">
+      <Component Id="ZenVizorStartMenuShortcut" Bitness="always64">
+        <Shortcut Id="ZenVizorStartMenuShortcutEntry"
+                  Name="ZenVizor"
+                  Description="ZenVizor passive network monitor"
+                  Target="[#ZenVizorUiExeFile]"
+                  WorkingDirectory="UiDir"
+                  Advertise="no" />
+        <RemoveFolder Id="RemoveZenVizorStartMenuFolder"
+                      Directory="ZenVizorStartMenuFolder"
+                      On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\ZenVizor"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+        CLI component: zvctl + dependencies, with system PATH entry so
+        zvctl runs from any shell after install.
+    -->
+    <ComponentGroup Id="CliFiles" Directory="CliDir">
+
+      <Component Id="ZenVizorCliPathEntry" Bitness="always64">
+        <Environment Id="ZenVizorCliPathEnv"
+                     Name="PATH"
+                     Value="[CliDir]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\ZenVizor\Installed"
+                       Name="CliPath"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+      <Files Include="..\src\ZenVizor.Cli\bin\$(var.Configuration)\net10.0-windows\**" />
+
+    </ComponentGroup>
+
+    <!--
+        Data directory: SYSTEM + BUILTIN\Administrators full control, protected
+        DACL (no inheritance from %ProgramData%). Mirrors the runtime ACL applied
+        by ZenVizor.Service.ProgramDataAcl.EnsureDirectoryWithAcl. Standard users
+        access report data only via the IPC named pipe — never the DB file.
+    -->
+    <ComponentGroup Id="DataDirSetup" Directory="ZenVizorDataDir">
+      <Component Id="ZenVizorDataDirCreate" Bitness="always64">
+        <!-- PermissionEx in WiX 6 replaces the directory ACL with exactly
+             the specified ACEs (protected DACL, no inheritance from
+             %ProgramData%). This matches the runtime ACL applied by
+             ZenVizor.Service.ProgramDataAcl.EnsureDirectoryWithAcl:
+             SYSTEM + Administrators full control, no Users. -->
+        <CreateFolder>
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" Inheritable="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" Inheritable="yes" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM"
+                       Key="Software\ZenVizor\Installed"
+                       Name="DataDir"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+      <!--
+          REMOVE_DATA=1 opt-in wipes %ProgramData%\ZenVizor\ on uninstall.
+          Default (REMOVE_DATA unset/empty) preserves user history across upgrades
+          and reinstalls. RemoveFolderEx is a no-op when its Property is empty.
+      -->
+      <Component Id="ZenVizorDataDirRemove" Bitness="always64">
+        <RegistryValue Root="HKLM"
+                       Key="Software\ZenVizor\Installed"
+                       Name="DataRemoveStub"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <util:RemoveFolderEx Id="RemoveZenVizorDataDir"
+                             Property="REMOVE_DATA_FOLDER"
+                             On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Resolves REMOVE_DATA_FOLDER to the data path only when REMOVE_DATA=1. -->
+    <SetProperty Id="REMOVE_DATA_FOLDER"
+                 Value="[CommonAppDataFolder]ZenVizor"
+                 Before="CostFinalize"
+                 Sequence="execute"
+                 Condition="REMOVE_DATA = &quot;1&quot;" />
+
+    <Feature Id="Main" Title="ZenVizor" Level="1">
+      <ComponentGroupRef Id="ServiceFiles" />
+      <ComponentGroupRef Id="UiFiles" />
+      <ComponentGroupRef Id="StartMenu" />
+      <ComponentGroupRef Id="CliFiles" />
+      <ComponentGroupRef Id="DataDirSetup" />
+    </Feature>
+
+  </Package>
+</Wix>
