@@ -43,6 +43,12 @@ public partial class SettingsPage : Page
     // collapse to a single round-trip per "settle" event.
     private readonly DispatcherTimer _retentionDebounce;
 
+    // Phase 6.7 — separate debounce for the three alert-threshold rows.
+    // Same 500ms shape; separate timer so a retention edit doesn't
+    // bundle alert fields into the same RPC and vice-versa (two
+    // semantically-distinct apply paths in the IPC handler).
+    private readonly DispatcherTimer _alertThresholdDebounce;
+
     // Suppresses re-entrant change handlers while we're populating the
     // form from a fresh snapshot. Without this, Hydrate would trip every
     // checked / unchecked / SelectionChanged handler and fire spurious
@@ -99,6 +105,12 @@ public partial class SettingsPage : Page
         };
         _retentionDebounce.Tick += OnRetentionDebounceTick;
 
+        _alertThresholdDebounce = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500),
+        };
+        _alertThresholdDebounce.Tick += OnAlertThresholdDebounceTick;
+
         PopulateAbout();
 
         Loaded += OnPageLoaded;
@@ -133,6 +145,7 @@ public partial class SettingsPage : Page
         }
         SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
         _retentionDebounce.Stop();
+        _alertThresholdDebounce.Stop();
     }
 
     private void OnSystemParametersChanged(object? sender, PropertyChangedEventArgs e)
@@ -310,6 +323,33 @@ public partial class SettingsPage : Page
         _retentionDebounce.Start();
     }
 
+    // Phase 6.7 — same debounce shape as retention. NumberBox edits feed
+    // a single SettingsUpdate with the three current threshold values.
+    // The settings cache on the service side refreshes atomically when
+    // the apply lands so per-flush rules pick up the new thresholds on
+    // the next flush.
+    private void OnAlertThresholdValueChanged(object sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_suppressApply) return;
+        _alertThresholdDebounce.Stop();
+        _alertThresholdDebounce.Start();
+    }
+
+    private async void OnAlertThresholdDebounceTick(object? sender, EventArgs e)
+    {
+        _alertThresholdDebounce.Stop();
+        var update = new SettingsUpdate
+        {
+            AlertLargeDownloadMb            = _vm.AlertLargeDownloadMb,
+            AlertOutboundHeavyFloorMb       = _vm.AlertOutboundHeavyFloorMb,
+            // VM exposes k as a decimal; wire format is integer × 10.
+            // Round to nearest 0.1 to avoid floating-point drift creating
+            // off-by-one wire values from arrow-key edits.
+            AlertUnusualDailyVolumeKTimesTen = (int)Math.Round(_vm.AlertUnusualDailyVolumeK * 10.0),
+        };
+        await ApplyAsync(update);
+    }
+
     private async void OnRetentionDebounceTick(object? sender, EventArgs e)
     {
         _retentionDebounce.Stop();
@@ -356,6 +396,18 @@ public partial class SettingsPage : Page
             BorderThickness = new Thickness(1),
             Foreground = (System.Windows.Media.Brush)FindResource("text.primary"),
         };
+
+        // Wpf.Ui's PrimaryButton (Appearance="Primary") binds its foreground
+        // to TextOnAccentFillColorPrimaryBrush. The dialog.Foreground above
+        // sets text.primary at the ContentControl scope which the button
+        // template inherits via WPF's normal property inheritance, hiding
+        // the framework's white-on-accent default and producing the
+        // dark-text-on-violet contrast failure in light theme. Scope an
+        // override into dialog.Resources so the brush flows down to the
+        // button without affecting the dialog's body text. text.on-accent
+        // is white in both themes — safe to use for either.
+        dialog.Resources["TextOnAccentFillColorPrimaryBrush"] =
+            (System.Windows.Media.Brush)FindResource("text.on-accent");
 
         // Host the dialog in MainWindow's content presenter — required by
         // Wpf.Ui's ContentDialog (it renders inside the DialogHost

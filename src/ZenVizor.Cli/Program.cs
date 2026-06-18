@@ -244,6 +244,15 @@ alertsCatalogCommand.SetHandler(ctx =>
 });
 alertsCommand.AddCommand(alertsCatalogCommand);
 
+var alertsRunRollupCommand = new Command(
+    "run-rollup-rules-now",
+    "Phase 6.7 QA hook: force the rollup-source rules (UnusualDailyVolume) to re-evaluate without waiting for the next UTC day-roll. Idempotent.");
+alertsRunRollupCommand.SetHandler(async ctx =>
+{
+    ctx.ExitCode = await RunAlertsRunRollupNowAsync();
+});
+alertsCommand.AddCommand(alertsRunRollupCommand);
+
 root.AddCommand(alertsCommand);
 
 return await root.InvokeAsync(args);
@@ -879,6 +888,18 @@ static async Task<int> RunAlertsDismissAsync(long alertId)
     catch (Exception ex) { return ReportError(ex); }
 }
 
+static async Task<int> RunAlertsRunRollupNowAsync()
+{
+    try
+    {
+        await using var client = await ZenVizorPipeClient.ConnectAsync();
+        await client.Proxy.RunRollupRulesNowAsync();
+        Console.WriteLine("Rollup rules re-evaluated.");
+        return 0;
+    }
+    catch (Exception ex) { return ReportError(ex); }
+}
+
 /// <summary>
 /// Locked metadata for each <see cref="AlertType"/> — severity (catalog §1.4),
 /// source monitor, producer-wired flag, and the one-line description that
@@ -894,8 +915,8 @@ static (NotableSeverity Severity, SourceMonitor Source, bool ProducerWired, stri
         "Signed binary whose signature does not verify."),
     AlertType.FirstRunWanTalker => (NotableSeverity.Info, SourceMonitor.Capture, true,
         "A newly-created app reached the network within seconds of first-seen."),
-    AlertType.UnusualDailyVolume => (NotableSeverity.Warning, SourceMonitor.Rollup, false,
-        "An app's daily bytes are robustly above its 14-day baseline (median + MAD)."),
+    AlertType.UnusualDailyVolume => (NotableSeverity.Warning, SourceMonitor.Rollup, true,
+        "An app's daily traffic is k x the 14-day baseline median (k user-tunable, default 2.5)."),
     AlertType.LargeDownload => (NotableSeverity.Info, SourceMonitor.Capture, true,
         "A single connection pulled down a large download in a short window."),
     AlertType.OutboundHeavy => (NotableSeverity.Warning, SourceMonitor.Capture, true,

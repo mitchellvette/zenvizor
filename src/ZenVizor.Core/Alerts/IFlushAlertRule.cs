@@ -29,4 +29,21 @@ public interface IFlushAlertRule
     /// detail string the rule synthesized from its internal state.
     /// </summary>
     IEnumerable<(RaiseRequest Request, string Detail)> Evaluate(FlushAlertEvent evt);
+
+    /// <summary>
+    /// Called by <see cref="AlertProducer.ForgetAll"/> when the alerts
+    /// table is wiped (Settings → Reset history). Stateful per-flush
+    /// rules MUST drop their dedup HashSets (which track "already
+    /// alerted for this app/connection in this process") so the next
+    /// qualifying observation re-raises a fresh alert instead of
+    /// silently no-op-ing. Rule cumulative state (rolling-window
+    /// buckets, per-connection accumulators) should also clear: a
+    /// "reset history" user expects a clean slate, not in-flight
+    /// counters surviving from before the wipe.
+    /// <para>
+    /// Default implementation is a no-op for stateless rules (none
+    /// today; every Phase 6.7 per-flush rule overrides).
+    /// </para>
+    /// </summary>
+    void ForgetAll() { }
 }

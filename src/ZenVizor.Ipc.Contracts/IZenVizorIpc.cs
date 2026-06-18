@@ -102,6 +102,24 @@ public interface IZenVizorIpc
     /// </summary>
     Task DismissAlertAsync(long alertId);
 
+    /// <summary>
+    /// Phase 6.7 QA hook for <c>UnusualDailyVolumeRule</c> (and any
+    /// future rollup-source rule). Forces the alert producer to
+    /// reset its per-rule date-roll gate and synthesize an immediate
+    /// flush-rule evaluation. Without this hook, the rule fires at
+    /// most once per UTC day; with it, the QA script that seeds
+    /// synthetic <c>traffic_daily</c> baseline rows + a spike row
+    /// can trigger the alert immediately rather than waiting for the
+    /// next natural day-roll.
+    /// <para>
+    /// Idempotent. Available on every build (no production hardening
+    /// in v1 — the surface only re-runs existing predicates and can't
+    /// affect data integrity). Lock down to a Debug-only registration
+    /// in a future hardening pass if exposure matters.
+    /// </para>
+    /// </summary>
+    Task RunRollupRulesNowAsync();
+
     // ---- Phase 6.2 Settings surface ----
 
     /// <summary>

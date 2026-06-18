@@ -54,6 +54,19 @@ public sealed class OutboundHeavyRule : IFlushAlertRule
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
 
+    /// <summary>
+    /// Resets all rule-internal state when alerts history is wiped. Without
+    /// this, a previously-raised app stays in <see cref="_alertedApps"/>
+    /// and the rule silently no-ops on subsequent qualifying flushes for
+    /// the same app — Reset history would quietly disable the rule for the
+    /// rest of the process lifetime.
+    /// </summary>
+    public void ForgetAll()
+    {
+        _windows.Clear();
+        _alertedApps.Clear();
+    }
+
     public IEnumerable<(RaiseRequest Request, string Detail)> Evaluate(FlushAlertEvent evt)
     {
         ArgumentNullException.ThrowIfNull(evt);

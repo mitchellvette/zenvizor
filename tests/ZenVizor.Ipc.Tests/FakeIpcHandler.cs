@@ -134,6 +134,15 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         return Task.CompletedTask;
     }
 
+    /// <summary>Phase 6.7 — counts how many times the QA hook fired.</summary>
+    public int RunRollupRulesNowCallCount { get; private set; }
+
+    public Task RunRollupRulesNowAsync()
+    {
+        RunRollupRulesNowCallCount++;
+        return Task.CompletedTask;
+    }
+
     // ---- Phase 6.2 Settings surface: scriptable stubs for contract tests ----
 
     public SettingsSnapshot Settings { get; set; } = new(

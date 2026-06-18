@@ -135,6 +135,12 @@ internal sealed class NegotiationGate : IZenVizorIpc
         return _inner.DismissAlertAsync(alertId);
     }
 
+    public Task RunRollupRulesNowAsync()
+    {
+        RequireNegotiated(nameof(RunRollupRulesNowAsync));
+        return _inner.RunRollupRulesNowAsync();
+    }
+
     public Task<IpcEnvelope<SettingsSnapshot>> GetSettingsAsync()
     {
         RequireNegotiated(nameof(GetSettingsAsync));

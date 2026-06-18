@@ -387,6 +387,46 @@ public sealed class AlertProducer : IAlertEventSink
     }
 
     /// <summary>
+    /// Phase 6.7 QA hook for the <c>RunRollupRulesNowAsync</c> IPC.
+    /// Resets the date-roll gate on every per-flush rule that
+    /// implements <see cref="IResettableRollupRule"/> (currently just
+    /// <see cref="UnusualDailyVolumeRule"/>), then synthesizes a flush
+    /// event so the rules re-evaluate immediately. Used by the QA
+    /// script that seeds 14 days of synthetic <c>traffic_daily</c>
+    /// rows + a spike row for yesterday — without this hook, the
+    /// rule would only fire on the next natural day-roll.
+    /// </summary>
+    public void EvaluateRollupRulesNow()
+    {
+        foreach (var rule in _flushRules)
+        {
+            if (rule is IResettableRollupRule resettable)
+            {
+                try
+                {
+                    resettable.ResetLastEvalDate();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "AlertProducer: ResetLastEvalDate threw for rule {Rule}; continuing.",
+                        rule.GetType().Name);
+                }
+            }
+        }
+
+        // Empty connection list — rollup rules don't read the per-flush
+        // connection slice. Wall-clock now is the flush-time anchor
+        // they evaluate against.
+        var syntheticEvent = new FlushAlertEvent(
+            FlushTimeUnixMs: _now(),
+            FlushIntervalMs: 0,
+            Connections:     Array.Empty<FlushConnectionState>());
+
+        OnFlushCompleted(syntheticEvent);
+    }
+
+    /// <summary>
     /// Test / diagnostic hook for the optimistic-dismiss flow on the UI
     /// side. When a user dismisses an alert via the IPC handler, the
     /// host service can call this to evict the producer's in-memory state
@@ -420,6 +460,26 @@ public sealed class AlertProducer : IAlertEventSink
         lock (_gate)
         {
             _active.Clear();
+        }
+
+        // Phase 6.7 — propagate to stateful per-flush rules. Their
+        // internal dedup HashSets ("apps/connections already alerted in
+        // this process") would otherwise survive the wipe and silently
+        // suppress all subsequent qualifying flushes for those keys.
+        // Per-event IAlertRule implementations are stateless; only
+        // IFlushAlertRule instances need this.
+        foreach (var rule in _flushRules)
+        {
+            try
+            {
+                rule.ForgetAll();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "AlertProducer: ForgetAll threw on rule {Rule}; continuing.",
+                    rule.GetType().Name);
+            }
         }
     }
 

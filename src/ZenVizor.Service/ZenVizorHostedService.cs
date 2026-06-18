@@ -112,18 +112,22 @@ internal sealed class ZenVizorHostedService : IHostedService
             firstSeenCache.GetOrAdd(appId, id => appFirstSeenRepo.GetFirstSeenUnixMs(id));
 
         // Phase 6.7 P4 — register Rules 1 + 2 (per-WAN-event) and
-        // Rules 3 + 4 (per-flush) from the alert catalog. Rule 5
-        // (UnusualDailyVolume) lands in Slice C with S3 wiring.
+        // Rules 3 + 4 + 5 (per-flush) from the alert catalog. All six
+        // producers wired with this slice.
         var alertRules  = new IAlertRule[]
         {
             new UnsignedFromUserPathRule(),
             new InvalidSignatureRule(),
             new FirstRunWanTalkerRule(),
         };
+        var dailyTrafficLookup = new DailyTrafficLookupRepository(connections);
         var flushAlertRules = new IFlushAlertRule[]
         {
             new LargeDownloadRule(alertSettingsLookup),
             new OutboundHeavyRule(alertSettingsLookup),
+            new UnusualDailyVolumeRule(
+                alertSettingsLookup,
+                (from, to) => MapDailyTotals(dailyTrafficLookup.GetDailyTotals(from, to))),
         };
         var alertProducer = new AlertProducer(
             alertRules,
@@ -237,6 +241,7 @@ internal sealed class ZenVizorHostedService : IHostedService
                 id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             settingsProvider:    ()       => BuildSettingsSnapshot(settingsRepo, startModeManager),
             settingsApplier:     update   => ApplySettingsUpdate(settingsRepo, startModeManager, update, alertSettingsLookup),
+            rollupRulesNowRunner: ()      => alertProducer.EvaluateRollupRulesNow(),
             historyWiper:        ()       => WipeAndLog(retentionForWipe, alertProducer, aggregator, sessionTracker));
 
         // The alert broadcaster is the fan-out point for server-pushed
@@ -503,6 +508,30 @@ internal sealed class ZenVizorHostedService : IHostedService
             // Purge failures are non-fatal — the next tick retries.
             _logger.LogWarning(ex, "Retention purge failed; will retry on next tick.");
         }
+    }
+
+    /// <summary>
+    /// Phase 6.7 — map storage-side <see cref="DailyTrafficLookupRow"/>
+    /// to the core-side <see cref="DailyVolumeRow"/> the
+    /// <see cref="UnusualDailyVolumeRule"/> consumes. The shapes are
+    /// nearly identical but kept on opposite sides of the layering
+    /// boundary so Core stays free of Storage references.
+    /// </summary>
+    private static IReadOnlyList<DailyVolumeRow> MapDailyTotals(IReadOnlyList<DailyTrafficLookupRow> rows)
+    {
+        if (rows.Count == 0) return Array.Empty<DailyVolumeRow>();
+        var mapped = new List<DailyVolumeRow>(rows.Count);
+        foreach (var r in rows)
+        {
+            mapped.Add(new DailyVolumeRow(
+                AppId:      r.AppId,
+                ImageName:  r.ImageName,
+                ImagePath:  r.ImagePath,
+                DayUnixMs:  r.BucketStartUnixMs,
+                BytesUp:    r.BytesUp,
+                BytesDown:  r.BytesDown));
+        }
+        return mapped;
     }
 
     private Task RunBackfillSafelyAsync(EnrichmentBackfill backfill, CancellationToken cancellationToken)

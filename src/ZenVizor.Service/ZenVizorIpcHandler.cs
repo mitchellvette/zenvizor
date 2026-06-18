@@ -45,6 +45,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
     private readonly Func<SettingsSnapshot> _settingsProvider;
     private readonly Action<SettingsUpdate> _settingsApplier;
     private readonly Func<WipeHistoryResult> _historyWiper;
+    private readonly Action _rollupRulesNowRunner;
     private readonly Func<DateTimeOffset> _clock;
     private readonly long _maxWindowLookbackMs;
     private readonly string _serviceVersion;
@@ -65,6 +66,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         Func<SettingsSnapshot>? settingsProvider = null,
         Action<SettingsUpdate>? settingsApplier = null,
         Func<WipeHistoryResult>? historyWiper = null,
+        Action? rollupRulesNowRunner = null,
         Func<DateTimeOffset>? clock = null,
         long? maxWindowLookbackMs = null)
     {
@@ -98,6 +100,7 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         _settingsProvider = settingsProvider ?? DefaultSettings;
         _settingsApplier = settingsApplier ?? (_ => { });
         _historyWiper = historyWiper ?? (() => new WipeHistoryResult(0, 0, 0, 0, 0, 0));
+        _rollupRulesNowRunner = rollupRulesNowRunner ?? (() => { });
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _maxWindowLookbackMs = maxWindowLookbackMs ?? DefaultMaxWindowLookbackMs;
         _serviceVersion = typeof(ZenVizorIpcHandler).Assembly
@@ -258,6 +261,16 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         // dismissed-already state to the UI as a faulted task. Silent
         // success is the contract.
         _alertDismisser(alertId);
+        return Task.CompletedTask;
+    }
+
+    public Task RunRollupRulesNowAsync()
+    {
+        // Idempotent QA hook — re-evaluates the rollup-source rules
+        // (currently just UnusualDailyVolumeRule) regardless of the
+        // date-roll gate. Used by the seed-unusual-volume.ps1 script
+        // so QA doesn't have to wait for the next natural UTC midnight.
+        _rollupRulesNowRunner();
         return Task.CompletedTask;
     }
 

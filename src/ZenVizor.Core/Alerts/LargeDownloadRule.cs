@@ -51,6 +51,19 @@ public sealed class LargeDownloadRule : IFlushAlertRule
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
 
+    /// <summary>
+    /// Resets all rule-internal state when alerts history is wiped.
+    /// Without this, the connections-already-alerted set persists across
+    /// the wipe and any future qualifying download of those same (session,
+    /// remote) keys is silently absorbed.
+    /// </summary>
+    public void ForgetAll()
+    {
+        _perConnection.Clear();
+        _alertedConnections.Clear();
+        _appState.Clear();
+    }
+
     public IEnumerable<(RaiseRequest Request, string Detail)> Evaluate(FlushAlertEvent evt)
     {
         ArgumentNullException.ThrowIfNull(evt);

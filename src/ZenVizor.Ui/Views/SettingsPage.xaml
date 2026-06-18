@@ -398,6 +398,128 @@
                                     </StackPanel>
                                 </ui:Button>
                             </Grid>
+
+                            <!--  Hairline separator between the notification toggle
+                                  group and the threshold rows. Same pattern as
+                                  the retention section.  -->
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <!--  Phase 6.7 P4 — alert threshold tuning. Three
+                                  user-settable knobs that control how loud the
+                                  alert pipeline is. Each row mirrors the retention
+                                  row shape: label + description on the left, a
+                                  ui:NumberBox on the right, debounced apply on
+                                  edit.  -->
+                            <ui:TextBlock Style="{StaticResource text.body.strong}"
+                                          Text="Alert thresholds"
+                                          Margin="0,0,0,4" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="Tune what counts as worth a notification. Defaults catch most genuinely-notable activity without flooding."
+                                          TextWrapping="Wrap"
+                                          Margin="0,0,0,16" />
+
+                            <!--  Row: LargeDownload threshold. Unit label next to the
+                                  NumberBox so the bare number reads in context.
+                                  Wpf.Ui NumberBox has no built-in suffix property;
+                                  the StackPanel + TextBlock is the canonical pattern.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Large-download threshold" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Alert when a single connection pulls this many megabytes in under 60 seconds. Raise it if your daily browsing or cloud sync trips the alert." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <ui:NumberBox x:Name="AlertLargeDownloadMbBox"
+                                                  Width="100"
+                                                  VerticalAlignment="Center"
+                                                  Minimum="1"
+                                                  Maximum="1024"
+                                                  SmallChange="5"
+                                                  LargeChange="50"
+                                                  Value="{Binding AlertLargeDownloadMb, Mode=TwoWay}"
+                                                  ValueChanged="OnAlertThresholdValueChanged" />
+                                    <TextBlock Text="MB"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource text.secondary}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <!--  Row: OutboundHeavy floor.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Outbound-heavy floor" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Minimum megabytes an app must upload across 15 minutes before an outbound-heavy alert can fire. The 3-to-1 upload-vs-download ratio is locked." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <ui:NumberBox x:Name="AlertOutboundHeavyFloorMbBox"
+                                                  Width="100"
+                                                  VerticalAlignment="Center"
+                                                  Minimum="1"
+                                                  Maximum="1024"
+                                                  SmallChange="1"
+                                                  LargeChange="10"
+                                                  Value="{Binding AlertOutboundHeavyFloorMb, Mode=TwoWay}"
+                                                  ValueChanged="OnAlertThresholdValueChanged" />
+                                    <TextBlock Text="MB"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource text.secondary}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <!--  Row: UnusualDailyVolume sensitivity. Unit reads
+                                  "x typical" so the slider value (e.g. 2.5) reads
+                                  as "2.5x typical baseline" at a glance.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Unusual-volume sensitivity" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Multiplier over each app's 14-day typical traffic that triggers the unusual-daily-volume alert. Lower = more alerts. A 50 MB minimum delta over typical is enforced regardless so trivial bumps don't fire." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <ui:NumberBox x:Name="AlertUnusualDailyVolumeKBox"
+                                                  Width="100"
+                                                  VerticalAlignment="Center"
+                                                  Minimum="1.0"
+                                                  Maximum="10.0"
+                                                  SmallChange="0.1"
+                                                  LargeChange="0.5"
+                                                  Value="{Binding AlertUnusualDailyVolumeK, Mode=TwoWay}"
+                                                  ValueChanged="OnAlertThresholdValueChanged" />
+                                    <TextBlock Text="x typical"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource text.secondary}" />
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
 
