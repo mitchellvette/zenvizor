@@ -896,9 +896,9 @@ static (NotableSeverity Severity, SourceMonitor Source, bool ProducerWired, stri
         "A newly-created app reached the network within seconds of first-seen."),
     AlertType.UnusualDailyVolume => (NotableSeverity.Warning, SourceMonitor.Rollup, false,
         "An app's daily bytes are robustly above its 14-day baseline (median + MAD)."),
-    AlertType.LargeDownload => (NotableSeverity.Info, SourceMonitor.Capture, false,
+    AlertType.LargeDownload => (NotableSeverity.Info, SourceMonitor.Capture, true,
         "A single connection pulled down a large download in a short window."),
-    AlertType.OutboundHeavy => (NotableSeverity.Warning, SourceMonitor.Capture, false,
+    AlertType.OutboundHeavy => (NotableSeverity.Warning, SourceMonitor.Capture, true,
         "An app's outbound bytes dominate inbound by a configured ratio over the absolute floor."),
     _ => (NotableSeverity.Info, SourceMonitor.Capture, false, "(unknown type)"),
 };

@@ -335,6 +335,53 @@ public sealed class TrafficAggregator
                         conn.Pid, appId);
                 }
             }
+
+            // Phase 6.7 — per-flush hook for stateful per-flush rules
+            // (LargeDownload, OutboundHeavy, future rollup-source rules).
+            // Built AFTER the per-WAN-connection loop so any state the
+            // per-event rules already mutated is visible. Includes
+            // every (pid, remote) row in this flush — both WAN and LAN
+            // — because LargeDownload + OutboundHeavy are remote-class-
+            // agnostic in principle (LAN backups can produce big
+            // outbound) and the rule predicates filter as needed.
+            var flushConns = new List<FlushConnectionState>(connectionRows.Count);
+            foreach (var conn in connectionRows)
+            {
+                if (!pidToAppIdSnapshot.TryGetValue(conn.Pid, out var appId)) continue;
+                if (!pidToAppSnapshot.TryGetValue(conn.Pid, out var info)) continue;
+                if (!result.NewPidToSessionId.TryGetValue(conn.Pid, out var sessionId)
+                    && !batch.KnownPidToSessionId.TryGetValue(conn.Pid, out sessionId))
+                {
+                    continue;
+                }
+
+                flushConns.Add(new FlushConnectionState(
+                    Pid:                conn.Pid,
+                    AppId:              appId,
+                    SessionId:          sessionId,
+                    App:                info.AppIdentity,
+                    Protocol:           conn.Protocol,
+                    RemoteAddress:      conn.RemoteAddress,
+                    RemotePort:         conn.RemotePort,
+                    RemoteClass:        conn.RemoteClass,
+                    BytesUpDelta:       conn.BytesUpDelta,
+                    BytesDownDelta:     conn.BytesDownDelta,
+                    FirstSeenUnixMs:    conn.FirstSeenUnixMs,
+                    LastSeenUnixMs:     conn.LastSeenUnixMs));
+            }
+
+            try
+            {
+                _alertEventSink.OnFlushCompleted(new FlushAlertEvent(
+                    FlushTimeUnixMs: nowUnixMs,
+                    FlushIntervalMs: 0L, // populated only if the producer needs it; today no rule does
+                    Connections:     flushConns));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Per-flush alert hook threw; aggregator continues.");
+            }
         }
 
         _logger.LogDebug(

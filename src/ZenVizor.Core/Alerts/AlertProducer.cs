@@ -45,6 +45,7 @@ namespace ZenVizor.Core.Alerts;
 public sealed class AlertProducer : IAlertEventSink
 {
     private readonly IAlertRule[] _rules;
+    private readonly IFlushAlertRule[] _flushRules;
     private readonly IAlertSink _sink;
     private readonly Func<long> _now;
     private readonly Func<int, long>? _appFirstSeenLookup;
@@ -60,10 +61,17 @@ public sealed class AlertProducer : IAlertEventSink
         IAlertSink sink,
         Func<long>? nowProvider = null,
         Func<int, long>? appFirstSeenLookup = null,
+        IEnumerable<IFlushAlertRule>? flushRules = null,
         ILogger<AlertProducer>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
         _rules = rules.ToArray();
+        // Phase 6.7 per-flush rules. Optional — null/empty in test paths
+        // and in build phases before LargeDownload/OutboundHeavy/
+        // UnusualDailyVolume land. Rules in this set are STATEFUL: they
+        // hold per-connection or per-app rolling-window state across
+        // flushes.
+        _flushRules = flushRules?.ToArray() ?? Array.Empty<IFlushAlertRule>();
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _now = nowProvider ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         // Optional. Null in test paths and in production builds where no
@@ -252,6 +260,126 @@ public sealed class AlertProducer : IAlertEventSink
             EntityRef:            req.EntityRef,
             Title:                req.Title,
             Detail:               initialDetail,
+            AcknowledgedAtUnixMs: null,
+            AppId:                req.AppId);
+
+        AlertRaised?.Invoke(dto);
+    }
+
+    /// <summary>
+    /// Phase 6.7 — per-flush rule evaluation hook. Called by the
+    /// aggregator AFTER every <see cref="OnSessionConnectedWan"/> event
+    /// for the same flush has fired. Iterates each registered
+    /// <see cref="IFlushAlertRule"/>; each rule returns zero-or-more
+    /// raise requests + pre-rendered detail strings. The producer
+    /// applies its standard dedupe / cooldown / cache flow to each.
+    /// </summary>
+    public void OnFlushCompleted(FlushAlertEvent evt)
+    {
+        if (evt is null || _flushRules.Length == 0) return;
+
+        foreach (var rule in _flushRules)
+        {
+            try
+            {
+                foreach (var (request, detail) in rule.Evaluate(evt))
+                {
+                    if (request is null || string.IsNullOrEmpty(detail))
+                    {
+                        continue;
+                    }
+                    RaiseFromFlush(rule, request, detail, evt.FlushTimeUnixMs);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "AlertProducer: flush-rule {Rule} threw; producer continues with next rule.",
+                    rule.GetType().Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Per-flush sibling of <see cref="EvaluateOne"/>. Same dedupe + cooldown
+    /// + cache shape, but the detail string arrives pre-rendered (per-flush
+    /// rules need internal rolling-window state that
+    /// <see cref="IAlertRule.RenderDetail"/> doesn't model).
+    /// </summary>
+    private void RaiseFromFlush(IFlushAlertRule rule, RaiseRequest req, string detail, long firstSeenUnixMs)
+    {
+        var typeStr = req.Type.ToString();
+        var kindStr = req.EntityKind.ToString();
+        var refStr  = req.EntityRef;
+        var key     = (typeStr, refStr);
+
+        ActiveState? state;
+        lock (_gate)
+        {
+            _active.TryGetValue(key, out state);
+        }
+
+        if (state is not null)
+        {
+            int newCount;
+            lock (_gate)
+            {
+                state.Count++;
+                newCount = state.Count;
+            }
+            // Detail already rendered by the rule against its own state —
+            // the rule rolled in cumulative bytes, contributing PIDs, etc.
+            // Producer just persists the new string.
+            var updated = _sink.UpdateDetail(typeStr, kindStr, refStr, detail);
+            _logger.LogInformation(
+                "AlertProducer dedupe-hit (cache, flush): type={Type} ref={Ref} newCount={Count} updateDetailRows={Updated}",
+                typeStr, refStr, newCount, updated);
+            return;
+        }
+
+        var nowMs = _now();
+        var alertId = _sink.TryInsert(
+            type:          typeStr,
+            severity:      req.Severity.ToString(),
+            sourceMonitor: req.SourceMonitor.ToString(),
+            entityKind:    kindStr,
+            entityRef:     refStr,
+            title:         req.Title,
+            detail:        detail,
+            nowUnixMs:     nowMs,
+            cooldownMs:    rule.CooldownMs);
+
+        if (alertId == 0)
+        {
+            _logger.LogInformation(
+                "AlertProducer TryInsert blocked by SQL gate (flush): type={Type} ref={Ref}",
+                typeStr, refStr);
+            return;
+        }
+
+        _logger.LogInformation(
+            "AlertProducer raised (flush): alert_id={AlertId} type={Type} ref={Ref}",
+            alertId, typeStr, refStr);
+
+        lock (_gate)
+        {
+            _active[key] = new ActiveState
+            {
+                Count = 1,
+                FirstSeenUnixMs = firstSeenUnixMs,
+            };
+        }
+
+        var dto = new AlertDto(
+            AlertId:              alertId,
+            Type:                 req.Type,
+            Severity:             req.Severity,
+            CreatedAtUnixMs:      nowMs,
+            Source:               req.SourceMonitor,
+            EntityKind:           req.EntityKind,
+            EntityRef:            req.EntityRef,
+            Title:                req.Title,
+            Detail:               detail,
             AcknowledgedAtUnixMs: null,
             AppId:                req.AppId);
 

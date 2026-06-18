@@ -22,4 +22,16 @@ public interface IAlertEventSink
     /// a single rule fault can't fail the entire flush commit path.
     /// </summary>
     void OnSessionConnectedWan(NewSessionEvent evt);
+
+    /// <summary>
+    /// Called once per flush, AFTER all <see cref="OnSessionConnectedWan"/>
+    /// events for the same flush have fired. Phase 6.7 hook for per-flush
+    /// rules (LargeDownload, OutboundHeavy, UnusualDailyVolume) that
+    /// evaluate against the full flush state rather than a single
+    /// connection event. Default implementation is a no-op so existing
+    /// sinks (including tests) continue to compile and behave
+    /// identically — only the production <see cref="AlertProducer"/>
+    /// overrides this method.
+    /// </summary>
+    void OnFlushCompleted(FlushAlertEvent evt) { }
 }

@@ -82,6 +82,15 @@ internal sealed class ZenVizorHostedService : IHostedService
         var connections = new ConnectionFactory(dbPath);
         var flushSink = new SqliteFlushSink(connections);
 
+        // Phase 6.7 — settings cache constructed UP FRONT so the alert
+        // producer's Phase 6.7 per-flush rules (LargeDownload,
+        // OutboundHeavy) can read user-tunable thresholds at evaluation
+        // time. UpdateSettingsAsync on the IPC side calls
+        // alertSettingsLookup.Refresh() so a UI write takes effect on
+        // the next flush without a restart.
+        var settingsRepoForAlerts = new SettingsRepository(connections);
+        var alertSettingsLookup = new CachedAlertSettingsLookup(settingsRepoForAlerts);
+
         // ---- Phase 6 alert pipeline (must construct BEFORE the aggregator
         //      so we can hand the producer in as its IAlertEventSink). The
         //      sink → producer dependency chain stays inside the service:
@@ -102,19 +111,26 @@ internal sealed class ZenVizorHostedService : IHostedService
         long FirstSeenLookup(int appId) =>
             firstSeenCache.GetOrAdd(appId, id => appFirstSeenRepo.GetFirstSeenUnixMs(id));
 
-        // Phase 6.7 P4 — register Rules 1 + 2 from the alert catalog.
-        // Rules 3-5 land in subsequent slices (S2 + S3 work).
+        // Phase 6.7 P4 — register Rules 1 + 2 (per-WAN-event) and
+        // Rules 3 + 4 (per-flush) from the alert catalog. Rule 5
+        // (UnusualDailyVolume) lands in Slice C with S3 wiring.
         var alertRules  = new IAlertRule[]
         {
             new UnsignedFromUserPathRule(),
             new InvalidSignatureRule(),
             new FirstRunWanTalkerRule(),
         };
+        var flushAlertRules = new IFlushAlertRule[]
+        {
+            new LargeDownloadRule(alertSettingsLookup),
+            new OutboundHeavyRule(alertSettingsLookup),
+        };
         var alertProducer = new AlertProducer(
             alertRules,
             alertSink,
             appFirstSeenLookup: FirstSeenLookup,
-            logger: _loggerFactory.CreateLogger<AlertProducer>());
+            flushRules:         flushAlertRules,
+            logger:             _loggerFactory.CreateLogger<AlertProducer>());
 
         // ProcessLifecycleResolver is the Phase-3 fix for short-lived process
         // attribution: an ETW-fed image cache keyed by PID, populated at
@@ -188,8 +204,10 @@ internal sealed class ZenVizorHostedService : IHostedService
         // ---- IPC ----
         var queryRepo       = new AppHistoryQueryRepository(connections);
         var dailyReportRepo = new DailyReportRepository(connections);
-        var settingsRepo    = new SettingsRepository(connections);
-        var alertSettingsLookup = new CachedAlertSettingsLookup(settingsRepo);
+        // Re-use the settings cache constructed above for the alert
+        // pipeline so the IPC handler and the alert producer share one
+        // refresh-on-update surface.
+        var settingsRepo = settingsRepoForAlerts;
         var retentionForWipe = new RetentionRepository(
             connections, _loggerFactory.CreateLogger<RetentionRepository>());
         var startModeManager = new ServiceStartModeManager(
