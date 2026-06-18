@@ -19,6 +19,11 @@ public partial class MainWindow : FluentWindow
     private readonly ActivitySnapshotPoller _activityPoller;
     private readonly AlertsClient _alertsClient;
     private readonly SettingsClient _settingsClient;
+    // A2: centralised query-pipe client shared by HistoryPage,
+    // ReportsPage, PerAppPage, and AppDetailPage so they all reuse a
+    // single named-pipe connection and a single force-reconnect on
+    // service restart (rather than 4 per-page reconnects).
+    private readonly HistoryQueryClient _historyClient;
     private bool _exiting;
 
     // Phase 6.2: cached "show desktop toast on AlertRaised" preference.
@@ -155,6 +160,10 @@ public partial class MainWindow : FluentWindow
         // (read in OnAlertRaised) and SettingsPage's apply path share it.
         // Disposed alongside _alertsClient on window close.
         _settingsClient = new SettingsClient();
+
+        // A2: constructed lazily-connected; first page to call into it
+        // drives the pipe handshake. Disposed in OnClosed.
+        _historyClient = new HistoryQueryClient();
 
         // Cache page instances so picker state (window, grain, scroll position)
         // survives navigation away and back. Without this, each nav rail click
@@ -307,6 +316,19 @@ public partial class MainWindow : FluentWindow
     /// owns its own debounce / VM state — this is just the IPC surface.
     /// </summary>
     internal SettingsClient SettingsClient => _settingsClient;
+
+    /// <summary>
+    /// Shared query-IPC client used by all four data pages
+    /// (HistoryPage / ReportsPage / PerAppPage / AppDetailPage). A2
+    /// (Scope 3 of Phase 6.1a) centralised this so the four pages
+    /// reuse a single named-pipe connection rather than each holding
+    /// their own. <see cref="OnStatusChanged"/> force-reconnects this
+    /// alongside <see cref="AlertsClient"/> on the
+    /// disconnected→connected transition before raising
+    /// <see cref="ServiceReconnected"/>, so by the time the pages'
+    /// handlers run, the next call hits a fresh pipe.
+    /// </summary>
+    internal HistoryQueryClient HistoryQueryClient => _historyClient;
 
     /// <summary>
     /// P2 (sprint plan, Pre-MVP polish): seed the nav-rail badge from
@@ -652,6 +674,8 @@ public partial class MainWindow : FluentWindow
         // is running on the dispatcher and a blocking wait would deadlock
         // any in-flight callback that still expects the dispatcher.
         try { _ = _alertsClient.DisposeAsync().AsTask(); } catch { }
+        // A2: same fire-and-forget posture for the shared query client.
+        try { _ = _historyClient.DisposeAsync().AsTask(); } catch { }
         // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
         // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
         // disposes the tray AFTER the dispatcher fully drains. Calling
@@ -759,11 +783,19 @@ public partial class MainWindow : FluentWindow
                     try
                     {
                         await _alertsClient.ForceReconnectAsync().ConfigureAwait(false);
+                        // A2: force-reconnect the shared query client
+                        // alongside the alerts client. With the four
+                        // data pages now sharing this single instance,
+                        // one reconnect here covers all of them — the
+                        // per-page ForceReconnectAsync calls from A1
+                        // are removed in the same diff.
+                        await _historyClient.ForceReconnectAsync().ConfigureAwait(false);
                     }
                     catch
                     {
-                        // Best-effort. If the reconnect fails the next IPC call
-                        // from any page will re-attempt via the lazy path.
+                        // Best-effort. If either reconnect fails the next
+                        // IPC call from any page will re-attempt via the
+                        // lazy path.
                         return;
                     }
                     // P2 (Q1): re-seed the badge before firing

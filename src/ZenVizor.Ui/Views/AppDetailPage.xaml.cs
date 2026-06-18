@@ -18,7 +18,8 @@ namespace ZenVizor.Ui.Views;
 [SupportedOSPlatform("windows")]
 public partial class AppDetailPage : Page
 {
-    private readonly HistoryQueryClient _client = new();
+    // A2: assigned from MainWindow.HistoryQueryClient in OnPageLoaded.
+    private HistoryQueryClient _client = null!;
     private readonly DispatcherTimer _toastTimer;
 
     public ObservableCollection<ConnectionRowViewModel> Connections { get; } = new();
@@ -182,6 +183,8 @@ public partial class AppDetailPage : Page
     {
         if (Application.Current.MainWindow is MainWindow mw)
         {
+            // A2: pick up the shared query client from MainWindow.
+            _client = mw.HistoryQueryClient;
             mw.HistoryWiped += OnHistoryWiped;
             // A1: refresh on the disconnected→connected transition so a
             // service restart doesn't leave the per-app drill on the
@@ -211,10 +214,9 @@ public partial class AppDetailPage : Page
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
     {
-        // ForceReconnect even without an AppId so the next nav with a
-        // valid id hits a fresh pipe; RefreshAsync stays AppId-gated.
-        // A2 lifts the ForceReconnect to MainWindow.
-        await _client.ForceReconnectAsync();
+        // A2: MainWindow.OnStatusChanged force-reconnected the shared
+        // client before raising this event. RefreshAsync stays
+        // AppId-gated — see OnHistoryWiped for the rationale.
         if (AppId is int) await RefreshAsync();
     }
 

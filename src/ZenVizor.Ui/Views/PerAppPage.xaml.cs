@@ -19,7 +19,8 @@ public partial class PerAppPage : Page
 {
     private const double DimmedOpacity = 0.6;
 
-    private readonly HistoryQueryClient _client = new();
+    // A2: assigned from MainWindow.HistoryQueryClient in OnLoaded.
+    private HistoryQueryClient _client = null!;
     private readonly DispatcherTimer _loadingCaptionTimer;
     private readonly DispatcherTimer _filterDebounceTimer;
     private readonly CollectionViewSource _rowsView = new();
@@ -82,6 +83,8 @@ public partial class PerAppPage : Page
     {
         if (Application.Current.MainWindow is MainWindow mw)
         {
+            // A2: pick up the shared query client from MainWindow.
+            _client = mw.HistoryQueryClient;
             mw.HistoryWiped += OnHistoryWiped;
             // A1: refresh on the disconnected→connected transition so
             // a service restart doesn't leave the page on the stale
@@ -105,9 +108,8 @@ public partial class PerAppPage : Page
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
     {
-        // ForceReconnect first — see HistoryPage.OnServiceReconnected
-        // for the rationale. A2 lifts this to MainWindow.
-        await _client.ForceReconnectAsync();
+        // A2: MainWindow.OnStatusChanged force-reconnected the shared
+        // client before raising this event.
         await RefreshAsync();
     }
 

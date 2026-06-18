@@ -27,7 +27,8 @@ public sealed partial class ReportsPage : Page
     // stub provider ignores the date and always returns the same payload.
     private static readonly DateTime InitialDate = new(2026, 6, 8);
 
-    private readonly HistoryQueryClient _client = new();
+    // A2: assigned from MainWindow.HistoryQueryClient in OnLoaded.
+    private HistoryQueryClient _client = null!;
     private readonly DailyReportCsvWriter _csvWriter = new();
     private readonly DailyReportHtmlWriter _htmlWriter = new();
 
@@ -99,12 +100,14 @@ public sealed partial class ReportsPage : Page
         RepositionPeakOverlay();
         ChartTheming.Changed += OnThemeChanged;
 
+        // A2: pick up the shared query client from MainWindow.
         // Subscribe to the wipe fan-out so the user sees an empty state
         // immediately after Reset history, without having to navigate
         // away and back. A1: also subscribe to ServiceReconnected so a
         // service restart refreshes the page automatically.
         if (Application.Current.MainWindow is MainWindow mw)
         {
+            _client = mw.HistoryQueryClient;
             mw.HistoryWiped += OnHistoryWiped;
             mw.ServiceReconnected += OnServiceReconnected;
         }
@@ -124,9 +127,8 @@ public sealed partial class ReportsPage : Page
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
     {
-        // ForceReconnect first — see HistoryPage.OnServiceReconnected
-        // for the rationale. A2 lifts this to MainWindow.
-        await _client.ForceReconnectAsync();
+        // A2: MainWindow.OnStatusChanged force-reconnected the shared
+        // client before raising this event.
         await RefreshAsync();
     }
 

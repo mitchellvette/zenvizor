@@ -16,7 +16,9 @@ namespace ZenVizor.Ui.Views;
 [SupportedOSPlatform("windows")]
 public partial class HistoryPage : Page
 {
-    private readonly HistoryQueryClient _client = new();
+    // A2: assigned from MainWindow.HistoryQueryClient in OnPageLoaded.
+    // No _client touch happens before Loaded (verified at A2 time).
+    private HistoryQueryClient _client = null!;
 
     // Chart axes — created ONCE in the ctor and mutated per refresh
     // (UpdateAxesForGrain assigns fresh Labeler / MinStep / UnitWidth values).
@@ -102,6 +104,10 @@ public partial class HistoryPage : Page
     {
         if (Application.Current.MainWindow is MainWindow mw)
         {
+            // A2: pick up the shared query client. Pages are
+            // NavigationCacheMode.Enabled, so this runs once per page
+            // instance; the assignment is idempotent across re-loads.
+            _client = mw.HistoryQueryClient;
             mw.HistoryWiped += OnHistoryWiped;
             // A1: subscribe to the MainWindow-driven ServiceReconnected
             // event so a service restart (Settings panel, sc.exe, Services
@@ -125,12 +131,9 @@ public partial class HistoryPage : Page
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
     {
-        // ForceReconnect first — our _client still holds the dead pipe
-        // from before the service restart, and EnsureProxyAsync alone
-        // would return the stale proxy. Sprint plan A2 lifts this to
-        // MainWindow once HistoryQueryClient is centralised; until then
-        // each page handles its own client.
-        await _client.ForceReconnectAsync();
+        // A2: MainWindow.OnStatusChanged force-reconnected the shared
+        // _client before raising this event, so the next RefreshAsync
+        // hits a fresh pipe. No per-page reconnect needed.
         await RefreshAsync();
     }
 
