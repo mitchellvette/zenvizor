@@ -215,6 +215,10 @@ public partial class MainWindow : FluentWindow
             try
             {
                 await _alertsClient.EnsureConnectedAsync().ConfigureAwait(false);
+                // P2: seed nav-rail badge from the active-alerts set so
+                // launch with pre-existing alerts shows the badge
+                // immediately, not only after the user opens AlertsPage.
+                await SeedBadgeFromActiveAlertsAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -303,6 +307,62 @@ public partial class MainWindow : FluentWindow
     /// owns its own debounce / VM state — this is just the IPC surface.
     /// </summary>
     internal SettingsClient SettingsClient => _settingsClient;
+
+    /// <summary>
+    /// P2 (sprint plan, Pre-MVP polish): seed the nav-rail badge from
+    /// the authoritative server-side active-alerts set. Without this,
+    /// only <see cref="OnAlertRaised"/> mutates the badge — so alerts
+    /// already in the DB at launch stay invisible until the user opens
+    /// the Alerts page (which calls <see cref="UpdateAlertsBadge"/>
+    /// authoritatively).
+    /// <para>
+    /// Re-runs on the <c>ServiceReconnected</c> transition per the Q1
+    /// decision: a restart can change the active-alerts set out from
+    /// under us (retention purge, <c>zvctl alerts dismiss</c> while the
+    /// UI was running), and the local per-severity counters would
+    /// otherwise drift from the service truth across the gap. This
+    /// snaps them back.
+    /// </para>
+    /// <para>
+    /// Best-effort. Exceptions are swallowed — the next <c>AlertRaised</c>
+    /// push or page-driven <see cref="UpdateAlertsBadge"/> call brings
+    /// the badge back in sync.
+    /// </para>
+    /// </summary>
+    private async Task SeedBadgeFromActiveAlertsAsync()
+    {
+        AlertsResult result;
+        try
+        {
+            result = await _alertsClient
+                .GetAlertsAsync(new AlertsFilter(AlertState.Active))
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        Dispatcher.Invoke(() =>
+        {
+            // Reset before counting — re-seed on ServiceReconnected
+            // must not double-count alerts that survived through the
+            // local OnAlertRaised stream. The server set is authoritative.
+            _badgeCritical = 0;
+            _badgeWarning = 0;
+            _badgeInfo = 0;
+            foreach (var alert in result.Alerts)
+            {
+                switch (alert.Severity)
+                {
+                    case NotableSeverity.Critical: _badgeCritical++; break;
+                    case NotableSeverity.Warning:  _badgeWarning++;  break;
+                    case NotableSeverity.Info:     _badgeInfo++;     break;
+                }
+            }
+            RenderBadgeFromLocalCounts();
+        });
+    }
 
     private void OnAlertRaised(object? sender, AlertDto alert)
     {
@@ -706,6 +766,13 @@ public partial class MainWindow : FluentWindow
                         // from any page will re-attempt via the lazy path.
                         return;
                     }
+                    // P2 (Q1): re-seed the badge before firing
+                    // ServiceReconnected. The service-side active set
+                    // can change across a restart (retention purge,
+                    // zvctl dismissals while the UI was running) and
+                    // the local per-severity counters would otherwise
+                    // drift from server truth.
+                    await SeedBadgeFromActiveAlertsAsync().ConfigureAwait(false);
                     Dispatcher.Invoke(() => ServiceReconnected?.Invoke(this, EventArgs.Empty));
                 });
             }
