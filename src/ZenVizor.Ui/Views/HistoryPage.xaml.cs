@@ -103,6 +103,11 @@ public partial class HistoryPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped += OnHistoryWiped;
+            // A1: subscribe to the MainWindow-driven ServiceReconnected
+            // event so a service restart (Settings panel, sc.exe, Services
+            // snap-in) refreshes the page automatically rather than
+            // waiting for the user to navigate away and back.
+            mw.ServiceReconnected += OnServiceReconnected;
         }
         await RefreshAsync();
     }
@@ -112,10 +117,22 @@ public partial class HistoryPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped -= OnHistoryWiped;
+            mw.ServiceReconnected -= OnServiceReconnected;
         }
     }
 
     private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        // ForceReconnect first — our _client still holds the dead pipe
+        // from before the service restart, and EnsureProxyAsync alone
+        // would return the stale proxy. Sprint plan A2 lifts this to
+        // MainWindow once HistoryQueryClient is centralised; until then
+        // each page handles its own client.
+        await _client.ForceReconnectAsync();
+        await RefreshAsync();
+    }
 
     /// <summary>
     /// Mutate the existing <see cref="_xAxis"/> / <see cref="_yAxis"/>

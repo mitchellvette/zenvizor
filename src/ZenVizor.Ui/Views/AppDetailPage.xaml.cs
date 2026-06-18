@@ -183,6 +183,10 @@ public partial class AppDetailPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped += OnHistoryWiped;
+            // A1: refresh on the disconnected→connected transition so a
+            // service restart doesn't leave the per-app drill on the
+            // stale pipe + stale data until the user re-navigates.
+            mw.ServiceReconnected += OnServiceReconnected;
         }
         EnforceDataGridBounds();
         await RefreshAsync();
@@ -193,6 +197,7 @@ public partial class AppDetailPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped -= OnHistoryWiped;
+            mw.ServiceReconnected -= OnServiceReconnected;
         }
     }
 
@@ -201,6 +206,15 @@ public partial class AppDetailPage : Page
         // Per-app drill is only meaningful with an AppId. Without one we
         // skip the refresh — the page will pick up the empty state on
         // the next nav with a valid id.
+        if (AppId is int) await RefreshAsync();
+    }
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        // ForceReconnect even without an AppId so the next nav with a
+        // valid id hits a fresh pipe; RefreshAsync stays AppId-gated.
+        // A2 lifts the ForceReconnect to MainWindow.
+        await _client.ForceReconnectAsync();
         if (AppId is int) await RefreshAsync();
     }
 

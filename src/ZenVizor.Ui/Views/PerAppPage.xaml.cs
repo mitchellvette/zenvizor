@@ -83,6 +83,10 @@ public partial class PerAppPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped += OnHistoryWiped;
+            // A1: refresh on the disconnected→connected transition so
+            // a service restart doesn't leave the page on the stale
+            // pipe + stale data until the user re-navigates.
+            mw.ServiceReconnected += OnServiceReconnected;
         }
         EnforceAppsGridBound();
         await RefreshAsync();
@@ -93,10 +97,19 @@ public partial class PerAppPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped -= OnHistoryWiped;
+            mw.ServiceReconnected -= OnServiceReconnected;
         }
     }
 
     private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        // ForceReconnect first — see HistoryPage.OnServiceReconnected
+        // for the rationale. A2 lifts this to MainWindow.
+        await _client.ForceReconnectAsync();
+        await RefreshAsync();
+    }
 
     /// <summary>
     /// See AppDetailPage.EnforceDataGridBounds for the rationale.

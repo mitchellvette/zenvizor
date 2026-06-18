@@ -101,10 +101,12 @@ public sealed partial class ReportsPage : Page
 
         // Subscribe to the wipe fan-out so the user sees an empty state
         // immediately after Reset history, without having to navigate
-        // away and back.
+        // away and back. A1: also subscribe to ServiceReconnected so a
+        // service restart refreshes the page automatically.
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped += OnHistoryWiped;
+            mw.ServiceReconnected += OnServiceReconnected;
         }
 
         // Apply the initial MaxHeight bound BEFORE the first IPC fetch — the
@@ -119,6 +121,14 @@ public sealed partial class ReportsPage : Page
     }
 
     private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
+
+    private async void OnServiceReconnected(object? sender, EventArgs e)
+    {
+        // ForceReconnect first — see HistoryPage.OnServiceReconnected
+        // for the rationale. A2 lifts this to MainWindow.
+        await _client.ForceReconnectAsync();
+        await RefreshAsync();
+    }
 
     /// <summary>
     /// Bound the Top Apps DataGrid's height at runtime so WPF row
@@ -149,6 +159,7 @@ public sealed partial class ReportsPage : Page
         if (Application.Current.MainWindow is MainWindow mw)
         {
             mw.HistoryWiped -= OnHistoryWiped;
+            mw.ServiceReconnected -= OnServiceReconnected;
         }
     }
 

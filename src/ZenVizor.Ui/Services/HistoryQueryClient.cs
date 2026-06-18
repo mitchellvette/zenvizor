@@ -44,6 +44,30 @@ internal sealed class HistoryQueryClient : IAsyncDisposable
         => CallAsync(p => p.GetDailyReportAsync(date, anchor, anchorSpecificDate),
             nameof(DailyReportResult), IpcSchemaVersion.DailyReport, cancellationToken);
 
+    /// <summary>
+    /// Drop the current pipe (if any) and re-establish a fresh one.
+    /// Mirrors <c>AlertsClient.ForceReconnectAsync</c>: when the existing
+    /// <c>_client</c> is non-null but its underlying pipe is dead,
+    /// <see cref="EnsureProxyAsync"/> alone returns the stale proxy
+    /// unchanged. This nukes the stale proxy first so the reconnect path
+    /// actually runs.
+    /// <para>
+    /// Called by the four data pages
+    /// (HistoryPage / ReportsPage / PerAppPage / AppDetailPage) on the
+    /// MainWindow-fired <c>ServiceReconnected</c> event so their next
+    /// <c>RefreshAsync</c> hits a fresh pipe rather than the stale one
+    /// from before the service restart. Per the sprint plan A2 (Scope 3
+    /// of Phase 6.1a), this responsibility moves to MainWindow when the
+    /// query client is centralised at app scope — at which point the
+    /// per-page calls here become redundant.
+    /// </para>
+    /// </summary>
+    public async Task ForceReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await ResetAsync().ConfigureAwait(false);
+        await EnsureProxyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<T> CallAsync<T>(
         Func<IZenVizorIpc, Task<IpcEnvelope<T>>> work,
         string payloadName,
