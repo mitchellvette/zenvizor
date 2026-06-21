@@ -3,7 +3,7 @@
 **Project name:** ZenVizor (renamed from working title "TitaniRun" on 2026-06-01)
 **Document type:** Phased build plan (companion to `zenvizor-prd.md`)
 **Status:** Scoping complete
-**Last updated:** 2026-06-01
+**Last updated:** 2026-06-20
 
 > Full product spec — features, data model, architecture, IPC contract, data model, out-of-scope boundaries — lives in **`zenvizor-prd.md`**. This file is the build sequence and the QA gates.
 
@@ -230,30 +230,14 @@ per-screen briefs in `docs/design-briefs/` and the design system in
   filter to events whose timestamps fall within the day. Deferred
   for a post-MVP pass — flagged here so it doesn't drop.
 
-- **High Contrast runtime merge wiring not implemented.**
-  `Resources/HighContrast.xaml` ships with full token collapses for every
-  semantic surface, text, accent, status, border, chart, plus the polish
-  round 2 additions (`metal.card`, `edge.light`, `shadow.card`) AND the
-  Per-App round additions (`shadow.sm`, `surface.tooltip.scrim`,
-  `metal.control`) — but is never merged into
-  `Application.Current.Resources.MergedDictionaries` at runtime.
-  `App.xaml.cs` has no subscription to
-  `SystemParameters.StaticPropertyChanged` (or
-  `SystemEvents.UserPreferenceChanged` with category `Color`). Result:
-  when the user enables Windows HC, brand brushes from
-  `BrandAccent.{Light,Dark}.xaml` stay active and the HC dictionary never
-  wins resource lookup — brand violet, metal gradients, and shadows all
-  keep rendering, so the visual treatment is wrong end-to-end. Tracked
-  in `docs/design-system.md` §11 item 9 ("HC merge wiring") and called
-  out in `docs/dashboard-UI-phase-plan.md` (lines 130-137) during
-  Dashboard polish round 2: the static token audit was completed there,
-  only the runtime merge remains. Per-App polish round (2026-06-06/07)
-  re-validated the gap during the final HC gate. **Implementation
-  scope**: subscribe in `App.OnStartup`, gate the merge on
-  `SystemParameters.HighContrast`, and re-evaluate on the
-  StaticPropertyChanged event. Merge LAST so HC keys win over
-  `DesignTokens.xaml` + `BrandAccent.*.xaml`. Defer to a housekeeping
-  pass — flagged here so it doesn't drop again.
+- **High Contrast runtime merge wiring — RESOLVED in Phase 6.5.**
+  `App.xaml.cs` subscribes to `SystemParameters.StaticPropertyChanged`
+  and `RefreshHighContrastMerge()` adds/removes `HighContrast.xaml`
+  from `MergedDictionaries` based on `SystemParameters.HighContrast`,
+  merged LAST so HC keys win over `DesignTokens` + `BrandAccent`. See
+  `src/ZenVizor.Ui/App.xaml.cs:118-134` and `RefreshHighContrastMerge`
+  at line 315. Entry retained as a stale-fact correction during the
+  Phase 9 housekeeping pass (2026-06-20).
 
 ---
 
@@ -377,7 +361,7 @@ Phase 6.8 is split for sequencing — see the rationale in the
 QA passes by deferring the acceptance gates until the polish items
 have landed). **Mandatory order:**
 
-> **Phase 6.8a → Pre-MVP polish (P2) → Pre-v1 follow-ups (A1, A2) → Phase 6.8b → Phase 7 → Phase 8.**
+> **Phase 6.8a → Pre-MVP polish (P2) → Pre-v1 follow-ups (A1, A2) → Phase 6.8b → Phase 7 → Phase 8 → Phase 9.**
 
 P1 closed in 6.5. P4 closed in 6.7. P2/A1/A2 closed 2026-06-18.
 P3 + P5 were promoted into full phases (Phase 8 and Phase 7
@@ -764,9 +748,16 @@ registry-check workaround.
 
 - `installer/Bundle/ZenVizor.Bundle.wixproj` + `ZenVizor.Bundle.wxs`
   alongside the existing MSI wixproj. WiX `<Bundle>` element with
-  `WixToolset.Bal.wixext` for the default UI (pin to 6.0.1 — the
-  MIT line; do **not** advance to 7+ per the OSMF licensing
-  constraint already documented in `Directory.Packages.props`).
+  `WixToolset.Bal.wixext` for the default UI. Pin to 6.0.1 across
+  SDK, Util, Bal, NetFx. **Correction (2026-06-18, during Phase 7
+  implementation):** an earlier rev of this brief said "pin to
+  6.0.1 — the MIT line." That was wrong — all WiX 6.0.x packages
+  ship under the Open Source Maintenance Fee Agreement (the source
+  is OSI/MS-RL; the fee is on binary releases and applies only to
+  revenue-generating use). ZenVizor's current non-revenue use is
+  exempt; same practical outcome. Full rationale and the rule for
+  revisiting if ZenVizor ever monetises lives in
+  `Directory.Packages.props` (Installer (WiX) group).
 - **Embed** the .NET 10 Desktop Runtime `.exe` payload inside the
   bundle (`<ExePackage Cache="keep" Vital="yes">` referencing the
   redist binary committed to or fetched at build time into
@@ -792,34 +783,85 @@ registry-check workaround.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] WiX Bal extension 6.0.1 confirmed MIT-licensed (no OSMF
-      flip mid-build).
-- [ ] `dotnet build installer/Bundle/ZenVizor.Bundle.wixproj -c Release`
-      succeeds locally and in CI; produces `ZenVizorSetup.exe`
-      ≤ ~120 MB (45 MB MSI + ~60 MB embedded runtime).
-- [ ] CI uploads `ZenVizorSetup.exe` on every push to `main`.
-- [ ] Bundle UpgradeCode locked and pinned via the
+- [x] WiX 6.0.1 licensing posture confirmed: SDK/Util/Bal/NetFx all
+      OSMF-on-binary, source MS-RL, ZenVizor's non-revenue use exempt.
+      (Re-stated; brief originally said "MIT" which was incorrect —
+      see scope note above and `Directory.Packages.props` for the
+      revisit rule.) *(verified 2026-06-18)*
+- [x] `dotnet build installer/Bundle/ZenVizor.Bundle.wixproj -c Release`
+      succeeds locally; produces `ZenVizorSetup.exe` ≤ ~120 MB
+      (actual: ~101 MB = 45 MB MSI + ~60 MB embedded runtime).
+      *(verified 2026-06-18 — clean build, both payloads embedded)*
+- [x] CI uploads `ZenVizorSetup.exe` on every push to `main`.
+      *(workflow extension landed 2026-06-18 — `Build installer bundle`
+      step in `.github/workflows/ci.yml`)*
+- [x] Bundle UpgradeCode locked and pinned via the
       `installer/Bundle/ZenVizor.Bundle.wxs` source.
+      *(UpgradeCode `A696D724-25F7-4277-AC10-897408A34C83`, distinct
+      from the MSI's, locked at first build.)*
 
-**Acceptance criteria — manual (human QA — clean Windows Sandbox)**
+**Acceptance criteria — manual (human QA — clean Windows VM)**
 
-- [ ] Windows Sandbox **without .NET 10 desktop runtime pre-installed**:
+All four gates walked end-to-end on 2026-06-20 against bundle v0.1.1.
+Test environment was VirtualBox 7.2.10 + Win11 Enterprise 25H2 eval ISO
+(Sandbox was unavailable on the dev box's Win11 Home SKU — the
+`Containers-DisposableClientVM` feature isn't in the catalog). Full
+walkthrough, command sequences, and findings live in
+`docs/phase-7-verification.md`.
+
+- [x] Gate 1: clean VM **without .NET 10 desktop runtime pre-installed**:
       `ZenVizorSetup.exe` detects the missing runtime, installs it,
-      then installs ZenVizor. End state: service running, UI launches,
-      Add/Remove Programs shows ZenVizor.
-- [ ] Windows Sandbox **with .NET 10 already installed**: `ZenVizorSetup.exe`
-      detects the runtime and skips the runtime install; MSI install
-      proceeds.
-- [ ] Uninstall via Add/Remove Programs leaves the .NET 10 runtime in
-      place (it is shared with other apps) — only the ZenVizor MSI
-      payload is removed. `%ProgramData%\ZenVizor\` preserved by default.
-- [ ] Bundle reinstall over a prior version upgrades cleanly (major
-      upgrade) without two side-by-side entries.
+      then installs ZenVizor. End state: service RUNNING, UI launches,
+      Add/Remove Programs shows ZenVizor + both runtime components.
+- [x] Gate 2: clean VM **with .NET 10 already installed**: `ZenVizorSetup.exe`
+      detects the runtime via `netfx:DotNetCoreSearch`, plans the
+      runtime package as `execute: None`, skips it; only the MSI
+      installs. Burn log confirms `Condition
+      'WindowsDesktopRuntimeVersion >= v10.0.8' evaluates to true.`
+- [x] Gate 3: Uninstall via Add/Remove Programs leaves the .NET 10
+      runtime in place (`Permanent="yes"` honored); only the ZenVizor
+      MSI payload is removed. `%ProgramData%\ZenVizor\` preserved by
+      default. `REMOVE_DATA=1` opt-in correctly wipes data when passed
+      either to the bundle or to `msiexec`.
+- [x] Gate 4: Bundle reinstall over a prior version upgrades cleanly
+      (major upgrade) — single ARP entry post-upgrade, old bundle
+      `BundleProviderKey` removed, MSI swapped in lockstep, service
+      stays RUNNING, data dir preserved.
 
-**Sequencing note:** Phase 7 runs after Phase 6.8b manual gates. 6.8b
-validates the MSI on its own (user pre-installs .NET 10 on the test
-box). Phase 7 then adds the bootstrapper layer on top and validates
-the chained-install UX in Sandbox.
+**Findings landed during Phase 7 testing (see verification doc for
+detail):**
+
+- MSI wxs: `SetREMOVE_DATA_FOLDER` was scheduled too late in the
+  InstallExecuteSequence; `WixRemoveFoldersEx` ran first and errored
+  out on the missing property, silently breaking the documented
+  `REMOVE_DATA=1` opt-in. Fixed by scheduling `After="LaunchConditions"`.
+- Bundle wxs: `<MsiPackage Visible="no" />` added to suppress the inner
+  MSI's duplicate ARP entry in Settings → Apps.
+- Bundle wxs: `REMOVE_DATA` declared as `bal:Overridable="yes"` bundle
+  variable + `MsiProperty` passthrough into the inner MSI, so the
+  bundle's `/uninstall REMOVE_DATA=1` flow works end-to-end.
+- Bundle wxs: `LogoFile` + `IconSourceFile` wired to existing brand
+  assets (`assets/zv_logomark_v1.png`,
+  `src/ZenVizor.Ui/Assets/favicon.ico`) — BA UI and ARP icon now show
+  the ZenVizor logomark instead of WiX default CD icons.
+- Project version bumped 0.1.0 → 0.1.1 in `Directory.Build.props`
+  (Phase 7 delivery: branded installer, runtime detection, REMOVE_DATA
+  passthrough). MVP versioning will be re-evaluated after Phase 8.
+
+**Deferred items (documented in `docs/phase-7-verification.md`):**
+
+- REMOVE_DATA user-choice checkbox in BA UI (requires custom Burn
+  theme — half a day to a day of work).
+- Runtime payload caching even when not installed (~60 MB on disk;
+  `Cache="remove"` would reclaim it at the cost of repair-flow
+  optionality).
+
+**Sequencing note:** Phase 7 ran ahead of Phase 6.8b manual gates
+because the bootstrapper bundle wraps the MSI; the four Phase 7 gates
+exercise the MSI install/uninstall paths end-to-end (the bundle just
+adds the runtime-chain on top). 6.8b's "MSI on its own with user pre-
+installing .NET 10" is now redundant with Gate 2 above and can be
+treated as closed by the Phase 7 walk.
 
 ---
 
@@ -880,44 +922,57 @@ sequenced delivery of that brief.
 
 **Acceptance criteria — CI (headless)**
 
-- [ ] Synthetic DNS-response fixture stream (hand-crafted RFC 1035
+- [x] Synthetic DNS-response fixture stream (hand-crafted RFC 1035
       payloads incl. A, AAAA, CNAME chain) feeds `PassiveDnsMonitor`'s
       `ICaptureSource`-equivalent and produces exact-expected IP →
       hostname entries in the store. Determinism gate per the
       "synthetic events assert exact rows" rule (CLAUDE.md "Testing
       conventions").
-- [ ] TTL expiry test: an entry past its response TTL is evicted on
+- [x] TTL expiry test: an entry past its response TTL is evicted on
       the next tick; a new lookup for the same IP returns null until
       a fresh response arrives.
-- [ ] CNAME chain test: a response with a CNAME chain
+- [x] CNAME chain test: a response with a CNAME chain
       (e.g., `outlook.office.com` → `outlook.office365.com.s-0001.s-msedge.net`
       → A record) resolves to the most-specific user-facing name in
       the store.
-- [ ] Storage wire-up: aggregator + DNS store produces the expected
+- [x] Storage wire-up: aggregator + DNS store produces the expected
       `connections.resolved_host` value at flush, given a fixture
       session whose `remote_addr` matches a fixture DNS A record.
-- [ ] IPC contract test for the v2 envelope round-trips
+- [x] IPC contract test for the v2 envelope round-trips
       `ResolvedHost` for present + null cases.
-- [ ] LRU bound test: store at capacity drops oldest entries; never
+- [x] LRU bound test: store at capacity drops oldest entries; never
       grows unbounded.
 
 **Acceptance criteria — manual (human QA — real Windows box)**
 
-- [ ] Run ZenVizor for ≥ 30 min of normal use. AppDetail Connections
-      grid on a known app (e.g., browser) shows hostname resolution
-      for at least the most-recent connections; verify the displayed
-      hostname against the user's actual DNS history (browser dev
-      tools, `Get-DnsClientCache`).
-- [ ] IPv6-heavy app (`outlook.office.com`, `*.cdn.cloudflare.net`)
+- [x] Run ZenVizor for ≥ 30 min of normal use. AppDetail Connections
+      grid on a known app shows hostname resolution for at least
+      the most-recent connections. *Walked 2026-06-21 with Steam,
+      Outlook, Claude desktop as reference cases — all produced
+      human-readable hostnames. Browser hit rate near zero owing
+      to default DoH; see Known limitations subsection below.*
+- [x] IPv6-heavy app (`outlook.office.com`, `*.cdn.cloudflare.net`)
       renders human-readable hostnames rather than long hex-colon IPs.
-- [ ] **Self-monitoring zero-own-traffic gate** (invariant #1 — same
+      *Walked 2026-06-21 with Outlook desktop — IPv6 endpoints
+      rendered as `outlook.office.com`.*
+- [x] **Self-monitoring zero-own-traffic gate** (invariant #1 — same
       gate as 6.8b, run again to verify the new ETW subscriber adds
       no outbound). ZenVizor PIDs continue to attribute zero outbound
       bytes; no rows in `connections` belong to either ZenVizor PID.
-- [ ] Performance: idle CPU < 1%, service working set < ~80 MB still
-      hold with the DNS subscriber active. DNS-response traffic is
-      low-rate so this should be uneventful, but it's worth verifying
-      end-to-end.
+      *Walked 2026-06-21 — zero rows, invariant intact.*
+- [x] Performance: idle CPU < 1%, service working set < ~80 MB still
+      hold with the DNS subscriber active. *Walked 2026-06-21 — both
+      well inside budget; second TraceEventSession cost negligible
+      as design decision D5 predicted.*
+
+**Status (2026-06-21):** **Closed with known gap.** All gates pass;
+pipeline works end-to-end. Browser coverage is structurally zero
+because of default DoH (Phase 8 ETW provider only sees the Windows
+resolver). Documented in *Known limitation — DoH and in-app
+resolvers* below; pre-MVP follow-up scoped as **Phase 8.5 —
+Endpoint visibility investigation**. Verification doc at
+`docs/phase-8-verification.md` carries the full walk + diagnostic
+queries.
 
 **Storage backfill (deferred):** Existing `connections` rows stay
 null. Back-population would require historical DNS data we don't
@@ -931,8 +986,755 @@ but Phase 7's bundle has to pack the Phase 8 service binaries, so
 Phase 8 first means re-cutting the bundle. Phase 7 first lets the
 installer artifact stabilise before the capture surface grows.
 
+### Known limitation — DoH and in-app resolvers (discovered 2026-06-21)
+
+**Discovered during the Phase 8 manual gate walkthrough:** the
+hostname hit rate on real-world browsing was much lower than the
+spec implied, dominated by **Chrome producing essentially zero
+resolved hostnames** while non-Chrome apps (Steam, Claude desktop)
+worked as designed.
+
+**Root cause:** Chrome ships with DNS-over-HTTPS (DoH) enabled by
+default (`chrome://settings/security` → "Use secure DNS"). When DoH
+is on, Chrome resolves hostnames *itself* by sending HTTPS queries
+to Cloudflare / Google / Quad9 instead of asking the Windows
+resolver. The `Microsoft-Windows-DNS-Client` ETW provider — our
+Phase 8 source — only emits event 3008 for queries that travel
+through the Windows resolver. Apps that bypass the resolver
+(Chrome with DoH, Firefox with DoH/DoT, anything embedding its own
+resolver) are **structurally invisible** to the Phase 8 observer.
+This is by design on the app side; nothing we can change in our
+own code recovers visibility for those apps from this provider.
+
+**Affected surface:** browsers are the largest miss. Anything else
+using a system HTTP client, the OS resolver, or a legacy network
+stack continues to work (Steam, Outlook, Windows Update, .NET apps
+using `HttpClient`, Electron apps that don't override the resolver,
+etc.).
+
+**User-side workaround:** disabling Chrome's DoH
+(`chrome://settings/security` → "Use secure DNS" → Off) routes
+lookups back through the Windows resolver and restores Phase 8
+visibility for Chrome. This is a per-user privacy trade-off, not
+something we can or should force. Document, don't override.
+
+**Code-side follow-up:** scoped as **Phase 8.5 — endpoint
+visibility investigation** below. Pre-MVP requirement: ZenVizor's
+core value is "which app talked to where," and accepting "no idea
+for Chrome traffic" as the v1 answer is too large a gap to ship.
+The investigation evaluates passive TLS SNI observation and any
+other invariant-#1-safe technique that recovers coverage for
+DoH-using apps.
+
+**Accepted for Phase 8 sign-off:** the four manual gates verified
+the pipeline works end-to-end (Steam + Claude desktop produced
+human-readable hostnames; zero own-traffic invariant held;
+performance budget held). The gap is a coverage limit of the
+underlying ETW provider, not a defect in the slice work — Phase 8
+is closed-with-known-gap and Phase 8.5 picks up the gap as a
+distinct piece of work.
+
+### Phase 8 design decisions and alternatives considered
+
+Recorded during the Phase 8 implementation kickoff (2026-06-20). Each
+entry: what was chosen, what was rejected, why, and what would prompt
+revisiting. Kept evergreen so a future maintainer reopening any of
+these can read the original tradeoff without reconstructing the
+conversation.
+
+#### D1 — DNS observer seam shape
+
+**Chosen:** A sibling `ICaptureSource` implementation
+(`DnsCaptureSource`) plus a shared in-memory `IDnsResolutionStore`
+that `TrafficAggregator.Flush` reads at flush time. The DNS source
+lives next to `EtwCaptureSource`, not inside it; the store is the
+join point between the two capture paths.
+
+**Alternatives rejected:**
+
+- *New `IMonitor` implementation owning its own flush ticker.* DNS
+  events don't feed `TrafficAggregator.Observe(NetworkObservation)`
+  — they feed a side-store the aggregator reads at flush time. A
+  parallel `IMonitor` would duplicate the existing `CaptureMonitor`
+  scaffolding (ETW lifecycle + reader loop + flush timer) for no
+  gain.
+- *Single combined `EtwCaptureSource` enabling both kernel network
+  and DNS Client providers.* See D5 — same tradeoff space; combining
+  blurs the source seam.
+
+**Why this shape:** Matches the PRD §6 seam #1 contract (each
+`IMonitor` is one source, future passive watchers slot in here) and
+keeps the synthetic-source test seam swappable for each capture
+path independently.
+
+**Revisit if:** a future passive observer (e.g. hosts-file watcher)
+also needs to feed `TrafficAggregator` via a side-store. At three
+side-stores we should generalise the join machinery rather than
+hand-wiring each one.
+
+#### D2 — IPC schema versioning scope
+
+**Chosen:** Bump the shared `IpcSchemaVersion.Query` from 1 to 2.
+The constant covers all four Phase-4 query payloads (`AppList`,
+`AppDetail`, `ConnectionList`, `TrafficHistory`); they all move
+together.
+
+**Alternative rejected:** Split the constant — introduce a
+dedicated `IpcSchemaVersion.Connections = 2` and leave the other
+three at v1.
+
+**Why shared bump:** Matches the existing comment on the constant
+("Shared schema version of the Phase-4 query result payloads") and
+the current pattern. The four payloads have travelled together
+through Phase 4; staying together keeps the floor-check surface
+small (clients have one shared check, not four). The only cost is
+that v2 clients reject a v1 server even for payloads that didn't
+actually change shape — but since server + clients ship in lockstep
+via the Burn bundle, that's a theoretical not practical cost.
+
+**Revisit if:** the four payloads start evolving on independent
+cadences (e.g. `AppList` adds a column without `AppDetail` doing the
+same), or a third-party client appears that wants to pin individual
+payload versions.
+
+#### D3 — `connections.resolved_host` update semantics
+
+**Chosen:** On the existing `INSERT ... ON CONFLICT ... DO UPDATE`
+upsert in `SqliteFlushSink.UpsertConnections`, populate
+`resolved_host` on INSERT and use
+`COALESCE(resolved_host, excluded.resolved_host)` on UPDATE. A null
+existing value gets filled by a later non-null arrival; a non-null
+existing value is never overwritten.
+
+**Alternative rejected:** INSERT-only — `resolved_host` set on
+first insert, never updated. Simpler SQL but misses the case where
+the capture path saw the connection *before* the DNS source had the
+A record cached.
+
+**Why COALESCE:** The DNS observer can be racy — a connection
+may flush with the IP before the matching DNS-response event has
+been parsed and stored. COALESCE lets the next flush rescue that
+row's hostname instead of leaving it permanently null.
+
+**Why not "always take the freshest"?** A non-null `resolved_host`
+is treated as load-bearing — if the IP later genuinely resolves to a
+different name (CDN aliasing), the originally observed name is
+preserved because it matches what the user's *traffic* actually
+asked for. The "most recent observation" preference, if we ever want
+it, belongs in the read-side picker (see D4), not the write path.
+
+**Revisit if:** users report stale hostnames on long-lived
+connection rows (e.g. an Outlook session that lasts days through
+multiple CDN flips). At that point reconsider as
+"`MAX(resolved_host)` with a recency tiebreaker" at the SQL level.
+
+#### D4 — Per-endpoint hostname picker on read side
+
+**Chosen:** `MAX(c.resolved_host) AS host` in
+`AppHistoryQueryRepository.GetConnections`'s existing GROUP BY.
+Lexicographic pick across the app's session rows for a given
+`(protocol, remote_addr, remote_port)`.
+
+**Alternative rejected:** Most-recent non-null — a correlated
+subquery or window function selecting the `resolved_host` from the
+session row with the largest `last_seen`. More intuitive for the
+user when an IP genuinely served multiple names, but materially
+more complex SQL.
+
+**Why MAX:** For ~95% of endpoints the two options return the
+same value (most IPs have one hostname). The two diverge only on
+CDN IPs that genuinely served multiple names within the window
+(CloudFront, Akamai, Office 365 edge), where the divergent names
+are usually variants of each other ("close enough" for the user's
+investigation). Lexicographic picks alphabetically — not "best,"
+not "most recent" — but the cost of a wrong pick is a "huh?"
+moment, not wrong information. The IPC contract is identical for
+either option (`string?`), so we can swap server-side without
+touching the schema, the wire, or the UI.
+
+**Revisit if:** manual QA on real CDN endpoints surfaces user
+confusion ("the hostname shown doesn't match what I see in dev
+tools"). At that point promote to most-recent-non-null with a
+window function — purely a query-side change.
+
+#### D5 — Two `TraceEventSession`s vs one combined
+
+**Chosen:** Two separate sessions —
+`ZenVizor.Capture` (existing, kernel network provider) and
+`ZenVizor.Capture.Dns` (new, `Microsoft-Windows-DNS-Client`
+user-mode provider). Each owned by its respective `ICaptureSource`.
+
+**Alternative rejected:** One combined `TraceEventSession` that
+enables both kernel and user-mode providers. The TraceEvent API
+allows this — kernel and user-mode providers can coexist in one
+session.
+
+**Why two sessions:**
+
+- *Lifecycle isolation.* A fault subscribing to or processing one
+  provider doesn't take the other down. The existing capture path
+  is load-bearing for every other ZenVizor feature; the DNS path
+  is purely an enrichment. They should fail independently.
+- *Seam cleanliness.* `EtwCaptureSource` is built around the kernel
+  parser (`_session.Source.Kernel.TcpIpRecv += …`). Adding the DNS
+  Client provider would mean subscribing via the dynamic parser
+  inside the same class — the class is no longer "the kernel
+  network source," it's "the omnibus ETW thing," and the synthetic
+  test seam can no longer substitute the two feeds independently.
+- *Feature toggling.* If we ever want to ship a build with DNS
+  observation disabled (e.g. a corporate variant where IT-security
+  forbids subscribing to the DNS Client provider), it's a wiring
+  change in the composition root, not a refactor.
+
+**Cost of the choice:** Roughly 1–2 MB additional ETW buffer memory
+(DNS session can be sized far smaller than the kernel ring because
+DNS event rate is low), one extra ETW reader thread, one extra ETW
+session slot (Windows allows ~64 per machine — we go from 1 to 2,
+negligible). Sub-1% of the perf budget.
+
+**Revisit if:** the ETW session-slot ceiling becomes a real concern
+(unlikely unless ZenVizor grows to 5+ providers), or if buffer
+memory shows up in the working-set budget on low-RAM SKUs.
+
+---
+
+## Phase 8.5 — Endpoint visibility investigation (pre-MVP requirement)
+
+**Goal:** scope and prototype an invariant-#1-safe technique that
+recovers hostname visibility for **DoH-using and in-app-resolver
+apps** (Chrome by default, Firefox by config, anything embedding
+its own resolver) — the class of apps that Phase 8's DNS observer
+is structurally blind to. Exit criterion is a brief + a
+go/no-go/scope-down decision on shipping the technique pre-MVP.
+
+**Status:** **Complete, 2026-06-21.** Desk analysis, throwaway
+prototype (real-box run), and formal findings doc
+(`docs/phase-8.5-endpoint-visibility.md`) all landed. **Decision:
+outcome 1 — ship pre-MVP at full coverage.** The prototype settled
+both open unknowns (PktMon delivers truncated payloads into our own
+TraceEventSession; perf upper bound 0.23% CPU / 35 MB WS), confirmed
+invariant #1 (empty self-monitoring lens), and proved both parsers
+(TLS live, QUIC offline against the RFC 9001 §A.1 vector).
+Implementation is the (now confirmed) Phase 8.6 below.
+
+**Why pre-MVP:** ZenVizor's headline value is "which app talked to
+*where*." Shipping v1 with "no idea where, for Chrome traffic" is
+too large a hole — Chrome dominates real-world browsing traffic
+on most desktops. The user has explicitly elevated this from
+post-MVP follow-up to pre-MVP gate.
+
+**The hard constraint:** invariant #1 (zero own traffic) holds
+absolutely. Any approach that originates packets, performs
+reverse DNS lookups, or initiates connections is **off the table**
+regardless of how clean the user-facing result would be. Active
+techniques live behind the boundary documented in PRD §10; that
+boundary does not move for this work.
+
+### Scope
+
+The spike covers:
+
+- **Survey + comparative analysis** of the techniques that
+  *could* recover endpoint hostnames passively. Initial candidate
+  list (extend during the spike if other approaches surface):
+  - **TLS SNI extraction** from the unencrypted ClientHello of the
+    TCP+TLS handshake. SNI is sent in plaintext in TLS 1.2 and in
+    TLS 1.3 *without* Encrypted ClientHello (ECH). Coverage falls
+    off when ECH is enabled — currently a minority of traffic but
+    a moving target (Chrome ships ECH support; Cloudflare and a
+    handful of large origins offer it).
+  - **HTTP Host header extraction** for non-TLS HTTP/1.1 traffic.
+    Tiny coverage on the modern web (HTTPS is near-universal), but
+    near-zero cost to add if the capture surface already exists.
+  - **QUIC SNI** — same idea as TLS but over UDP. Most of Chrome's
+    Google traffic is QUIC. Plaintext SNI in QUIC v1; encrypted in
+    later drafts.
+  - **Microsoft-Windows-PktMon** ETW provider — packet-level
+    visibility, but heavy and complex to consume. Worth evaluating
+    as the substrate the SNI extraction would sit on.
+  - **NDIS Lightweight Filter (LWF)** — kernel-mode driver
+    delivering packet contents. Most coverage, biggest deployment
+    cost (signed driver, install elevation, anti-virus friction).
+  - **Windows Filtering Platform (WFP)** callouts — alternative
+    kernel surface, similar tradeoffs to NDIS LWF.
+- **Coverage modelling.** For each candidate, estimate what
+  fraction of Phase 8's currently-blind connection rows it would
+  recover. Use the Phase 8 manual gate session data as the
+  baseline (rows where `resolved_host IS NULL` from `chrome.exe`,
+  `msedge.exe`, etc.).
+- **Performance projection** against the perf budget (idle CPU
+  < 1 %, working set < ~80 MB). TLS SNI inspection on every TCP
+  SYN is dramatically more event traffic than DNS observation;
+  the budget pressure is the load-bearing risk for any
+  packet-level approach.
+- **Invariant #1 audit** for each candidate: does the technique
+  itself, the library that implements it, or any default
+  configuration of that library, emit *any* outbound traffic?
+  This includes loopback DNS resolution, NTP probes from libraries
+  that auto-update, "telemetry" hooks. Zero tolerance.
+- **Prototype of the leading candidate** — minimal end-to-end
+  spike that captures one TLS handshake from one Chrome connection
+  to a known endpoint and produces the SNI hostname. The prototype
+  is throwaway code; its job is to verify the engineering effort
+  estimate, not to ship.
+- **Ship/scope/defer recommendation** with explicit reasoning
+  against the pre-MVP gate. Three plausible outcomes:
+  1. **Ship pre-MVP at full coverage** — one of the candidates is
+     tractable, fast, and recovers most lost coverage. Phase 8.6
+     scopes the implementation.
+  2. **Ship pre-MVP scoped down** — partial coverage is acceptable
+     (e.g., TLS 1.2 SNI only, accept ECH gap, accept QUIC gap).
+     Phase 8.6 scopes the narrower implementation; the gap is
+     documented analogously to the Phase 8 DoH gap.
+  3. **Defer post-MVP with justification** — every candidate is
+     too expensive / too risky / too lossy to clear the pre-MVP
+     bar, and the right MVP move is to ship Phase 8 as-is with
+     the limitation more prominently documented in the UI itself
+     (not just the verification doc). Requires user sign-off
+     because this overrides the "pre-MVP requirement" stake.
+
+### Leading direction (recorded 2026-06-21)
+
+Desk survey + coverage/perf/invariant analysis landed on
+**outcome 1 — ship pre-MVP at full coverage**, pending the throwaway
+prototype confirming two unknowns (below). Recorded here so the
+conclusion survives even if the formal findings doc lands later.
+
+**Why this is additive, not a re-architecture.** Phase 8 already
+built the entire back half and it is *source-agnostic*: the
+`DnsResolutionStore` is the single join point (design decision D1),
+read once per connection at flush (`TrafficAggregator.Flush` →
+`TryGetHostname`), COALESCE-upserted (D3), picked with `MAX()` (D4),
+carried as the v2 `ResolvedHost` string, and rendered by the
+AppDetail grid. None of that cares where a hostname came from. The
+DoH gap is therefore *one missing thing — a second feeder into the
+store* — not a redesign.
+
+**Root cause, restated.** The hostname for a DoH/in-app-resolver
+flow exists in plaintext nowhere in the running system except the
+**TLS/QUIC handshake on the wire**: the kernel network provider
+carries only metadata (addresses, ports, PID, byte counts — no
+payload), and DoH both bypasses the Windows resolver *and* encrypts
+the query inside HTTPS. (Note: the built-but-unwired
+`Rfc1035ResponseDecoder` UDP/53 fallback would not have helped here —
+DoH is not UDP/53.) Recovering these hostnames requires
+packet-payload access, which Phase 8's substrate does not have.
+
+**Chosen technique:** passive extraction of the **plaintext SNI**
+from the ClientHello (TLS-over-TCP and QUIC) plus the HTTP/1.1
+**Host** header. Observe-only; emits zero traffic; invariant #1 holds
+absolutely.
+
+**Substrate — ranked:**
+
+1. **`Microsoft-Windows-PktMon` ETW provider (primary).** Built into
+   Win10 1809+/11 (all target SKUs), no driver, no signing. Its
+   **port filter + packet truncation** are the load-bearing detail
+   the original candidate list under-weighted: filter to TCP 443/80 +
+   UDP 443 and truncate to ~the first 320 bytes, so the kernel→user
+   copy is bounded at the source. Consumed via the existing
+   TraceEvent + sibling-session pattern (D5).
+2. **Raw socket `SIO_RCVALL` (documented fallback).** Receive-only,
+   user-mode, fully documented Winsock; emits nothing. No kernel-side
+   filter (post-filter in user mode), so it copies more — kept as the
+   de-risking option if PktMon's control surface proves awkward.
+3. **WFP callout / NDIS LWF (rejected).** A signed kernel driver
+   breaks the non-elevated install story (elevation, AV friction) for
+   no coverage gain over the above. Explicitly off the table.
+
+**Parsers (each feeds the existing store):**
+
+- **TLS-over-TCP SNI** — plaintext in TLS 1.2 and TLS 1.3-without-ECH;
+  a simple binary walk in the `Rfc1035ResponseDecoder` style. Big
+  win, low effort.
+- **QUIC Initial SNI** — the ClientHello rides CRYPTO frames in the
+  QUIC Initial, "encrypted" with keys *deterministically derivable*
+  from the Destination Connection ID + the fixed RFC 9001 salt, i.e.
+  readable by any observer. Decrypt uses **`System.Security.Cryptography.HKDF`
+  + `AesGcm`/`Aes` — all in-box, no new dependency, no network.** More
+  code than TLS but bounded and fully specified; recovers Chrome↔Google
+  (YouTube/gstatic) and HTTP/3 origins.
+- **HTTP/1.1 Host header** (TCP 80) — trivial, tiny coverage,
+  near-free once the substrate exists.
+
+**Perf framing.** SNI lives in the *first* client→server packet of a
+flow, so cost scales with **new-connection rate, not packet rate**: a
+per-flow "already-classified" bounded LRU (same shape as
+`DnsResolutionStore`) drops packets for flows we have already named,
+truncation caps per-packet copy, and the port filter caps which
+packets we see at all. At idle — the actual budget line — new flows
+are ~zero, so cost is ~zero.
+
+**Coverage / residual gap.** TLS + QUIC + Host recovers the dominant
+share of Chrome/DoH traffic. The only structural residue is
+**ECH-enabled origins** (a small, watch-it-grow minority), documented
+with the same pattern as the Phase 8 DoH note — a true limit, not an
+excuse.
+
+**Two unknowns the throwaway prototype must still settle** (neither a
+blocker):
+
+1. **PktMon control surface** — whether enabling
+   `Microsoft-Windows-PktMon` in a `TraceEventSession` yields
+   truncated payloads directly, or needs PktMon's capture component
+   started (CLI / control API) alongside. The raw-socket fallback
+   exists precisely to de-risk this.
+2. **Real-box perf under sustained inbound bulk** — confirm
+   filter + truncate + per-flow-gate holds idle CPU < 1% /
+   WS < ~80 MB during a large HTTPS download.
+
+**Implementation lands as the stubbed Phase 8.6 below**, gated on
+these two confirmations.
+
+### Out of scope
+
+- Any active technique (reverse DNS, captive portal probing,
+  active SNI replay). PRD §10 boundary.
+- Recovering hostnames for ECH-encrypted traffic specifically —
+  by design we can't, regardless of mechanism.
+- Identifying *which* protocol an app uses to make its DNS
+  decisions. Useful diagnostic data but doesn't feed the
+  connection-row hostname column.
+- A general packet-capture surface. Even if PktMon turns out to be
+  the right substrate, the spike's deliverable is hostname
+  visibility, not arbitrary packet inspection.
+
+### Acceptance criteria — CI (headless)
+
+There is no CI work for this phase; the deliverable is a brief.
+Any prototype code lives in a throwaway branch and is deleted at
+spike close.
+
+### Acceptance criteria — manual (human review)
+
+- [x] Findings doc at `docs/phase-8.5-endpoint-visibility.md`
+      containing the survey, coverage model, perf projection,
+      invariant-#1 audit, prototype results, and the
+      ship/scope/defer recommendation.
+- [x] Follow-on Phase 8.6 entry confirmed (ship at full coverage);
+      its two gating unknowns are now settled in the findings doc.
+- [x] The recommendation is referenced from the PRD §10
+      active-probe boundary section and from the
+      Phase 8 verification doc's known-limitations block, so the
+      MVP doc set tells a single coherent story about what
+      coverage v1 ships.
+
+**Sequencing note:** Phase 8.5 runs after Phase 8 closes and
+*before* Phase 9 — Phase 9 is the MVP finalization phase and
+needs to know whether it's wrapping Phase 8 alone or Phase 8 + a
+Phase 8.6 implementation. Phase 9.6 (re-cut MSI + Burn bundle)
+must be re-evaluated against the Phase 8.5 outcome before it runs.
+
+---
+
+## Phase 8.6 — Passive SNI/QUIC/Host hostname recovery (DoH-blind apps)
+
+> **Confirmed by Phase 8.5 (2026-06-21) — scoped, not yet started.**
+> The throwaway prototype settled both open unknowns (PktMon control
+> surface + real-box perf under inbound bulk); see
+> `docs/phase-8.5-endpoint-visibility.md`. The recommendation held at
+> ship-at-full-coverage, so this entry stands as the implementation.
+> §8 of the findings doc carries the concrete build notes the spike
+> surfaced (Ethernet-header strip on PktMon; per-protocol truncation
+> with the QUIC-needs-the-full-datagram constraint; mandatory
+> per-flow gate). One small follow-up the spike could not isolate
+> cleanly (a test confound): confirm on a fresh boot whether the
+> PktMon provider needs `pktmon start` running, or emits payloads from
+> provider-enable alone.
+
+**Goal:** Close the Phase 8 DoH / in-app-resolver coverage gap by
+adding a **second passive feeder** into the existing
+`DnsResolutionStore` that extracts hostnames from plaintext **TLS
+SNI**, **QUIC Initial SNI**, and **HTTP/1.1 Host** headers. Recovers
+hostname visibility for Chrome-with-DoH and any app embedding its own
+resolver — the class `Microsoft-Windows-DNS-Client` (Phase 8) is
+structurally blind to. Strictly observational; emits ZERO traffic of
+its own (invariant #1).
+
+**Scope**
+
+- New capture front-end — **`Microsoft-Windows-PktMon` ETW provider
+  (primary)** with a port filter (TCP 443/80, UDP 443); **raw socket
+  `SIO_RCVALL` (fallback)** if the PktMon control surface proves
+  awkward. New ETW session is a sibling per D5 (lifecycle isolation;
+  feature-toggleable at the composition root). Kernel drivers
+  (WFP/NDIS) are out — see Phase 8.5 "Leading direction."
+- **Truncation is per-protocol, NOT a single global cap** (spike
+  finding, `phase-8.5-endpoint-visibility.md` §8): a flat ~320 B cap
+  is wrong. **QUIC/UDP must capture the full Initial datagram** —
+  AES-128-GCM is all-or-nothing over the full ciphertext + 16 B tag,
+  so a truncated Initial fails AEAD auth and yields no SNI.
+  **TLS/TCP needs ≈512 B+ or per-flow segment reassembly** — a large
+  TLS 1.3 ClientHello (key shares, GREASE, ALPN) can push the SNI
+  extension past a small cap and can span multiple TCP segments.
+- **PktMon payloads carry a 14-byte Ethernet L2 header** (spike
+  finding): the PktMon adapter strips L2 (handle `0800` IPv4 / `86DD`
+  IPv6 EtherType + any VLAN tag) before the IP walk; the raw-socket
+  path starts at the IP header. Keep IP/TCP/UDP/parser code
+  substrate-agnostic; the L2 strip lives in the PktMon adapter only.
+- **TLS ClientHello SNI parser** (TCP) — plaintext for TLS 1.2 and
+  TLS 1.3-without-ECH. Mirror the robustness contract of
+  `Rfc1035ResponseDecoder` (empty result, never throw, on malformed
+  input).
+- **QUIC Initial parser** (UDP 443) — derive initial secrets from the
+  Destination Connection ID + RFC 9001 v1 salt, decrypt the Initial,
+  read the ClientHello SNI from the CRYPTO frames. BCL only
+  (`System.Security.Cryptography.HKDF` + `AesGcm`/`Aes`); no new
+  dependency, no network.
+- **HTTP/1.1 Host header parser** (TCP 80) — trivial; near-free once
+  the substrate exists.
+- **Per-flow "already-classified" bounded LRU gate** (same shape as
+  `DnsResolutionStore`) so steady-state cost scales with
+  new-connection rate, not packet rate.
+- **Store wire-up:** extracted `(remote IP → hostname)` lands in
+  `DnsResolutionStore.Record` with a default TTL (SNI carries no TTL
+  — same fixed-default pattern as event 3008; see
+  `DnsCaptureSource.DefaultTtlSeconds`). **No changes to the flush
+  join, COALESCE upsert, IPC schema, or UI** — those already carry a
+  source-agnostic `ResolvedHost`.
+- **UI honesty:** surface the residual ECH gap in-app (not just the
+  verification doc), per the Phase 8.5 acceptance criteria.
+
+**Implementation starting point (port from the spike — do not rewrite
+the crypto)**
+
+The Phase 8.5 throwaway harness (`spike/SniSpike/`) already contains
+production-shaped, validated parsers. Port them; the QUIC crypto in
+particular is the risky part and is already pinned to the RFC vector,
+so a rewrite would only reintroduce retired risk.
+
+- **Code placement parallels the Phase 8 DNS source.** The parser
+  robustness template (`Rfc1035ResponseDecoder`) and the DNS capture
+  source both live under `src/ZenVizor.Capture/Dns/`; mirror that:
+  - Parsers + `QuicCrypto` → `src/ZenVizor.Capture/Sni/` (from spike
+    `TlsClientHelloParser.cs`, `QuicInitialParser.cs`, `QuicCrypto.cs`,
+    `HttpHostParser.cs`).
+  - New `ICaptureSource` (PktMon primary + raw-socket fallback) →
+    `src/ZenVizor.Capture/Sni/`, mirroring
+    `Capture/Dns/DnsCaptureSource.cs` (sibling ETW session, D5).
+  - Mapper from parsed `(remote IP → hostname)` to
+    `DnsResolutionStore.Record` → mirror
+    `Capture/Dns/DnsClientEventMapper.cs`.
+  - Store is **unchanged**: `src/ZenVizor.Core/Dns/DnsResolutionStore.cs`.
+  - Tests → `tests/ZenVizor.Core.Tests/Sni/`, parallel to the existing
+    `tests/ZenVizor.Core.Tests/Dns/` (note: the DNS parser tests live
+    in Core.Tests, which already references `ZenVizor.Capture` — there
+    is no separate Capture.Tests project).
+- **Gold anchor:** keep the RFC 9001 §A.1 key-schedule assertion (spike
+  `QuicSelfTest`) as a CI test — it is what rules out a derivation bug
+  hiding behind a symmetric encrypt path. Reuse `ClientHelloFactory`
+  as the fixture builder for the determinism tests.
+- **Spike disposition:** keep the `spike/SniSpike/` branch until this
+  port lands and its tests are green; delete it only then ("spike
+  close" = after 8.6 has taken what it needs, not before).
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] Synthetic TLS ClientHello fixtures (TLS 1.2 + TLS 1.3-no-ECH)
+      → exact-expected SNI extracted (determinism gate per CLAUDE.md
+      "synthetic events assert exact rows").
+- [ ] Synthetic QUIC Initial fixture → decrypt + exact-expected SNI;
+      exercises the RFC 9001 v1 salt + HKDF + AEAD path.
+- [ ] Synthetic HTTP/1.1 request fixture → exact-expected Host.
+- [ ] Malformed / truncated / non-handshake inputs → empty result,
+      never throws (mirror `Rfc1035ResponseDecoder`).
+- [ ] Per-flow gate: once a flow yields a hostname (or N packets pass
+      without one), further packets for that 4-tuple are dropped
+      without re-parse.
+- [ ] Store wire-up: extracted SNI populates
+      `connections.resolved_host` at flush for a fixture whose
+      `remote_addr` matches.
+
+**Acceptance criteria — manual (human QA — real Windows box)**
+
+- [ ] Chrome with default DoH **on**: AppDetail Connections grid
+      shows human-readable hostnames for the bulk of `chrome.exe`
+      flows (TLS + QUIC). Hit rate materially above the Phase 8
+      baseline (near-zero for Chrome).
+- [ ] QUIC-heavy target (YouTube / Google) renders hostnames,
+      confirming the QUIC decrypt path end-to-end.
+- [ ] **Self-monitoring zero-own-traffic gate** (invariant #1) holds
+      with the new capture session active — ZenVizor PIDs still
+      attribute zero outbound.
+- [ ] Performance: idle CPU < 1%, service WS < ~80 MB hold under a
+      sustained large HTTPS download (the inbound-bulk stress case).
+- [ ] Residual ECH gap documented in the UI + Phase 8 verification
+      doc, same pattern as the DoH note.
+
+**Sequencing note:** runs after Phase 8.5 closes and before
+Phase 9.6 (re-cut MSI + Burn bundle) — the bundle must pack the 8.6
+service binaries, so 8.6 lands first or 9.6 re-cuts. IPC stays at
+schema v2: SNI feeds the same `ResolvedHost` field, so no wire bump.
+
+---
+
+## Phase 9 — MVP finalization (1.0.0 ship gate)
+
+**Goal:** Take the feature-complete build from Phase 8 to a v1.0.0 release.
+Three threads — binary-size cleanup, ship-blocker polish, version bump —
+plus a final re-cut of the MSI + Burn bundle and one last walk of the
+manual gates.
+
+### 9.1 — RID-specialize build outputs to win-x64
+
+**Discovered:** Phase 8 review, 2026-06-20.
+
+**The problem:** No csproj sets `<RuntimeIdentifier>` or `<RuntimeIdentifiers>`.
+Default .NET behaviour copies *every* RID's native assets from transitive
+dependencies (Microsoft.Data.Sqlite, SkiaSharp via LiveCharts2) into the
+output directory. Result: the Service ships 31 MB of `runtimes/`
+containing `libe_sqlite3.so` (Linux), `libe_sqlite3.dylib` (macOS),
+`browser-wasm/`, `linux-mips64/`, `osx-arm64/`, etc. — 23 RIDs total for
+a Windows-only Windows Service. The UI ships 52 MB of `runtimes/` with
+the same pattern dominated by SkiaSharp natives shipped for osx (~18 MB),
+win-arm64 (~12 MB), and win-x86 (~11 MB). Installed footprint is ~210 MB
+versus what should be ~130–140 MB.
+
+**Fix path:** Add `<RuntimeIdentifier>win-x64</RuntimeIdentifier>` to
+`ZenVizor.Service.csproj`, `ZenVizor.Ui.csproj`, and `ZenVizor.Cli.csproj`.
+Keep `SelfContained=false` (the default) so the .NET runtime stays
+separate — the Burn bundle still ships it. Verify with `du -sh` on the
+build outputs (expect ~30–40 MB drop from each of Service + UI) and a
+re-cut of the MSI + bundle on a clean VM.
+
+**Cross-platform portability note:** RID specialization to win-x64 does
+NOT foreclose a future macOS/Linux port. A cross-platform ZenVizor
+would necessarily be a separate build target with its own RID
+(`osx-arm64`, `linux-x64`) because (1) ETW is Windows-only — a Linux
+capture engine would use eBPF, a macOS one Endpoint Security /
+NetworkExtension; (2) WPF doesn't run on macOS/Linux — the UI would be
+Avalonia or MAUI; (3) named-pipe IPC with Windows ACLs would become
+Unix domain sockets + POSIX permissions. The native binaries SkiaSharp /
+SQLite ship per-RID are picked up at the *publish target's* RID at
+build time — a future `osx-arm64` build automatically pulls in
+`libHarfBuzzSharp.dylib` + `libe_sqlite3.dylib`. The current all-RIDs
+dump is a build-time accident, not portability prep — no Windows user
+can execute the Linux `.so` files in today's output.
+
+### 9.2 — Reports page default date → `DateTime.Today`
+
+**Discovered:** Phase 8 review, 2026-06-20.
+
+**The problem:** `src/ZenVizor.Ui/Views/ReportsPage.xaml.cs:28` hardcodes
+`InitialDate = new(2026, 6, 8)` and references it ~10× through the file
+(date picker default, hero eyebrow, chart axis bounds, empty-state
+ticks, anchor captions). The constant was the Phase 5a mockup-screenshot
+date; Phase 5b's real aggregator never came back through to remove it,
+so a fresh install always opens Reports on June 8, 2026.
+
+**Fix path:** Replace the static `InitialDate` constant with a value
+computed at page construction time (`DateTime.Today`). All current
+reference sites flow through the same value — date picker default, chart
+axis MinLimit/MaxLimit, hero eyebrow, anchor captions. Test fixtures at
+`tests/ZenVizor.Integration.Tests/DailyReportCsvWriterTests.cs` pin to
+`2026-06-08` as fixture seeds; leave unchanged.
+
+### 9.3 — Anchor-baseline insufficient-history guard (deferred from Phase 5)
+
+The Phase 5 follow-up block above (line ~280) describes this in full.
+Phase 9 is the implementation slot: pick treatment (a) placeholder or
+(b) warning banner, wire against `DailyReportRepository.LoadAnchorBaseline`
+and `LoadUnusualVolume`, persist a per-machine first-run timestamp
+(or derive from `MIN(first_seen)` across `apps`). Closes a v1 honesty
+gap — without it, fresh installs surface anchor deltas built on partial
+baselines and may misrepresent normal usage as anomalous.
+
+### 9.4 — Dead-code-only audit pass
+
+**Scope (light, safe — do NOT do a wholesale comment-strip):**
+
+- Delete `src/ZenVizor.Ui/Views/PlaceholderPage.xaml` + `.xaml.cs` —
+  unreferenced anywhere in `src/` (no `: PlaceholderPage` base-class
+  usage, no `new PlaceholderPage(...)`, no nav-rail routes). Confirmed
+  via `Grep` 2026-06-20.
+- Targeted unused-private sweep on the four largest files
+  (`ReportsPage.xaml.cs` 1082, `Cli/Program.cs` 1024,
+  `AppDetailPage.xaml.cs` 953, `MainWindow.xaml.cs` 858). Analyzer-driven
+  (`IDE0051` "remove unused private members" is in the default ruleset
+  with `EnforceCodeStyleInBuild=true` already set in `Directory.Build.props`).
+- Leave the explanatory comments alone unless clearly stale
+  ("Phase 5a only wires…" tags that no longer reflect current state).
+  Most of the codebase's comments capture non-obvious WHY (e.g. the
+  `SetREMOVE_DATA_FOLDER` scheduling note in `installer/ZenVizor.wxs`,
+  the MessagePack pin rationale in `Directory.Packages.props`) and are
+  load-bearing.
+
+Audit findings out of scope for Phase 9: no `TODO`/`FIXME`/`HACK`
+markers anywhere; logging is restrained (~110 call sites, ~70%
+warning/error); `Console.WriteLine` only in `Cli/Program.cs` (it's a
+CLI); single `Debug.WriteLine` in `App.xaml.cs:259` is a legit
+fallback catch. No further cleanup warranted.
+
+### 9.5 — Version bump 0.1.1 → 1.0.0 + SemVer policy
+
+Update `<Version>1.0.0</Version>` in `Directory.Build.props` (single
+source of truth — both WiX projects read `$(Version)`). Establish the
+post-MVP versioning policy:
+
+- `1.0.x` — bugfix releases (no behaviour changes that surprise users).
+- `1.x.0` — new features (post-MVP modules from PRD §10, Phase 8
+  follow-ups, additional alert producers).
+- `2.0.0` — breaks in user-visible contracts: IPC schema beyond the
+  additive-tolerance rule, DB schema requiring migration, config layout
+  changes that don't carry over.
+- The internal `IpcSchemaVersion.*` numbers (Settings v3, Alerts v1,
+  Query v1/v2, DailyReport v2, ActivitySnapshot v2) keep their own
+  per-surface incremental versioning per the additive-tolerance rule —
+  orthogonal to product version.
+
+Document the policy in `docs/versioning.md` (new file, short) and link
+from `CLAUDE.md`.
+
+### 9.6 — Re-cut MSI + Burn bundle; final manual gates
+
+Last gate before 1.0.0 ship. Re-cut both installer artifacts on top of
+the 9.1 / 9.2 / 9.3 / 9.4 / 9.5 changes, then re-run:
+
+- All four Phase 7 manual gates (clean-VM install with + without .NET 10
+  pre-installed, uninstall preserves runtime + `%ProgramData%\ZenVizor\`,
+  bundle reinstall upgrades cleanly).
+- The Phase 6.8b self-monitoring zero-own-traffic invariant gate
+  (≥ 1 hour pointed at itself; no ZenVizor PID in `apps` or
+  `connections`).
+- Full-system pass: attribution sane, live + history + daily report
+  reconcile, performance budget holds (idle CPU < 1%, service working
+  set < ~80 MB).
+
+Update `README.md` if any user-facing instructions changed (RID
+specialization doesn't; version bump may surface in install dialog
+chrome).
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] 9.1: Build outputs verified by `du -sh` — Service + UI drop
+      to ~17 MB + ~19 MB respectively (down from 48 MB + 71 MB);
+      MSI down to ~25–30 MB (from 45 MB).
+- [ ] 9.2: Fresh-launch Reports page tests assert the date picker
+      reflects `DateTime.Today` (mock the clock for determinism).
+- [ ] 9.3: Insufficient-history baseline tests assert the chosen
+      treatment fires correctly when baseline rows < anchor window.
+- [ ] All existing CI test suites continue to pass.
+- [ ] Both MSI + bundle build cleanly on CI; artifacts uploaded.
+
+**Acceptance criteria — manual (human QA — clean Windows VM)**
+
+- [ ] All four Phase 7 manual gates pass against the 1.0.0 bundle.
+- [ ] Phase 6.8b self-monitoring zero-own-traffic gate passes against
+      the 1.0.0 build.
+- [ ] Fresh install + launch: Reports opens on today's date, not
+      2026-06-08.
+- [ ] `%ProgramFiles%\ZenVizor\` total size ≤ ~140 MB
+      (binaries; runtime is shared separately).
+- [ ] Add/Remove Programs shows version `1.0.0`.
+
+**Sequencing rationale:** 9.1 first because it changes build output
+structure every later step (re-cut, install test) depends on. 9.2 / 9.3
+/ 9.4 are independent and parallelizable. 9.5 second-to-last so the
+version-bumped MSI is what 9.6 tests. 9.6 is the ship gate — don't
+flip the project to `1.0.0` until 9.6 is GREEN.
+
 ---
 
 ## MVP definition of done
 
-All Phase 0–8 acceptance criteria pass (CI + manual). The product: passively captures up/down traffic; attributes it to process incl. svchost service names and signer/path enrichment; shows a near-live dashboard; stores tiered history with user-defined windows and configurable retention; produces a daily report with CSV/HTML export; raises local alerts via an extensible pipeline; **resolves remote endpoint addresses to hostnames** from passively-observed DNS traffic (Phase 8); **installs via a single `ZenVizorSetup.exe`** that bundles the .NET 10 desktop runtime for offline installability (Phase 7); uninstalls cleanly; runs within the performance budget; and **emits no network traffic of its own**, verified by self-monitoring. The collector contract, alert pipeline, and versioned IPC envelope seams (plus the reserved `devices` table) are in place so the post-MVP modules in PRD §10 can be added without re-architecting.
+All Phase 0–9 acceptance criteria pass (CI + manual). The product: passively captures up/down traffic; attributes it to process incl. svchost service names and signer/path enrichment; shows a near-live dashboard; stores tiered history with user-defined windows and configurable retention; produces a daily report with CSV/HTML export; raises local alerts via an extensible pipeline; **resolves remote endpoint addresses to hostnames** from passively-observed DNS traffic (Phase 8); **installs via a single `ZenVizorSetup.exe`** that bundles the .NET 10 desktop runtime for offline installability (Phase 7); uninstalls cleanly; runs within the performance budget; and **emits no network traffic of its own**, verified by self-monitoring. Phase 9 finalises the build: RID-specialized binary layout, polish carry-overs, and the version bump to **1.0.0**. The collector contract, alert pipeline, and versioned IPC envelope seams (plus the reserved `devices` table) are in place so the post-MVP modules in PRD §10 can be added without re-architecting.

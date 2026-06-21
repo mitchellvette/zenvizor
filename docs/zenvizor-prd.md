@@ -220,7 +220,7 @@ Written by the flush job (default every ~5s, accumulated into the aligned bucket
 | remote_addr | TEXT | IPv4 or IPv6 |
 | remote_port | INTEGER | |
 | remote_class | TEXT | `Local` \| `Wan` |
-| resolved_host | TEXT NULL | **reserved** for future passive-DNS module; null in MVP |
+| resolved_host | TEXT NULL | populated by the Phase 8 passive-DNS observer for OS-resolver traffic; null when the app uses DoH / an in-app resolver — see §10 endpoint-visibility note |
 | bytes_up | INTEGER | running total |
 | bytes_down | INTEGER | running total |
 | first_seen | INTEGER | |
@@ -339,11 +339,14 @@ Captured here so MVP scaffolding stays aligned; none of these are built in the s
 | New Device Connection | Passive device watcher | No (reads ARP/neighbor table) | `IMonitor` + `Alert` + `devices` table |
 | Device List Monitor | Passive device watcher | No | `IMonitor` + `devices` table |
 | ARP Spoofing Detection | Passive device watcher | No (`GetIpNetTable2`) | `IMonitor` + alert pipeline |
-| Passive DNS name resolution | Capture extension | No (sniffs DNS responses via `Microsoft-Windows-DNS-Client` ETW) | second `ICaptureSource`; fills `connections.resolved_host` |
+| Passive DNS name resolution | Capture extension | No (sniffs DNS responses via `Microsoft-Windows-DNS-Client` ETW) | second `ICaptureSource`; fills `connections.resolved_host`. **Shipped in Phase 8. Known coverage gap: DoH-using and in-app-resolver apps (notably Chrome by default) bypass the Windows resolver entirely and are structurally invisible to this provider.** |
+| Endpoint visibility for DoH / in-app resolvers | Capture extension (investigation → ships pre-MVP) | No (passive packet inspection — TLS SNI / QUIC SNI / HTTP Host) | **Phase 8.5 spike complete (2026-06-21): ships pre-MVP at full coverage via Phase 8.6** — see `docs/phase-8.5-endpoint-visibility.md`. Passive only; cleared the invariant #1 audit (self-monitoring lens empty), so the active-probe boundary below does not move. Residual structural gap: ECH-enabled origins. |
 | Network Scanner | **Active probe** | **YES** | **Hard-bounded, isolated module — breaks §1.1; separate effort** |
 | Evil Twin Detection (active parts) | **Active probe** | **YES** | **Hard-bounded, isolated module — breaks §1.1; separate effort** |
 
 The active-probe items get a **clean boundary, not a pre-built hook** — the right preparation is keeping the MVP core provably passive (self-monitoring asserts zero own-traffic). When they arrive they live in an isolated, explicitly-network module (plausibly a separate process), exempt from the self-monitoring assertion.
+
+**Endpoint visibility — Phase 8 + Phase 8.5 split:** the Phase 8 DNS observer recovers hostnames for the OS-resolver share of traffic. That share is smaller than it looks because modern browsers ship DoH on by default. Phase 8.5 was the pre-MVP investigation that decided whether and how to recover the remaining share via passive packet inspection (TLS / QUIC SNI, HTTP Host); it **completed 2026-06-21 with a ship-pre-MVP-at-full-coverage decision** (findings in `docs/phase-8.5-endpoint-visibility.md`, implementation scoped as Phase 8.6 in `docs/zenvizor-sprint-plan.md`). The hard constraint is unchanged — every candidate technique must clear the invariant #1 audit before it lands in the MVP, and the chosen technique did (receive-only substrate, pure-compute crypto, empty self-monitoring lens).
 
 ---
 
