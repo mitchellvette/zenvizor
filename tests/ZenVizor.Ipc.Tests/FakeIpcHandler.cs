@@ -159,7 +159,8 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         StartMinimized:              false,
         AlertLargeDownloadMb:        50,
         AlertOutboundHeavyFloorMb:   10,
-        AlertUnusualDailyVolumeKTimesTen: 25);
+        AlertUnusualDailyVolumeKTimesTen: 25,
+        SmoothChartAnimations:       false);
 
     public List<SettingsUpdate> AppliedUpdates { get; } = new();
 

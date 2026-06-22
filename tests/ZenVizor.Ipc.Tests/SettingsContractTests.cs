@@ -36,7 +36,8 @@ public sealed class SettingsContractTests
         StartMinimized:              false,
         AlertLargeDownloadMb:        50,
         AlertOutboundHeavyFloorMb:   10,
-        AlertUnusualDailyVolumeKTimesTen: 25);
+        AlertUnusualDailyVolumeKTimesTen: 25,
+        SmoothChartAnimations:       false);
 
     [Fact]
     public async Task GetSettings_AfterNegotiation_StampsSchemaVersionAndReturnsProviderPayload()
@@ -129,6 +130,43 @@ public sealed class SettingsContractTests
     }
 
     [Fact]
+    public async Task UpdateSettings_SmoothChartAnimations_RoundTripsToApplier()
+    {
+        // Phase 9.a — the new SmoothChartAnimations field is partial-update
+        // friendly (nullable on SettingsUpdate) and round-trips through the
+        // negotiation gate + schema-stamped envelope just like the other
+        // bools. No range validation on the wire; the field is bool so
+        // there is no invalid value to test.
+        SettingsUpdate? applied = null;
+        var handler = ProductionHandlerFactory.CreateDefault(
+            settingsApplier: u => applied = u);
+        await using var session = await NegotiatedSessionAsync(handler);
+
+        await session.Proxy.UpdateSettingsAsync(new SettingsUpdate
+        {
+            SmoothChartAnimations = true,
+        });
+
+        applied.Should().NotBeNull();
+        applied!.SmoothChartAnimations.Should().BeTrue();
+        applied.AutostartMode.Should().BeNull(); // no co-applied fields
+    }
+
+    [Fact]
+    public async Task GetSettings_SmoothChartAnimations_RoundTripsOnSnapshot()
+    {
+        var snap = SampleSnapshot() with { SmoothChartAnimations = true };
+        var handler = ProductionHandlerFactory.CreateDefault(
+            settingsProvider: () => snap);
+        await using var session = await NegotiatedSessionAsync(handler);
+
+        var envelope = await session.Proxy.GetSettingsAsync();
+
+        envelope.SchemaVersion.Should().Be(IpcSchemaVersion.Settings);
+        envelope.Payload.SmoothChartAnimations.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task UpdateSettings_AllFieldsNull_AppliesNothing_Succeeds()
     {
         var calls = 0;
@@ -144,6 +182,7 @@ public sealed class SettingsContractTests
         applied.ToastOnAlert.Should().BeNull();
         applied.Theme.Should().BeNull();
         applied.RetentionSamplesDays.Should().BeNull();
+        applied.SmoothChartAnimations.Should().BeNull();
     }
 
     [Fact]

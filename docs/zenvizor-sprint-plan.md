@@ -1746,6 +1746,57 @@ natural follow-on to this collapse. F1 (click-row → endpoint detail) is
 the surface where a collapsed identity's full session/port breakdown
 would live if expand-in-place proves infeasible.
 
+### 9.a — Smooth chart animations user toggle + Appearance reorder
+
+**Discovered:** Phase 9.5 close, 2026-06-22.
+
+**The problem:** `DashboardPage.xaml.cs:79` carries
+`private static readonly bool EnableChartSmoothScroll = false;` — a
+code-only flag from Phase D.7's smooth-scroll experiment, with the
+documented expectation that it "graduates to a user toggle on the
+Settings page once that page is built." The Settings page exists; the
+graduation never happened. The Appearance section also lives at
+position 6 of 7 in the Settings page despite being the section most
+users open Settings to find.
+
+**Fix path:**
+
+- Add `SmoothChartAnimations` (required trailing bool) to
+  `SettingsSnapshot`; add nullable `SmoothChartAnimations` to
+  `SettingsUpdate`; bump `IpcSchemaVersion.Settings` 3 → 4.
+- New SQLite settings-table key `appearance.smooth_chart_animations`,
+  stored as `"0"`/`"1"` per the existing convention (default false
+  when absent — preserves the current "no animation" behaviour on
+  upgrade).
+- Move the Appearance section card to position 1 of 7 in
+  `SettingsPage.xaml`. Add a ToggleSwitch row inside Appearance below
+  the Theme combo, label "Smooth chart animations" with caption
+  noting the CPU cost while the Dashboard is open and the no-impact
+  case when minimized to tray.
+- `DashboardPage` reads `SmoothChartAnimations` from the snapshot in
+  `OnLoadedHook` and applies it to `RatesChart.AnimationsSpeed` +
+  `EasingFunction`. Constructor initialises to snap-only so the chart
+  has a safe state before the IPC round-trip lands. Effect appears on
+  the next nav to Dashboard, not live to an already-open Dashboard
+  (matches the existing "page reloads on navigation" pattern and
+  avoids settings-change event plumbing).
+- IPC contract tests cover the new field's round-trip; storage repo
+  tests cover absent-key default-false + set/get round-trip.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] IPC contract test asserts `SettingsSnapshot.SmoothChartAnimations`
+      round-trips at schema v4.
+- [ ] Storage repo test asserts the `appearance.smooth_chart_animations`
+      key defaults to false on a fresh DB and persists `"1"` on write.
+
+**Acceptance criteria — manual**
+
+- [ ] Appearance card is the first section in Settings.
+- [ ] Toggling "Smooth chart animations" persists across an app restart.
+- [ ] On the next nav to Dashboard, the toggle's value drives whether
+      chart updates animate (2200 ms linear) or snap.
+
 ### 9.6 — Version bump 0.1.1 → 1.0.0 + SemVer policy
 
 Update `<Version>1.0.0</Version>` in `Directory.Build.props` (single
@@ -1818,9 +1869,11 @@ chrome).
 
 **Sequencing rationale:** 9.1 first because it changes build output
 structure every later step (re-cut, install test) depends on. 9.2 / 9.3
-/ 9.4 / 9.5 are independent and parallelizable. 9.6 second-to-last so the
-version-bumped MSI is what 9.7 tests. 9.7 is the ship gate — don't
-flip the project to `1.0.0` until 9.7 is GREEN.
+/ 9.4 / 9.5 / 9.a are independent and parallelizable. 9.a was
+discovered at 9.5's close and slots before 9.4 so the dead-code sweep
+doesn't trip over the static-flag → setting migration. 9.6 second-to-last
+so the version-bumped MSI is what 9.7 tests. 9.7 is the ship gate —
+don't flip the project to `1.0.0` until 9.7 is GREEN.
 
 ---
 

@@ -64,6 +64,14 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// not median + k × MAD — chose intuitive slider semantics over robust
 /// statistics. Revisit if low-variance apps generate noise.
 /// </param>
+/// <param name="SmoothChartAnimations">
+/// When true, Dashboard charts animate transitions (2200 ms linear
+/// scroll easing). Default false — animating the live-rates / sparkline
+/// chart pair adds ~8% idle CPU while the Dashboard is open. No effect
+/// when the UI is in the tray (the page isn't rendering). Phase 9.a
+/// exposed the previously code-only flag. Effect applies on next nav to
+/// Dashboard, not live to a currently-open Dashboard.
+/// </param>
 public sealed record SettingsSnapshot(
     ServiceStartMode AutostartMode,
     bool ToastOnAlert,
@@ -78,4 +86,5 @@ public sealed record SettingsSnapshot(
     bool StartMinimized,
     int AlertLargeDownloadMb,
     int AlertOutboundHeavyFloorMb,
-    int AlertUnusualDailyVolumeKTimesTen);
+    int AlertUnusualDailyVolumeKTimesTen,
+    bool SmoothChartAnimations);

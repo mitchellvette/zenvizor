@@ -119,6 +119,26 @@ public sealed class SettingsRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void SmoothChartAnimations_AbsentKey_ReadsDefaultFalse()
+    {
+        // Phase 9.a — the seed migrations don't pre-populate this key,
+        // so a fresh DB must report false. GetBool's defaultValue branch
+        // is the load-bearing path; assert it directly against the real
+        // key name so a typo in either side fails the test.
+        _settings.GetBool(SettingsRepository.Keys.SmoothChartAnimations, defaultValue: false)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void SmoothChartAnimations_RoundTrip_PersistsTrue()
+    {
+        _settings.SetBool(SettingsRepository.Keys.SmoothChartAnimations, true);
+        _settings.GetBool(SettingsRepository.Keys.SmoothChartAnimations, defaultValue: false)
+            .Should().BeTrue();
+        _settings.GetString(SettingsRepository.Keys.SmoothChartAnimations).Should().Be("1");
+    }
+
+    [Fact]
     public void Set_NullValue_Throws()
     {
         var act = () => _settings.Set("k", null!);

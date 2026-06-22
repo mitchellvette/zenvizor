@@ -23,4 +23,5 @@ public sealed record SettingsUpdate
     public int? AlertLargeDownloadMb { get; init; }
     public int? AlertOutboundHeavyFloorMb { get; init; }
     public int? AlertUnusualDailyVolumeKTimesTen { get; init; }
+    public bool? SmoothChartAnimations { get; init; }
 }

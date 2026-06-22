@@ -268,6 +268,20 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetField(ref _theme, value);
     }
 
+    private bool _smoothChartAnimations;
+    /// <summary>
+    /// Phase 9.a — Dashboard chart-animation toggle. Off by default
+    /// (running the live-rates + sparkline pair with 2200 ms linear
+    /// scroll animation adds ~8% idle CPU while the Dashboard is open).
+    /// Effect applies on the next nav to Dashboard, not live to an
+    /// already-open Dashboard.
+    /// </summary>
+    public bool SmoothChartAnimations
+    {
+        get => _smoothChartAnimations;
+        set => SetField(ref _smoothChartAnimations, value);
+    }
+
     /// <summary>
     /// Populate every field from a server snapshot. Called once per page
     /// load + on ServiceReconnected. Picks the friendliest default unit
@@ -295,6 +309,7 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
         AlertLargeDownloadMb       = s.AlertLargeDownloadMb;
         AlertOutboundHeavyFloorMb  = s.AlertOutboundHeavyFloorMb;
         AlertUnusualDailyVolumeK   = s.AlertUnusualDailyVolumeKTimesTen / 10.0;
+        SmoothChartAnimations      = s.SmoothChartAnimations;
     }
 
     private static void HydrateField(RetentionField field, int days, RetentionUnit defaultUnit)

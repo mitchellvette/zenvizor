@@ -130,7 +130,95 @@
                       cap so each card spans the full width per the brief.  -->
                 <StackPanel HorizontalAlignment="Stretch">
 
-                    <!--  SECTION 1 — Service. Autostart + start-minimized.  -->
+                    <!--  SECTION 1 — Appearance. Theme + smooth chart animations.
+                          Moved to the top of the page (Phase 9.a) on the read
+                          that most users opening Settings reach for theme
+                          first; autostart is a one-time setup.  -->
+                    <Border Style="{StaticResource section.card}">
+                        <StackPanel>
+                            <ui:TextBlock Style="{StaticResource text.subtitle}"
+                                          Text="Appearance" />
+                            <ui:TextBlock Style="{StaticResource text.caption}"
+                                          Foreground="{DynamicResource text.secondary}"
+                                          Text="Match Windows or pin a theme; tune Dashboard chart motion."
+                                          TextWrapping="Wrap"
+                                          Margin="0,4,0,16" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Theme" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Follow system uses the same light or dark mode Windows is using right now." />
+                                </StackPanel>
+                                <ComboBox Grid.Column="1"
+                                          x:Name="ThemePicker"
+                                          Width="180"
+                                          VerticalAlignment="Center"
+                                          SelectedIndex="0"
+                                          SelectionChanged="OnThemeChanged">
+                                    <!--  SelectedIndex=0 ("Follow system") is the safe
+                                          first-render default — settles before code-behind
+                                          overrides from ThemePreferenceStore or the IPC
+                                          snapshot. Without it the ComboBox would render
+                                          blank if IPC is slow or down.  -->
+                                    <ComboBoxItem Content="Follow system" />
+                                    <ComboBoxItem Content="Light" />
+                                    <ComboBoxItem Content="Dark" />
+                                </ComboBox>
+                            </Grid>
+
+                            <Border Style="{StaticResource section.row.hairline}" />
+
+                            <!--  Phase 9.a — Dashboard smooth chart animations.
+                                  Was a code-only flag through 9.5; surfaced
+                                  here as a user toggle. DashboardPage re-reads
+                                  this on every page load, so the effect lands
+                                  on the next nav to Dashboard.  -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Smooth chart animations" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Animates Dashboard chart transitions instead of snapping to new values. Adds a small CPU cost while the Dashboard is open. No impact when minimized to the tray." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="SmoothChartAnimationsToggle"
+                                                 IsChecked="{Binding SmoothChartAnimations, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnSmoothChartAnimationsChanged"
+                                                 Unchecked="OnSmoothChartAnimationsChanged" />
+                            </Grid>
+
+                            <!--  Phase 6.5 — High Contrast notice. Visible only when
+                                  Windows High Contrast is active. SystemParameters
+                                  binding wouldn't be reactive across HC toggle, so
+                                  visibility is set in code-behind (RefreshThemeCardHighContrastNotice).  -->
+                            <Border x:Name="HighContrastNotice"
+                                    Visibility="Collapsed"
+                                    Margin="0,12,0,0"
+                                    Padding="12,8"
+                                    Background="{DynamicResource status.caution.background}"
+                                    BorderBrush="{DynamicResource status.caution}"
+                                    BorderThickness="0,0,0,2"
+                                    CornerRadius="{StaticResource radius.control}">
+                                <TextBlock Style="{StaticResource text.caption}"
+                                           Foreground="{DynamicResource status.caution.text}"
+                                           TextWrapping="Wrap"
+                                           Text="Windows High Contrast is active. The OS contrast theme overrides this app's light or dark choice; changing the picker has no visible effect until High Contrast is turned off." />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  SECTION 2 — Service. Autostart + start-minimized.  -->
                     <Border Style="{StaticResource section.card}">
                         <StackPanel>
                             <ui:TextBlock Style="{StaticResource text.subtitle}"
@@ -187,7 +275,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!--  SECTION 2 — Capture (read-only diagnostic).
+                    <!--  SECTION 3 — Capture (read-only diagnostic).
                           PRD §15 locks the defaults; the actual values are
                           inlined into the descriptions so users see meaning
                           AND value in one read (no stray right-column number
@@ -220,7 +308,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!--  SECTION 3 — Retention. Five rows: each a NumberBox +
+                    <!--  SECTION 4 — Retention. Five rows: each a NumberBox +
                           Unit ComboBox composite. The composite's units convert
                           to canonical days inside the VM's RetentionField; the
                           ComboBox SelectedIndex maps 0=Days/1=Months/2=Years
@@ -283,7 +371,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!--  SECTION 4 — History. Reset history button →
+                    <!--  SECTION 5 — History. Reset history button →
                           ContentDialog confirmation.  -->
                     <Border Style="{StaticResource section.card}">
                         <StackPanel>
@@ -333,7 +421,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!--  SECTION 5 — Alerts. Toast toggle + verification.  -->
+                    <!--  SECTION 6 — Alerts. Toast toggle + verification.  -->
                     <Border Style="{StaticResource section.card}">
                         <StackPanel>
                             <ui:TextBlock Style="{StaticResource text.subtitle}"
@@ -520,65 +608,6 @@
                                                Foreground="{DynamicResource text.secondary}" />
                                 </StackPanel>
                             </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!--  SECTION 6 — Appearance. Theme ComboBox.  -->
-                    <Border Style="{StaticResource section.card}">
-                        <StackPanel>
-                            <ui:TextBlock Style="{StaticResource text.subtitle}"
-                                          Text="Appearance" />
-                            <ui:TextBlock Style="{StaticResource text.caption}"
-                                          Foreground="{DynamicResource text.secondary}"
-                                          Text="Match Windows or pin a theme."
-                                          TextWrapping="Wrap"
-                                          Margin="0,4,0,16" />
-
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                                    <TextBlock Style="{StaticResource setting.label}"
-                                               Text="Theme" />
-                                    <TextBlock Style="{StaticResource setting.description}"
-                                               Text="Follow system uses the same light or dark mode Windows is using right now." />
-                                </StackPanel>
-                                <ComboBox Grid.Column="1"
-                                          x:Name="ThemePicker"
-                                          Width="180"
-                                          VerticalAlignment="Center"
-                                          SelectedIndex="0"
-                                          SelectionChanged="OnThemeChanged">
-                                    <!--  SelectedIndex=0 ("Follow system") is the safe
-                                          first-render default — settles before code-behind
-                                          overrides from ThemePreferenceStore or the IPC
-                                          snapshot. Without it the ComboBox would render
-                                          blank if IPC is slow or down.  -->
-                                    <ComboBoxItem Content="Follow system" />
-                                    <ComboBoxItem Content="Light" />
-                                    <ComboBoxItem Content="Dark" />
-                                </ComboBox>
-                            </Grid>
-
-                            <!--  Phase 6.5 — High Contrast notice. Visible only when
-                                  Windows High Contrast is active. SystemParameters
-                                  binding wouldn't be reactive across HC toggle, so
-                                  visibility is set in code-behind (RefreshThemeCardHighContrastNotice).  -->
-                            <Border x:Name="HighContrastNotice"
-                                    Visibility="Collapsed"
-                                    Margin="0,12,0,0"
-                                    Padding="12,8"
-                                    Background="{DynamicResource status.caution.background}"
-                                    BorderBrush="{DynamicResource status.caution}"
-                                    BorderThickness="0,0,0,2"
-                                    CornerRadius="{StaticResource radius.control}">
-                                <TextBlock Style="{StaticResource text.caption}"
-                                           Foreground="{DynamicResource status.caution.text}"
-                                           TextWrapping="Wrap"
-                                           Text="Windows High Contrast is active. The OS contrast theme overrides this app's light or dark choice; changing the picker has no visible effect until High Contrast is turned off." />
-                            </Border>
                         </StackPanel>
                     </Border>
 

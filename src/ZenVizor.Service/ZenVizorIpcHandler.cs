@@ -150,7 +150,8 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         StartMinimized: false,
         AlertLargeDownloadMb: 50,
         AlertOutboundHeavyFloorMb: 10,
-        AlertUnusualDailyVolumeKTimesTen: 25);
+        AlertUnusualDailyVolumeKTimesTen: 25,
+        SmoothChartAnimations: false);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {

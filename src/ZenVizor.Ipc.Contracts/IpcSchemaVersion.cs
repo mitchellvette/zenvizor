@@ -65,6 +65,11 @@ public static class IpcSchemaVersion
     /// payloads.
     /// </summary>
     /// <remarks>
+    /// v4 (Phase 9.a): <c>SmoothChartAnimations</c> added as a required
+    /// trailing positional field on <see cref="Dto.SettingsSnapshot"/>.
+    /// Surfaces the previously code-only Dashboard chart-animation flag
+    /// as a user setting. A v3 payload won't deserialize as v4 (positional
+    /// record); the client-side schema floor check is load-bearing.
     /// v3 (Phase 6.7): three alert-threshold fields added as required
     /// positional fields on <see cref="Dto.SettingsSnapshot"/> —
     /// <c>AlertLargeDownloadMb</c>, <c>AlertOutboundHeavyFloorMb</c>,
@@ -76,5 +81,5 @@ public static class IpcSchemaVersion
     /// load-bearing.
     /// v1 (Phase 6.2): initial.
     /// </remarks>
-    public const int Settings = 3;
+    public const int Settings = 4;
 }

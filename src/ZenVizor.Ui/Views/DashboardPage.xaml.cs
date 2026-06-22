@@ -65,18 +65,20 @@ public partial class DashboardPage : Page
     private readonly Axis? _yAxis;
     private readonly Axis? _xAxis;
 
-    // Phase D.7 — smooth-scroll chart animation experiment. OFF by
-    // default because the 2200ms / EasingFunctions.Lineal tween pays an
-    // ~8% idle CPU cost (over the project's <1% budget). Visual quality
-    // when enabled is excellent: continuous chained motion — animation
-    // duration slightly exceeds the 2s tick cadence so each tween is
-    // interrupted by the next and never reaches a stationary "done"
-    // state, giving the line constant motion with a ~200ms lag behind
-    // real-time (visually imperceptible). Flip to true at compile time
-    // to opt in locally; this graduates to a user toggle on the Settings
-    // page once that page is built (§11 backlog item). When false, the
-    // chart snaps between ticks (pre-Phase D.7 behavior).
-    private static readonly bool EnableChartSmoothScroll = false;
+    // Phase D.7 — smooth-scroll chart animation. OFF by default because
+    // the 2200ms / EasingFunctions.Lineal tween pays an ~8% idle CPU
+    // cost (over the project's <1% budget). Visual quality when enabled
+    // is excellent: continuous chained motion — animation duration
+    // slightly exceeds the 2s tick cadence so each tween is interrupted
+    // by the next and never reaches a stationary "done" state, giving
+    // the line constant motion with a ~200ms lag behind real-time
+    // (visually imperceptible). Phase 9.a graduated the previously
+    // code-only flag to a user toggle in Settings → Appearance; the
+    // value is read from <see cref="SettingsSnapshot.SmoothChartAnimations"/>
+    // on every page load and applied in
+    // <see cref="ApplyChartAnimationFromSettingsAsync"/>. The constructor
+    // initialises to snap-only so the chart has a safe state before the
+    // IPC round-trip lands.
 
     public DashboardPage()
     {
@@ -146,19 +148,11 @@ public partial class DashboardPage : Page
         RatesChart.XAxes = new[] { _xAxis };
         RatesChart.DrawMargin = new Margin(80, 10, 10, 44);
 
-        // Phase D.7 chart animation — gated on EnableChartSmoothScroll
-        // (see field declaration for rationale and the path to a Settings
-        // toggle). When disabled, AnimationsSpeed=Zero gives snap-only
-        // behavior identical to pre-Phase D.7.
-        if (EnableChartSmoothScroll)
-        {
-            RatesChart.AnimationsSpeed = TimeSpan.FromMilliseconds(2200);
-            RatesChart.EasingFunction = EasingFunctions.Lineal;
-        }
-        else
-        {
-            RatesChart.AnimationsSpeed = TimeSpan.Zero;
-        }
+        // Phase 9.a — initialise to snap-only (Phase D.7 default). The
+        // user toggle is applied in OnLoadedHook after fetching the
+        // SettingsSnapshot; until that completes the chart stays in this
+        // safe default.
+        RatesChart.AnimationsSpeed = TimeSpan.Zero;
         _yAxis = new Axis
         {
             Labeler = v => RateFormatter.FormatRate(v),
@@ -188,7 +182,7 @@ public partial class DashboardPage : Page
         SizeChanged += (_, _) => EnforceTalkersBounds();
     }
 
-    private void OnLoadedHook(object sender, RoutedEventArgs e)
+    private async void OnLoadedHook(object sender, RoutedEventArgs e)
     {
         if (Application.Current.MainWindow is MainWindow mw)
         {
@@ -209,6 +203,48 @@ public partial class DashboardPage : Page
         {
             pageScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
             pageScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        }
+
+        await ApplyChartAnimationFromSettingsAsync();
+    }
+
+    /// <summary>
+    /// Phase 9.a — read the user's smooth-chart-animations preference
+    /// from the service-side settings snapshot and apply it to the
+    /// rates chart. Fire-and-forget on every page load so a toggle in
+    /// Settings → Appearance takes effect the next time the user
+    /// navigates to Dashboard. On pipe-down or any IPC failure the
+    /// chart stays in its constructor-set snap-only default; the
+    /// dashboard's existing pipe-down state coverage handles the
+    /// visible signal.
+    ///
+    /// NOTE: this method does NOT use <c>ConfigureAwait(false)</c> on
+    /// the IPC await — we need to resume on the UI dispatcher so the
+    /// post-await access to <c>IsLoaded</c> and <c>RatesChart</c>
+    /// (DependencyObjects with thread affinity) doesn't trip
+    /// <c>VerifyAccess()</c> and throw silently into the catch block.
+    /// </summary>
+    private async Task ApplyChartAnimationFromSettingsAsync()
+    {
+        if (Application.Current.MainWindow is not MainWindow mw) return;
+        try
+        {
+            var snapshot = await mw.SettingsClient.GetSettingsAsync();
+            if (!IsLoaded) return; // page got unloaded mid-fetch
+            if (snapshot.SmoothChartAnimations)
+            {
+                RatesChart.AnimationsSpeed = TimeSpan.FromMilliseconds(2200);
+                RatesChart.EasingFunction = EasingFunctions.Lineal;
+            }
+            else
+            {
+                RatesChart.AnimationsSpeed = TimeSpan.Zero;
+                RatesChart.EasingFunction = null;
+            }
+        }
+        catch
+        {
+            // Swallow — see method summary.
         }
     }
 

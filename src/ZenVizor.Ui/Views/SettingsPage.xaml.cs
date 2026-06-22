@@ -53,7 +53,15 @@ public partial class SettingsPage : Page
     // form from a fresh snapshot. Without this, Hydrate would trip every
     // checked / unchecked / SelectionChanged handler and fire spurious
     // UpdateSettingsAsync calls back to the service.
-    private bool _suppressApply;
+    //
+    // Initialised to TRUE so that change events deferred by WPF past the
+    // constructor (notably ComboBox.SelectionChanged firing after the
+    // initial SelectedIndex="0" from XAML lands) don't run their
+    // handlers' local side effects — OnThemeChanged in particular calls
+    // ApplyThemeImmediate + ThemePreferenceStore.Save BEFORE its
+    // ApplyAsync (and thus before the _hasHydrated belt). The flag is
+    // cleared at the end of the first successful RefreshAsync.
+    private bool _suppressApply = true;
 
     // Set after the first successful GetSettingsAsync round-trip. Until
     // this flips true, ApplyAsync short-circuits — a defensive belt for
@@ -170,26 +178,28 @@ public partial class SettingsPage : Page
     {
         _vm.Content = SettingsViewModel.PageContent.Loading;
 
-        // Pre-hydrate the theme picker from the local cache BEFORE awaiting
-        // IPC so it never renders blank if the service is slow or down.
-        // ThemePreferenceStore.Load returns System on any error, so this is
-        // always safe. _suppressApply protects OnThemeChanged.
+        // _suppressApply stays TRUE for the whole Refresh — including
+        // across the GetSettingsAsync await. Splitting it into two
+        // suppress windows (one for pre-hydrate, another for hydrate)
+        // left a gap where WPF-deferred SelectionChanged events for
+        // ThemePicker could fire unguarded — OnThemeChanged would then
+        // run ApplyThemeImmediate + ThemePreferenceStore.Save against a
+        // stale SelectedIndex (e.g. the XAML "Follow system" default),
+        // visibly flipping a Light user to System on the first nav to
+        // this page and silently overwriting the local theme cache.
+        // Keeping the gate closed across the await holds the line.
         _suppressApply = true;
         try
         {
+            // Pre-hydrate the theme picker from the local cache BEFORE
+            // awaiting IPC so it never renders blank if the service is
+            // slow or down. ThemePreferenceStore.Load returns System on
+            // any error, so this is always safe.
             ThemePicker.SelectedIndex = (int)ThemePreferenceStore.Load();
-        }
-        finally
-        {
-            _suppressApply = false;
-        }
 
-        try
-        {
-            var snapshot = await Settings.GetSettingsAsync();
-            _suppressApply = true;
             try
             {
+                var snapshot = await Settings.GetSettingsAsync();
                 _vm.Hydrate(snapshot);
                 // Sync the non-bindable controls (ComboBox SelectedIndex
                 // doesn't survive a XAML-binding path because we want
@@ -205,37 +215,37 @@ public partial class SettingsPage : Page
                 {
                     row.RefreshAfterHydrate();
                 }
+                _hasHydrated = true;
+                _vm.Content = SettingsViewModel.PageContent.Populated;
+                HideBanner();
             }
-            finally
+            catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
             {
-                _suppressApply = false;
+                _vm.Content = SettingsViewModel.PageContent.Disconnected;
+                ShowBanner(critical: false,
+                    "Service disconnected. Settings can be viewed but not changed.",
+                    glyph: SymbolRegular.PlugDisconnected20);
             }
-            _hasHydrated = true;
-            _vm.Content = SettingsViewModel.PageContent.Populated;
-            HideBanner();
+            catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
+            {
+                // Service binary predates Phase 6.2 — the settings IPC isn't
+                // exposed yet. Surface as a calm informational banner;
+                // defaults remain visible (theme came from the local cache)
+                // and the user knows how to fix.
+                _vm.Content = SettingsViewModel.PageContent.Error;
+                ShowBanner(critical: false,
+                    "Settings can't be loaded. The ZenVizor service is older than this app; " +
+                    "restart the service (Services.msc, ZenVizor, Restart) to enable changes.");
+            }
+            catch (Exception ex)
+            {
+                _vm.Content = SettingsViewModel.PageContent.Error;
+                ShowBanner(critical: false, $"Couldn't load settings ({ex.GetType().Name}).");
+            }
         }
-        catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
+        finally
         {
-            _vm.Content = SettingsViewModel.PageContent.Disconnected;
-            ShowBanner(critical: false,
-                "Service disconnected. Settings can be viewed but not changed.",
-                glyph: SymbolRegular.PlugDisconnected20);
-        }
-        catch (Exception ex) when (SettingsClient.IsMethodNotFound(ex))
-        {
-            // Service binary predates Phase 6.2 — the settings IPC isn't
-            // exposed yet. Surface as a calm informational banner;
-            // defaults remain visible (theme came from the local cache)
-            // and the user knows how to fix.
-            _vm.Content = SettingsViewModel.PageContent.Error;
-            ShowBanner(critical: false,
-                "Settings can't be loaded. The ZenVizor service is older than this app; " +
-                "restart the service (Services.msc, ZenVizor, Restart) to enable changes.");
-        }
-        catch (Exception ex)
-        {
-            _vm.Content = SettingsViewModel.PageContent.Error;
-            ShowBanner(critical: false, $"Couldn't load settings ({ex.GetType().Name}).");
+            _suppressApply = false;
         }
     }
 
@@ -293,6 +303,16 @@ public partial class SettingsPage : Page
         // trade-off for theme — bouncing back to old theme on transient
         // pipe error feels worse than the brief divergence.
         await ApplyAsync(new SettingsUpdate { Theme = picked });
+    }
+
+    private async void OnSmoothChartAnimationsChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        // No local cache mirror: unlike theme + start-minimized, this
+        // setting isn't read on boot — DashboardPage re-reads it from
+        // the service on every page load, so a persisted value lands in
+        // effect the next time the user navigates to Dashboard.
+        await ApplyAsync(new SettingsUpdate { SmoothChartAnimations = _vm.SmoothChartAnimations });
     }
 
     // ── Retention composite — debounced apply ───────────────────────────

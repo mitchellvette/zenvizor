@@ -429,7 +429,8 @@ internal sealed class ZenVizorHostedService : IHostedService
             StartMinimized:              settings.GetBool(SettingsRepository.Keys.StartMinimized,    false),
             AlertLargeDownloadMb:        settings.GetInt(SettingsRepository.Keys.AlertLargeDownloadMb,            50),
             AlertOutboundHeavyFloorMb:   settings.GetInt(SettingsRepository.Keys.AlertOutboundHeavyFloorMb,       10),
-            AlertUnusualDailyVolumeKTimesTen: settings.GetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, 25));
+            AlertUnusualDailyVolumeKTimesTen: settings.GetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, 25),
+            SmoothChartAnimations:       settings.GetBool(SettingsRepository.Keys.SmoothChartAnimations,         false));
     }
 
     /// <summary>
@@ -474,6 +475,11 @@ internal sealed class ZenVizorHostedService : IHostedService
         if (update.AlertLargeDownloadMb            is { } ldmb) { settings.SetInt(SettingsRepository.Keys.AlertLargeDownloadMb,            ldmb); alertWritten = true; }
         if (update.AlertOutboundHeavyFloorMb       is { } ohmb) { settings.SetInt(SettingsRepository.Keys.AlertOutboundHeavyFloorMb,       ohmb); alertWritten = true; }
         if (update.AlertUnusualDailyVolumeKTimesTen is { } uvk) { settings.SetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, uvk); alertWritten = true; }
+
+        // Phase 9.a — Dashboard smooth-chart-animations toggle. No producer
+        // cache to refresh: DashboardPage re-reads this on every page load,
+        // so a toggle here takes effect on the next nav to Dashboard.
+        if (update.SmoothChartAnimations is { } sca) settings.SetBool(SettingsRepository.Keys.SmoothChartAnimations, sca);
         if (alertWritten)
         {
             // Producer rules read via alertSettingsLookup on every flush;

@@ -41,6 +41,9 @@ public sealed class SettingsRepository
         public const string AlertLargeDownloadMb          = "alert.large_download_mb";
         public const string AlertOutboundHeavyFloorMb     = "alert.outbound_heavy_floor_mb";
         public const string AlertUnusualDailyVolumeKTimesTen = "alert.unusual_daily_volume_k_x10";
+
+        // Phase 9.a — Dashboard smooth chart animations toggle.
+        public const string SmoothChartAnimations = "appearance.smooth_chart_animations";
     }
 
     private readonly ConnectionFactory _connections;
