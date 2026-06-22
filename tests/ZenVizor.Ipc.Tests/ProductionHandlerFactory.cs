@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using ZenVizor.Ipc.Contracts;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Service;

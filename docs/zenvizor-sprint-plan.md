@@ -1817,10 +1817,139 @@ post-MVP versioning policy:
 Document the policy in `docs/versioning.md` (new file, short) and link
 from `CLAUDE.md`.
 
+### 9.b — Installed README + Start menu shortcut
+
+**Discovered:** Phase 9.6 close, 2026-06-22 (review of what ships in
+the install bundle).
+
+**The problem:** Neither the MSI nor the Burn bundle installs any
+post-install documentation to disk. After a fresh install the user
+sees a Start menu entry for the UI and an `%ProgramFiles%\ZenVizor\`
+tree containing only binaries — no README, no `zvctl` cheat sheet, no
+"where does my data live" pointer, no uninstall note. The Burn
+bootstrapper's `License.rtf` panel is install-time only, not written
+to disk. The repo's top-level `README.md` is GitHub-only and never
+travels with the bundle.
+
+**Fix path:**
+
+- Author `installer/Resources/README.txt` (~80–120 lines, plain text).
+  Sections: what ZenVizor is (one paragraph), install paths table,
+  launching the UI, full `zvctl` command list with one-line per verb,
+  controlling the Windows Service (`sc.exe start/stop ZenVizor`,
+  `services.msc`), data location + `REMOVE_DATA=1` opt-in wipe,
+  uninstall, "more information" pointer to the source repo. Do NOT
+  duplicate `zvctl <cmd> --help` flag tables — the README lists verbs
+  and points at `--help` for flags (drift firewall).
+- Add a `ComponentGroup` in `installer/ZenVizor.wxs` that installs
+  `README.txt` at `%ProgramFiles%\ZenVizor\` root.
+- Add a Start menu shortcut "ZenVizor — Read Me" alongside the
+  existing UI shortcut in `ZenVizorStartMenuFolder`. Target Notepad
+  with the README path as the argument so a double-click opens the
+  file rather than presenting "Choose how you want to open this
+  file."
+- Drift-protection test in `tests/ZenVizor.Integration.Tests/` that
+  scrapes the `new Command("name", "description")` literals from
+  `src/ZenVizor.Cli/Program.cs` and asserts each verb + description
+  appears in `installer/Resources/README.txt`. Trips CI when a new
+  CLI command is added without updating the README.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] Drift-protection test passes: every `zvctl` verb's name and
+      one-line description is present in `installer/Resources/README.txt`.
+
+**Acceptance criteria — manual**
+
+- [ ] Start menu shows two entries under ZenVizor: "ZenVizor" (UI)
+      and "ZenVizor — Read Me". Clicking the Read Me opens
+      `README.txt` in Notepad.
+- [ ] `%ProgramFiles%\ZenVizor\README.txt` is present after install
+      and removed on uninstall.
+
+### 9.c — Outbound licensing (GPL-3.0-or-later + trademark)
+
+**Discovered:** Phase 9.b proposal review, 2026-06-22.
+
+**The problem:** ZenVizor has no outbound license to its users. The
+Burn bootstrapper's `License.rtf` panel currently asserts "All rights
+reserved" — i.e., proprietary, no redistribution rights — and the repo
+has no `LICENSE` file. Pre-1.0 this was fine because no binaries were
+publicly distributed; the moment 9.7 closes and the 1.0.0 bundle ships,
+it becomes load-bearing. This is orthogonal to the WiX OSMF question
+documented in `docs/licensing-wix-osmf.md`, which covers ZenVizor's
+relationship to WiX as a toolchain *consumer* and remains legitimately
+deferred.
+
+**Decisions locked at proposal close, 2026-06-22:**
+
+- License: **GPL-3.0-or-later**. Donateware-compatible (§4 explicitly
+  permits charging for distribution); copyleft preserves source
+  availability across forks; "or-later" preserves forward flexibility.
+- Copyright holder: **Mitchell Gray** (single-author, pre-incorporation
+  posture; can be assigned to an entity later).
+- Trademark: **common-law trademark** on "ZenVizor" + logo, declared
+  in `TRADEMARK.md`. ™ symbol immediate; formal USPTO registration
+  on the maintainer's post-launch timeline. The trademark is NOT
+  licensed under GPL — that's the lever protecting brand identity
+  across GPL forks. Standard Firefox/Audacity/Krita model.
+- GPL §7 additional permission for the WiX Toolset (Ms-RL source +
+  Burn runtime in installer): explicit clause appended to `LICENSE`
+  removes any ambiguity about combining GPL ZenVizor with the WiX
+  installer toolchain.
+
+**Fix path:**
+
+- `LICENSE` at repo root: canonical GPL-3.0 text from FSF + §7 WiX
+  additional-permission clause appended.
+- `TRADEMARK.md` at repo root: common-law trademark declaration,
+  permitted (nominative) / not-permitted (derivative under same name)
+  use, contact for permission requests.
+- `NOTICES.md` at repo root: third-party dependency table with SPDX
+  identifiers and upstream URLs — no inlined license bodies. Sourced
+  from `Directory.Packages.props` + `.nuspec` metadata.
+- `Directory.Build.props` `<Copyright>` updated to
+  `Copyright (c) 2026 Mitchell Gray`.
+- `installer/Bundle/Resources/License.rtf` rewritten — drop
+  "All rights reserved," add GPL summary + pointer to
+  `%ProgramFiles%\ZenVizor\LICENSE.txt` + trademark line; keep the
+  three ZenVizor-specific bullets (passive monitor, no own traffic,
+  data location).
+- `installer/ZenVizor.wxs` ComponentGroup `LicenseDocs` installs
+  `LICENSE.txt`, `TRADEMARK.txt`, `NOTICES.txt` at the root of
+  `%ProgramFiles%\ZenVizor\` (alongside Service/Ui/Cli subfolders),
+  sourced from the repo-root files with `Name=` rename to give `.txt`
+  extensions on disk.
+- `README.md` License section rewritten to describe GPL-3.0-or-later
+  + trademark + NOTICES, with a separate "WiX Toolset (build-time)"
+  subsection retaining the OSMF link.
+- Per-file SPDX header `// SPDX-License-Identifier: GPL-3.0-or-later`
+  prepended to every `.cs` file under `src/` and `tests/` (one-pass
+  mechanical edit; idempotent script for re-runs).
+- `docs/licensing-wix-osmf.md` gets a header note clarifying scope
+  (toolchain-consumer relationship) vs. ZenVizor's outbound license.
+
+**Acceptance criteria — CI (headless)**
+
+- [ ] Build passes after Copyright bump and SPDX-header mass edit.
+- [ ] Every `.cs` file under `src/` and `tests/` carries the SPDX
+      header on line 1.
+
+**Acceptance criteria — manual**
+
+- [ ] `LICENSE`, `TRADEMARK.md`, `NOTICES.md` exist at repo root and
+      are linked from `README.md`.
+- [ ] Fresh install: `%ProgramFiles%\ZenVizor\LICENSE.txt`,
+      `TRADEMARK.txt`, `NOTICES.txt` are present and Notepad-readable.
+- [ ] Bootstrapper license panel during install shows the new GPL
+      summary + trademark line, not "All rights reserved."
+- [ ] Add/Remove Programs entry credits "Mitchell Gray" (via the
+      `<Copyright>` flowing into the MSI metadata).
+
 ### 9.7 — Re-cut MSI + Burn bundle; final manual gates
 
 Last gate before 1.0.0 ship. Re-cut both installer artifacts on top of
-the 9.1–9.6 changes, then re-run:
+the 9.1–9.c changes, then re-run:
 
 - All four Phase 7 manual gates (clean-VM install with + without .NET 10
   pre-installed, uninstall preserves runtime + `%ProgramData%\ZenVizor\`,
@@ -1871,9 +2000,16 @@ chrome).
 structure every later step (re-cut, install test) depends on. 9.2 / 9.3
 / 9.4 / 9.5 / 9.a are independent and parallelizable. 9.a was
 discovered at 9.5's close and slots before 9.4 so the dead-code sweep
-doesn't trip over the static-flag → setting migration. 9.6 second-to-last
-so the version-bumped MSI is what 9.7 tests. 9.7 is the ship gate —
-don't flip the project to `1.0.0` until 9.7 is GREEN.
+doesn't trip over the static-flag → setting migration. 9.6 follows so
+the version-bumped MSI is what later steps see. 9.c (outbound license)
+runs before 9.b (installed README) because the README references
+`LICENSE.txt` / `TRADEMARK.txt` / `NOTICES.txt` that 9.c puts on disk —
+9.b would build against missing references otherwise. Letters reflect
+discovery order, not execution order: 9.b was proposed first (during
+the installed-README discussion) and 9.c was discovered to be a
+prerequisite during the licensing review that followed. 9.7 is the
+ship gate — don't flip the project to `1.0.0`-public until 9.7 is
+GREEN and the 1.0.0 bundle is the first GPL-3.0-or-later artifact.
 
 ---
 

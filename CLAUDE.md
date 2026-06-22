@@ -176,6 +176,18 @@ ZenVizor has two design-token surfaces — the app and Claude Design mocks — a
 
 ---
 
+## Versioning
+
+Product SemVer policy and the orthogonal IPC schema version rules are in `docs/versioning.md`. The single source of truth for the product version is `<Version>` in `Directory.Build.props`; both WiX projects pick it up through `$(var.Version)`.
+
+---
+
+## Licensing
+
+ZenVizor is licensed **GPL-3.0-or-later** (see `LICENSE` at repo root). The LICENSE includes a §7 additional permission for the WiX Toolset installer-runtime combination. "ZenVizor" + the ZenVizor logo are common-law trademarks of Mitchell Gray and are NOT licensed under the GPL (see `TRADEMARK.md`). Third-party dependencies and their licenses are tabulated in `NOTICES.md`. Every `.cs` file under `src/` and `tests/` carries `// SPDX-License-Identifier: GPL-3.0-or-later` on line 1 — preserve that header when editing existing files and add it to new files. The WiX OSMF question is orthogonal and remains documented separately in `docs/licensing-wix-osmf.md`.
+
+---
+
 ## Terminal / PowerShell gotchas (when proposing copy-paste commands)
 
 Reproducible paste-into-PowerShell failures we've hit on this project. Don't hand the user a command that triggers one of these.

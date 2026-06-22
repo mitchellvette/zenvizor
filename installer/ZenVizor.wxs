@@ -225,11 +225,91 @@
                  Sequence="execute"
                  Condition="REMOVE_DATA = &quot;1&quot;" />
 
+    <!--
+        License + trademark + third-party-notices documents installed at
+        the root of %ProgramFiles%\ZenVizor\ (alongside Service/Ui/Cli
+        subfolders). Source files at the repo root are renamed to .txt
+        on disk via the Name attribute so Windows associates them with
+        Notepad on double-click. LICENSE has no extension at the repo
+        root (GitHub convention); TRADEMARK.md and NOTICES.md ship as
+        Markdown for GitHub rendering but install as plain text.
+    -->
+    <ComponentGroup Id="LicenseDocs" Directory="INSTALLFOLDER">
+
+      <Component Id="ZenVizorLicenseTxt" Bitness="always64">
+        <File Id="ZenVizorLicenseTxtFile"
+              Source="..\LICENSE"
+              Name="LICENSE.txt"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="ZenVizorTrademarkTxt" Bitness="always64">
+        <File Id="ZenVizorTrademarkTxtFile"
+              Source="..\TRADEMARK.md"
+              Name="TRADEMARK.txt"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="ZenVizorNoticesTxt" Bitness="always64">
+        <File Id="ZenVizorNoticesTxtFile"
+              Source="..\NOTICES.md"
+              Name="NOTICES.txt"
+              KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <!--
+        README.txt installed at %ProgramFiles%\ZenVizor\ root, with a
+        Start menu shortcut "Read Me" that opens it in Notepad. The
+        shortcut explicitly invokes %SystemFolder%\notepad.exe with the
+        README path as argument rather than relying on the default .txt
+        handler — this guarantees a consistent reading experience
+        regardless of what the user has registered for .txt files.
+    -->
+    <ComponentGroup Id="ReadMeFiles">
+
+      <Component Id="ZenVizorReadMeTxt" Bitness="always64" Directory="INSTALLFOLDER">
+        <File Id="ZenVizorReadMeTxtFile"
+              Source="Resources\README.txt"
+              Name="README.txt"
+              KeyPath="yes" />
+      </Component>
+
+      <!--
+          Read Me shortcut. Like the main UI shortcut above, this lives
+          in its own component with an HKCU registry keypath (ICE38/43/57
+          require per-user storage to anchor per-user shortcut data).
+          ICE69 ("shortcut target lives in another component") does not
+          fire here because Target is %SystemFolder%\notepad.exe, which
+          is not a component in this MSI. The README itself sits in
+          ZenVizorReadMeTxt via the Arguments file reference.
+      -->
+      <Component Id="ZenVizorReadMeShortcut" Bitness="always64" Directory="ZenVizorStartMenuFolder">
+        <Shortcut Id="ZenVizorReadMeShortcutEntry"
+                  Name="Read Me"
+                  Description="ZenVizor read me"
+                  Target="[SystemFolder]notepad.exe"
+                  Arguments="&quot;[#ZenVizorReadMeTxtFile]&quot;"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\ZenVizor"
+                       Name="StartMenuReadMeShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
     <Feature Id="Main" Title="ZenVizor" Level="1">
       <ComponentGroupRef Id="ServiceFiles" />
       <ComponentGroupRef Id="UiFiles" />
       <ComponentGroupRef Id="StartMenu" />
       <ComponentGroupRef Id="CliFiles" />
+      <ComponentGroupRef Id="LicenseDocs" />
+      <ComponentGroupRef Id="ReadMeFiles" />
       <ComponentGroupRef Id="DataDirSetup" />
     </Feature>
 

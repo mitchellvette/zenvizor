@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.IO.Pipelines;
 using Nerdbank.Streams;
 using StreamJsonRpc;

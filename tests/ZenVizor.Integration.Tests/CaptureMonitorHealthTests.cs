@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ZenVizor.Capture;

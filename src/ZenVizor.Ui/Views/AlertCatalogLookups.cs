@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using Wpf.Ui.Controls;
 using ZenVizor.Ipc.Contracts.Dto;
 

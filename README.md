@@ -165,21 +165,32 @@ cd C:\dev\zenvizor
 
 ## Licensing
 
-ZenVizor's source code is **TBD** — a public license has not yet been
-chosen. The installer ships a minimal copyright notice as a
-placeholder; this will be replaced when the project picks a public
-license.
+ZenVizor is licensed under the **GNU General Public License v3.0 or
+later** (GPL-3.0-or-later). The full license text is in
+[`LICENSE`](LICENSE). The license includes an additional permission
+under GPL-3.0 Section 7 that allows ZenVizor to be combined and
+distributed with the WiX Toolset installer runtime; see the clause at
+the end of `LICENSE` for details.
+
+**ZenVizor™** and the ZenVizor logo are common-law trademarks of
+Mitchell Gray and are **not** licensed under the GPL. The trademark
+policy is in [`TRADEMARK.md`](TRADEMARK.md). Forks of the source code
+are welcome under the GPL; they must be redistributed under a
+different name.
+
+Third-party components incorporated into ZenVizor and into the
+installer bundle are listed in [`NOTICES.md`](NOTICES.md), each under
+its own license.
+
+### WiX Toolset (build-time)
 
 ZenVizor's build depends on the **WiX Toolset 6.0.1** for installer
 packaging. The WiX 6.0.x binary packages ship under the **Open Source
-Maintenance Fee Agreement (OSMF)**. The WiX *source* remains
-OSI-licensed and is freely available; the OSMF is a fee on the binary
-packages that applies only to **revenue-generating use** of the
-software.
-
-ZenVizor's current non-revenue posture is exempt from the OSMF, but
-the planned donateware path introduces a real question that must be
-resolved before the donateware launch. See the full findings in
-[`docs/licensing-wix-osmf.md`](docs/licensing-wix-osmf.md) — the doc
-records the exact agreement terms, the per-package status, the
-donateware ambiguity, and the options for resolving it.
+Maintenance Fee Agreement (OSMF)**, which applies only to
+**revenue-generating use** of the WiX software. ZenVizor's current
+non-revenue posture is exempt from the OSMF; the donateware path
+introduces a question that must be resolved before the donateware
+launch. See the full findings in
+[`docs/licensing-wix-osmf.md`](docs/licensing-wix-osmf.md) — that doc
+covers ZenVizor's relationship to WiX as a toolchain consumer, which
+is orthogonal to ZenVizor's own outbound GPL-3.0-or-later license.

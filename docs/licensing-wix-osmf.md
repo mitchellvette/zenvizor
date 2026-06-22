@@ -1,5 +1,14 @@
 # Licensing — WiX Toolset Open Source Maintenance Fee (OSMF)
 
+> **Scope of this doc.** This covers ZenVizor's relationship to the WiX
+> Toolset as a *toolchain consumer* — i.e., what (if anything) ZenVizor
+> owes the WiX project for using its build tools and bundling its Burn
+> runtime. ZenVizor's own *outbound* license to its users is
+> **GPL-3.0-or-later** with a §7 additional permission for the WiX
+> runtime combination; see [`LICENSE`](../LICENSE) at the repo root.
+> The two questions are orthogonal — pinning down one does not pin
+> down the other.
+
 **Status:** Findings for review.
 **Discovered:** Phase 7 implementation, 2026-06-18.
 **Affects:** every WiX 6.0.1 package the build depends on

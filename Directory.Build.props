@@ -20,8 +20,8 @@
     <Deterministic>true</Deterministic>
     <Product>ZenVizor</Product>
     <Company>ZenVizor</Company>
-    <Copyright>Copyright (c) ZenVizor</Copyright>
-    <Version>0.1.1</Version>
+    <Copyright>Copyright (c) 2026 Mitchell Gray</Copyright>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <!-- .NET 10 Desktop Runtime pin for the Phase 7 Burn bootstrapper bundle.

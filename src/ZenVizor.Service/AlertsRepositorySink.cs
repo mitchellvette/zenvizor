@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.Runtime.Versioning;
 using ZenVizor.Core.Alerts;
 using ZenVizor.Storage.Repositories;

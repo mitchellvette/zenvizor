@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using System.IO;
 using Microsoft.Extensions.Logging;
 using StreamJsonRpc;

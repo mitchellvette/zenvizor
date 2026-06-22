@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using ZenVizor.Storage.Repositories;
