@@ -21,7 +21,23 @@
     <Product>ZenVizor</Product>
     <Company>ZenVizor</Company>
     <Copyright>Copyright (c) ZenVizor</Copyright>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
+  </PropertyGroup>
+
+  <!-- .NET 10 Desktop Runtime pin for the Phase 7 Burn bootstrapper bundle.
+       Pinned to a specific patch so a runtime change is a deliberate bump.
+       SHA512 verified against the canonical MS release metadata
+       (https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json).
+       To bump: re-query that metadata for the new version's
+       windowsdesktop-runtime-{version}-win-x64.exe entry, copy hash + URL,
+       update DotnetDesktopRuntimeVersion / Sha512 / Url below, drop any
+       cached payload at installer/Bundle/payloads/ so the next build
+       re-downloads. -->
+  <PropertyGroup Label="Bundle runtime pin">
+    <DotnetDesktopRuntimeVersion>10.0.8</DotnetDesktopRuntimeVersion>
+    <DotnetDesktopRuntimeFileName>windowsdesktop-runtime-$(DotnetDesktopRuntimeVersion)-win-x64.exe</DotnetDesktopRuntimeFileName>
+    <DotnetDesktopRuntimeUrl>https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/$(DotnetDesktopRuntimeVersion)/$(DotnetDesktopRuntimeFileName)</DotnetDesktopRuntimeUrl>
+    <DotnetDesktopRuntimeSha512>8dde7d1fe5d1934d386c01ac208e1a9debc1afa2448c5404e969c3bdee36b2dbaa9cff999452bd26181659f27f3eeffe200ac223c26a2196dc563bef0536ca1e</DotnetDesktopRuntimeSha512>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">

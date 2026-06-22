@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    ZenVizor — Burn bootstrapper bundle (Phase 7).
+
+    Produces ZenVizorSetup.exe, the canonical install artifact. The bundle
+    chains two payloads, both embedded inside the EXE for offline-installability:
+
+        1. .NET 10 Desktop Runtime (Microsoft.WindowsDesktop.App)
+           Pinned by version + SHA512 in Directory.Build.props. Fetched at
+           build time by ZenVizor.Bundle.wixproj's FetchDotnetRuntimePayload
+           target. Permanent="yes" — uninstalling ZenVizor does NOT remove
+           the runtime (it is a shared component used by other apps).
+
+        2. ZenVizor.msi — the existing MSI from installer/ZenVizor.wixproj.
+           ProjectReference in the wixproj ensures the MSI builds first.
+
+    Detect-existing logic uses Burn's canonical netfx:DotNetCoreSearch
+    rather than a hand-rolled RegistrySearch. Rationale (per
+    docs/zenvizor-sprint-plan.md, P5/Phase 7 section): the registry key the
+    P5 brief originally proposed does NOT exist on machines with the
+    runtime installed and working; rolling our own detection would block
+    legitimate installs. Burn ships maintained detection logic — use it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+
+  <Bundle Name="ZenVizor"
+          Manufacturer="ZenVizor"
+          Version="$(var.Version)"
+          UpgradeCode="A696D724-25F7-4277-AC10-897408A34C83"
+          Compressed="yes"
+          IconSourceFile="..\..\src\ZenVizor.Ui\Assets\favicon.ico">
+
+    <!--
+        UpgradeCode above is LOCKED FOR THE LIFETIME OF THE BUNDLE.
+        Distinct from the MSI's UpgradeCode (DAB3A65D-…); together they
+        let an older bundle be upgraded by a newer bundle, and an older
+        MSI be upgraded by a newer MSI. Both versions advance in lockstep
+        via Directory.Build.props's $(Version). DO NOT CHANGE.
+    -->
+
+    <!--
+        REMOVE_DATA bundle variable + passthrough.
+
+        Surface area: end users can run
+            ZenVizorSetup.exe /uninstall REMOVE_DATA=1
+        to wipe %ProgramData%\ZenVizor\ on uninstall instead of the default
+        preserve-data behavior. Default is 0 (preserve), matching the MSI's
+        documented behavior and the operator expectation for upgrade paths.
+
+        bal:Overridable="yes" is REQUIRED for the WixStandardBootstrapperApplication
+        to honor command-line variable overrides. Without it Burn silently
+        ignores REMOVE_DATA=1 on the command line.
+
+        The MsiPackage below forwards this bundle variable into the inner
+        MSI as a public property, matching the MSI's existing REMOVE_DATA
+        Property declaration in installer/ZenVizor.wxs.
+    -->
+    <Variable Name="REMOVE_DATA"
+              bal:Overridable="yes"
+              Value="0"
+              Type="numeric" />
+
+    <!--
+        Default WiX bootstrapper UI. The rtfLicense theme renders the
+        license panel inline from LicenseFile — Install / Cancel buttons,
+        no sidebar imagery. WiX 6 requires exactly one of LicenseFile or
+        LicenseUrl on WixStandardBootstrapperApplication; we ship a
+        minimal RTF with the project's copyright notice (see
+        Resources/License.rtf). Replace the text when ZenVizor picks a
+        public license.
+    -->
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          Theme="rtfLicense"
+          LicenseFile="Resources\License.rtf"
+          LogoFile="..\..\assets\zv_logomark_v1.png"
+          ShowVersion="yes"
+          SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <!--
+        Burn-side runtime detection. Sets the variable
+        WindowsDesktopRuntimeVersion to the highest installed
+        Microsoft.WindowsDesktop.App 10.x version present on the machine
+        (or empty if none). The runtime ExePackage's DetectCondition
+        compares against the pinned floor.
+    -->
+    <netfx:DotNetCoreSearch Id="DesktopRuntimeSearch"
+                            RuntimeType="desktop"
+                            Platform="x64"
+                            MajorVersion="10"
+                            Variable="WindowsDesktopRuntimeVersion" />
+
+    <Chain>
+
+      <!--
+          .NET 10 Desktop Runtime payload.
+
+          - SourceFile path matches what FetchDotnetRuntimePayload populates.
+          - DetectCondition: skip install if a matching-or-newer runtime is
+            already present. Burn version comparison against the v-prefixed
+            literal.
+          - Permanent="yes": uninstalling ZenVizor does NOT remove the
+            runtime. Shared component, may be used by other apps.
+          - Vital="yes": runtime install failure aborts the bundle
+            install (ZenVizor cannot run without it).
+          - Cache="keep": cache the package for repair scenarios.
+      -->
+      <ExePackage Id="WindowsDesktopRuntime"
+                  SourceFile="$(PayloadsDir)\$(DotnetDesktopRuntimeFileName)"
+                  DisplayName=".NET $(DotnetDesktopRuntimeVersion) Desktop Runtime (x64)"
+                  Description="Required runtime for ZenVizor."
+                  DetectCondition="WindowsDesktopRuntimeVersion &gt;= v$(DotnetDesktopRuntimeVersion)"
+                  InstallArguments="/install /quiet /norestart"
+                  RepairArguments="/repair /quiet /norestart"
+                  UninstallArguments="/uninstall /quiet /norestart"
+                  PerMachine="yes"
+                  Vital="yes"
+                  Permanent="yes"
+                  Cache="keep" />
+
+      <!--
+          ZenVizor MSI. SourceFile resolves to the MSI's build output;
+          the ProjectReference in ZenVizor.Bundle.wixproj guarantees the
+          MSI is built first. Vital — install failure aborts the bundle.
+          REMOVE_DATA=1 surface from the MSI is reachable via the bundle's
+          MsiProperty pass-through if a future variant of the install
+          experience needs it; default uninstall preserves data.
+      -->
+      <MsiPackage Id="ZenVizorMsi"
+                  SourceFile="..\bin\x64\$(var.Configuration)\ZenVizor.msi"
+                  Vital="yes"
+                  Cache="keep"
+                  Visible="no">
+        <!-- Forward the REMOVE_DATA bundle variable into the MSI as a
+             public property. The MSI's SetREMOVE_DATA_FOLDER + RemoveFolderEx
+             plumbing reads it (installer/ZenVizor.wxs). Default (0) preserves
+             data; REMOVE_DATA=1 wipes %ProgramData%\ZenVizor\. -->
+        <MsiProperty Name="REMOVE_DATA" Value="[REMOVE_DATA]" />
+      </MsiPackage>
+
+    </Chain>
+
+  </Bundle>
+</Wix>

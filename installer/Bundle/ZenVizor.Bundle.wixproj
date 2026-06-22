@@ -1,0 +1,79 @@
+<Project Sdk="WixToolset.Sdk/6.0.1">
+
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <OutputName>ZenVizorSetup</OutputName>
+    <Platforms>x64</Platforms>
+    <Platform Condition="'$(Platform)' == '' or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <!-- Local payload cache for the embedded .NET 10 Desktop Runtime EXE.
+         Fetched by FetchDotnetRuntimePayload below; cached so repeat
+         builds skip the download. .gitignored — see installer/Bundle/.gitignore. -->
+    <PayloadsDir>$(MSBuildThisFileDirectory)payloads</PayloadsDir>
+    <RuntimePayloadPath>$(PayloadsDir)\$(DotnetDesktopRuntimeFileName)</RuntimePayloadPath>
+
+    <!-- WiX SDK auto-provides $(var.Configuration) and $(var.Platform). The
+         bundle wxs additionally needs the product Version, the runtime
+         pin, and the payloads cache dir as preprocessor vars. Bundle
+         product Version mirrors the MSI's — both advance in lockstep
+         via Directory.Build.props's $(Version). -->
+    <DefineConstants>Version=$(Version);DotnetDesktopRuntimeVersion=$(DotnetDesktopRuntimeVersion);DotnetDesktopRuntimeFileName=$(DotnetDesktopRuntimeFileName);PayloadsDir=$(PayloadsDir)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" />
+    <PackageReference Include="WixToolset.NetFx.wixext" />
+  </ItemGroup>
+
+  <!--
+      Build the MSI first. The bundle's MsiPackage SourceFile resolves to
+      the MSI's output path; without this dependency a clean checkout
+      would race on the MSI artifact.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\ZenVizor.wixproj" />
+  </ItemGroup>
+
+  <!--
+      Fetch the .NET 10 Desktop Runtime EXE into installer/Bundle/payloads/
+      before WiX harvests it as a bundle payload. Pinned by SHA512 in
+      Directory.Build.props; bumping the runtime is a deliberate three-
+      property change (Version + Sha512 + Url is derived from Version).
+
+      Cache hits short-circuit the download. Hash mismatch fails the
+      build and points the operator at the pin — this catches both
+      tampering of the cached file and a stale cache after a version
+      bump.
+  -->
+  <Target Name="FetchDotnetRuntimePayload" BeforeTargets="BeforeBuild">
+    <Error Text="DotnetDesktopRuntimeVersion is not set. Phase 7 bundle build requires the runtime pin in Directory.Build.props."
+           Condition="'$(DotnetDesktopRuntimeVersion)' == ''" />
+    <Error Text="DotnetDesktopRuntimeSha512 is not set. Phase 7 bundle build requires the runtime SHA512 pin in Directory.Build.props."
+           Condition="'$(DotnetDesktopRuntimeSha512)' == ''" />
+
+    <MakeDir Directories="$(PayloadsDir)" />
+
+    <Message Importance="high"
+             Text="Fetching .NET $(DotnetDesktopRuntimeVersion) Desktop Runtime payload from $(DotnetDesktopRuntimeUrl)"
+             Condition="!Exists('$(RuntimePayloadPath)')" />
+
+    <DownloadFile SourceUrl="$(DotnetDesktopRuntimeUrl)"
+                  DestinationFolder="$(PayloadsDir)"
+                  DestinationFileName="$(DotnetDesktopRuntimeFileName)"
+                  SkipUnchangedFiles="true"
+                  Retries="3"
+                  RetryDelayMilliseconds="2000"
+                  Condition="!Exists('$(RuntimePayloadPath)')" />
+
+    <GetFileHash Files="$(RuntimePayloadPath)" Algorithm="SHA512">
+      <Output TaskParameter="Hash" PropertyName="ActualRuntimeSha512" />
+    </GetFileHash>
+
+    <Error Text="SHA512 mismatch for $(RuntimePayloadPath). Expected $(DotnetDesktopRuntimeSha512). Actual $(ActualRuntimeSha512). Delete the cached file and rebuild, or update DotnetDesktopRuntimeSha512 in Directory.Build.props if you intend to bump the runtime."
+           Condition="'$(ActualRuntimeSha512.ToLowerInvariant())' != '$(DotnetDesktopRuntimeSha512.ToLowerInvariant())'" />
+
+    <Message Importance="high"
+             Text="Runtime payload verified ($(DotnetDesktopRuntimeFileName), SHA512 matches pin)." />
+  </Target>
+
+</Project>

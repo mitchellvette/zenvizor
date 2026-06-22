@@ -206,10 +206,22 @@
       </Component>
     </ComponentGroup>
 
-    <!-- Resolves REMOVE_DATA_FOLDER to the data path only when REMOVE_DATA=1. -->
+    <!-- Resolves REMOVE_DATA_FOLDER to the data path only when REMOVE_DATA=1.
+         Must be scheduled BEFORE WixRemoveFoldersEx — that custom action runs
+         early in the InstallExecuteSequence (before FileCost in WiX 6) and
+         reads REMOVE_DATA_FOLDER then. An earlier rev scheduled this
+         Before="CostFinalize" which placed it AFTER WixRemoveFoldersEx in
+         practice; the result was a silently broken REMOVE_DATA=1 path
+         (WixRemoveFoldersEx errored with "missing folder property" before
+         SetREMOVE_DATA_FOLDER ever fired). Referencing WixRemoveFoldersEx
+         directly via Before="WixRemoveFoldersEx" fails to link in WiX 6
+         (the CA symbol lives in a different extension fragment); using the
+         standard action LaunchConditions (sequence ~100) as the anchor
+         guarantees we fire before any util.wixext-scheduled CA.
+         Discovered during Phase 7 Gate 3 verification, 2026-06-20. -->
     <SetProperty Id="REMOVE_DATA_FOLDER"
                  Value="[CommonAppDataFolder]ZenVizor"
-                 Before="CostFinalize"
+                 After="LaunchConditions"
                  Sequence="execute"
                  Condition="REMOVE_DATA = &quot;1&quot;" />
 

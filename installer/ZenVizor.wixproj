@@ -18,6 +18,14 @@
          reference is harmless. Documented in ZenVizor.wxs above the
          ComponentGroup "StartMenu". -->
     <SuppressIces>ICE69</SuppressIces>
+
+    <!-- The WiX SDK auto-Compile glob is recursive (**/*.wxs) and honors
+         $(DefaultItemExcludes) on its Exclude. Phase 7's bundle wxs lives
+         in installer/Bundle/ — exclude it here so the MSI build doesn't
+         try to compile it. (Project-body <Compile Remove> doesn't work
+         because the SDK's auto-Include runs in Sdk.targets, AFTER the
+         project body.) -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Bundle\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

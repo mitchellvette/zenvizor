@@ -68,14 +68,20 @@ jobs:
           name: build-artifacts
           path: artifacts/binaries
 
-      # Installer (Phase 6.8a). Pinned to WiX 6.0.1 — the last MIT-licensed
-      # release. v7+ requires the OSMF EULA; do not upgrade past 6.x without
-      # revisiting the licensing posture.
+      # Installer (Phase 6.8a + Phase 7). Pinned to WiX 6.0.1 across SDK,
+      # Util, Bal, NetFx. All four ship under the Open Source Maintenance
+      # Fee Agreement; source code stays MS-RL (OSI-approved). The fee
+      # applies only to revenue-generating use, which ZenVizor is not.
+      # See Directory.Packages.props (Installer (WiX) group) for the
+      # full rationale. Util is needed by the MSI; Bal + NetFx by the
+      # Phase 7 Burn bundle.
       - name: Install WiX 6.0.1 toolset
         if: success()
         run: |
           dotnet tool install --global wix --version 6.0.1
           wix extension add --global WixToolset.Util.wixext/6.0.1
+          wix extension add --global WixToolset.Bal.wixext/6.0.1
+          wix extension add --global WixToolset.NetFx.wixext/6.0.1
 
       - name: Build installer (MSI)
         if: success()
@@ -89,3 +95,20 @@ jobs:
         with:
           name: installer
           path: installer/bin/x64/${{ env.CONFIGURATION }}/ZenVizor.msi
+
+      # Phase 7 — Burn bootstrapper bundle. Fetches the .NET 10 Desktop
+      # Runtime EXE at build time (FetchDotnetRuntimePayload target inside
+      # the wixproj) and embeds it alongside the MSI, producing
+      # ZenVizorSetup.exe as the canonical install artifact.
+      - name: Build installer bundle (ZenVizorSetup.exe)
+        if: success()
+        run: >
+          dotnet build installer/Bundle/ZenVizor.Bundle.wixproj
+          --configuration ${{ env.CONFIGURATION }}
+
+      - name: Upload bundle artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: installer/Bundle/bin/x64/${{ env.CONFIGURATION }}/ZenVizorSetup.exe

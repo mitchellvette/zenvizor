@@ -1,0 +1,6 @@
+# Bundle payload cache. The .NET 10 Desktop Runtime EXE is fetched at
+# build time from a SHA512-pinned URL (see Directory.Build.props +
+# ZenVizor.Bundle.wixproj's FetchDotnetRuntimePayload target). Cached
+# here so repeat builds skip the download. Do not commit — the pin
+# guarantees reproducibility, the cache is just a local optimisation.
+payloads/

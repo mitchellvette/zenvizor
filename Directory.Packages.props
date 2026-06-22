@@ -38,6 +38,45 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Storage transitive vulnerability pins">
+    <!-- CORRECTION (not suppression) for GHSA-2m69-gcr7-jv3q (CVE-2025-6965):
+         the deprecated SQLitePCLRaw.lib.e_sqlite3 2.1.11 bundles a pre-3.50.2
+         SQLite binary with a CVSS 7.2 high-severity aggregate-query memory
+         corruption flaw. Microsoft.Data.Sqlite 10.0.0's transitive graph
+         resolves to that vulnerable package by default because its
+         declared constraint on SQLitePCLRaw.bundle_e_sqlite3 is ">= 2.1.11".
+         The SQLitePCLRaw maintainer migrated the native binary to a new
+         package family (SourceGear.sqlite3) in the 3.0 line and stopped
+         shipping the .lib.e_sqlite3 package altogether — there will be no
+         2.1.12 fix.
+
+         Pin SQLitePCLRaw.bundle_e_sqlite3 and SQLitePCLRaw.core to 3.0.3
+         via Central Package Management. The bundle 3.0.3 depends on
+         SourceGear.sqlite3 >= 3.50.4.5 (carrying SQLite 3.50.4, past the
+         advisory's 3.50.2 fix line) and no longer depends on the
+         deprecated SQLitePCLRaw.lib.e_sqlite3. With
+         CentralPackageTransitivePinningEnabled (Directory.Build.props) the
+         pin overrides Microsoft.Data.Sqlite 10.0.0's transitive floor;
+         semver-wise the 3.0.x pin satisfies the >= 2.1.11 constraint, so
+         the Microsoft.Data.Sqlite.Core API surface stays bound to the same
+         resolver pattern (the bundle pattern is intentionally swappable —
+         that's the whole reason SQLitePCLRaw splits core/lib/bundle).
+
+         REACHABILITY (recorded for the next maintainer): the vulnerable
+         code path is aggregate query handling (SUM, COUNT, GROUP BY etc.)
+         which AppHistoryQueryRepository uses heavily. The trigger
+         conditions per the advisory require an attacker capable of either
+         (a) writing crafted SQL or (b) writing crafted DB content. Neither
+         is reachable in ZenVizor's threat model: the IPC surface uses
+         parameterized queries with input validation, the DB is owned
+         exclusively by the service (CLAUDE.md invariant #3), and ProgramData
+         is ACL'd to SYSTEM + Administrators. Fixing it anyway because the
+         pin is cheap and "unreachable today" can flip to "reachable
+         tomorrow" with one careless query change. -->
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageVersion Include="SQLitePCLRaw.core" Version="3.0.3" />
+  </ItemGroup>
+
   <ItemGroup Label="Capture / Attribution (Win32)">
     <PackageVersion Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
   </ItemGroup>
@@ -72,12 +111,30 @@
   </ItemGroup>
 
   <ItemGroup Label="Installer (WiX)">
-    <!-- WiX 6.0.1 is the last MIT-licensed release. v7+ requires the OSMF
-         EULA; do not upgrade past 6.x without revisiting the licensing
-         posture of the project. The WiX SDK itself is pinned via the
+    <!-- WiX 6.0.x packages (SDK, Util, Bal, NetFx) all ship under the
+         Open Source Maintenance Fee Agreement (OSMFEULA.txt in each
+         package). The source code remains under the OSI-approved
+         Microsoft Reciprocal License; the OSMF is a maintenance fee on
+         the binary releases that applies ONLY to revenue-generating
+         use of the software (Section 1 of the EULA). ZenVizor's current
+         non-revenue-generating use is exempt — no fee owed. If ZenVizor
+         ever becomes a revenue-generating product, the OSMF applies to
+         every WiX 6.0.x package pinned here, not just one of them, and
+         the licensing posture should be re-reviewed against the
+         then-current EULA terms.
+
+         An earlier rev of this file (and docs/zenvizor-sprint-plan.md
+         Phase 7) claimed "WiX 6.0.1 is the last MIT-licensed release."
+         That was incorrect — the MIT-only line was WiX 5.x. The
+         practical effect is the same (non-revenue-generating projects
+         pay nothing), but the wording is now accurate.
+
+         The WiX SDK itself is pinned via the
          <Project Sdk="WixToolset.Sdk/6.0.1"> reference in
-         installer/ZenVizor.wixproj. -->
+         installer/ZenVizor.wixproj and installer/Bundle/ZenVizor.Bundle.wixproj. -->
     <PackageVersion Include="WixToolset.Util.wixext" Version="6.0.1" />
+    <PackageVersion Include="WixToolset.Bal.wixext" Version="6.0.1" />
+    <PackageVersion Include="WixToolset.NetFx.wixext" Version="6.0.1" />
   </ItemGroup>
 
 </Project>
