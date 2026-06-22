@@ -41,3 +41,8 @@ dotnet_diagnostic.CS8603.severity = error
 dotnet_diagnostic.CS8604.severity = error
 dotnet_diagnostic.CS8618.severity = error
 dotnet_diagnostic.CS8625.severity = error
+
+# Diagnostics — dead-code hygiene (Phase 9.4)
+# IDE0051 is silent by default in the analyzer ruleset; promote to warning so
+# TreatWarningsAsErrors=true fails the build on any new unused-private member.
+dotnet_diagnostic.IDE0051.severity = warning

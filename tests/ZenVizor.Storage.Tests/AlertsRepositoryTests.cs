@@ -14,7 +14,6 @@ namespace ZenVizor.Storage.Tests;
 /// </summary>
 public sealed class AlertsRepositoryTests : IDisposable
 {
-    private const long Day = 86_400_000L;
     private const long Hour = 3_600_000L;
     private const long Cooldown24h = 24 * Hour;
     private const long T0 = 1_780_704_000_000L; // 2026-06-02T00:00:00Z, a stable wall clock

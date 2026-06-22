@@ -29,8 +29,6 @@ internal sealed class ServiceStartModeManager
     private const uint SERVICE_DEMAND_START     = 0x00000003;
     private const uint SERVICE_DISABLED         = 0x00000004;
 
-    private const uint INFO_LEVEL_BASIC_CONFIG  = 0;
-
     private readonly string _serviceName;
     private readonly ILogger _logger;
 

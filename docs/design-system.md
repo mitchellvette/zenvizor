@@ -857,17 +857,22 @@ mockup-driven follow-up. Track here so they don't drop on the floor.
 > (`-90s · 14:31:55` / `now · 14:33:25`), per-series value rows.
 > Resolves §11 backlog items 2 and 3.
 >
-> **Phase D.7 — smooth-scroll animation (June 2026, GATED OFF):**
-> implemented behind `EnableChartSmoothScroll` static readonly flag in
-> `DashboardPage.xaml.cs`. When enabled: `RatesChart.AnimationsSpeed
-> = 2200ms` (slightly over the 2s tick cadence so each tween chains
-> into the next without a stationary "done" state) +
-> `EasingFunction = EasingFunctions.Lineal`. Visual result: continuous
-> chained line motion, ~200ms imperceptible lag behind real-time.
-> Disabled by default because the animation pays ~8% idle CPU (over
-> the project's <1% budget). Flag graduates to a user-facing Settings
-> toggle when that page is built (§11 backlog item — placeholder
-> page today). HC token coverage audit completed alongside D.7 — new
+> **Phase D.7 — smooth-scroll animation (June 2026, OFF by default):**
+> `RatesChart.AnimationsSpeed = 2200ms` (slightly over the 2s tick
+> cadence so each tween chains into the next without a stationary
+> "done" state) + `EasingFunction = EasingFunctions.Lineal`. Visual
+> result: continuous chained line motion, ~200ms imperceptible lag
+> behind real-time. OFF by default because the animation pays ~8%
+> idle CPU (over the project's <1% budget). Originally landed in
+> D.7 behind a `EnableChartSmoothScroll` code-only flag; Phase 9.a
+> (June 2026) graduated it to a user toggle at Settings → Appearance
+> → "Smooth chart animations" backed by
+> `SettingsSnapshot.SmoothChartAnimations` (IPC schema v4) and the
+> SQLite `appearance.smooth_chart_animations` key. Applied on the
+> next nav to Dashboard via `ApplyChartAnimationFromSettingsAsync`;
+> the constructor initialises to snap-only so the chart has a safe
+> state before the IPC round-trip lands. HC token coverage audit
+> completed alongside D.7 — new
 > polish round 2 tokens (`metal.card`, `edge.light`, `shadow.card`)
 > added to `HighContrast.xaml`; the full token list is HC-complete,
 > only the runtime merge wiring (§11 item 9) remains for HC mode to
