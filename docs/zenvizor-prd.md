@@ -348,6 +348,12 @@ The active-probe items get a **clean boundary, not a pre-built hook** — the ri
 
 **Endpoint visibility — Phase 8 + Phase 8.5 split:** the Phase 8 DNS observer recovers hostnames for the OS-resolver share of traffic. That share is smaller than it looks because modern browsers ship DoH on by default. Phase 8.5 was the pre-MVP investigation that decided whether and how to recover the remaining share via passive packet inspection (TLS / QUIC SNI, HTTP Host); it **completed 2026-06-21 with a ship-pre-MVP-at-full-coverage decision** (findings in `docs/phase-8.5-endpoint-visibility.md`, implementation scoped as Phase 8.6 in `docs/zenvizor-sprint-plan.md`). The hard constraint is unchanged — every candidate technique must clear the invariant #1 audit before it lands in the MVP, and the chosen technique did (receive-only substrate, pure-compute crypto, empty self-monitoring lens).
 
+### 10.1 Release / distribution follow-ups (post-MVP infra, not product features)
+
+Not modules in the §10 sense — release-engineering ergonomics surfaced during the Phase 9.7 ship. Tracked here so they don't drift.
+
+- **CI tag-triggered Release publication.** The current `.github/workflows/ci.yml` builds the MSI + bundle on every push to `main` and uploads them as 90-day-retention workflow artifacts. Pushing a `vX.Y.Z` tag does **not** auto-publish a GitHub Release with attached binaries — the v1.0.0 Release was created manually via `gh release create`. Add a tag-triggered workflow (`on: push: tags: ['v*']`) that rebuilds the bundle, computes a SHA256, and attaches both the bundle and the MSI to a Release named from the tag. Make a tag the only release-publishing trigger so the artifact story stays in lockstep with version intent. Trigger to do this work: any 1.0.x patch release that would otherwise need a second manual `gh release create`.
+
 ---
 
 ## 11. UI / information architecture
