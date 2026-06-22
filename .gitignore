@@ -53,3 +53,7 @@ secrets.json
 
 # Local debugging scratch (screenshots, logs, captures)
 /debugging/
+
+# Large local test media (e.g. Windows eval ISOs for VM testing) — never commit
+/assets/
+*.iso

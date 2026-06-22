@@ -1,20 +1,26 @@
 using System.Security.Cryptography;
 
-namespace SniSpike;
+namespace ZenVizor.Capture.Sni;
 
 /// <summary>
-/// Phase 8.5 spike — extract SNI from a QUIC v1 Initial packet (the UDP/443
+/// Phase 8.6 — extract SNI from a QUIC v1 Initial packet (the UDP/443
 /// equivalent of the TLS ClientHello). The ClientHello rides CRYPTO frames in
 /// the Initial, protected with keys derivable by any observer from the DCID +
 /// fixed salt (see <see cref="QuicCrypto"/>). Same robustness contract as the
 /// TLS parser: false / empty on anything that isn't a parseable v1 Initial
 /// carrying an SNI; never throws.
 /// <para>
-/// Scope: QUIC v1 (0x00000001) only — matches the leading-direction decision.
-/// Other versions (v2, drafts) and post-handshake encrypted packets are
-/// ignored. A ClientHello that spans multiple Initial packets is only recovered
-/// if the SNI is in the first one (the common case); cross-packet CRYPTO
-/// reassembly is a production concern, noted as a spike limitation.
+/// Scope: QUIC v1 (0x00000001) only. Other versions (v2, drafts) and
+/// post-handshake encrypted packets are ignored. A ClientHello that spans
+/// multiple Initial packets is only recovered if the SNI is in the first one
+/// (the common case); cross-packet CRYPTO reassembly across datagrams is out of
+/// scope.
+/// </para>
+/// <para>
+/// AES-128-GCM is all-or-nothing over the full ciphertext + 16-byte tag, so the
+/// caller MUST hand this the full Initial datagram — a truncated Initial fails
+/// AEAD auth and yields nothing. The UDP substrate captures the full datagram
+/// for exactly this reason (see Phase 8.5 findings §8.2).
 /// </para>
 /// </summary>
 internal static class QuicInitialParser

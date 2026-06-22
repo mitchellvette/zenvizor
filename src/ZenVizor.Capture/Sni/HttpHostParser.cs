@@ -1,12 +1,13 @@
 using System.Text;
 
-namespace SniSpike;
+namespace ZenVizor.Capture.Sni;
 
 /// <summary>
-/// Phase 8.5 spike — pull the Host header out of a plaintext HTTP/1.1 request
+/// Phase 8.6 — pull the Host header out of a plaintext HTTP/1.1 request
 /// (TCP 80). Tiny coverage on the modern web but near-free once the capture
-/// substrate exists. Same robustness contract: false / empty on anything that
-/// isn't a well-formed request with a Host header, never throws.
+/// substrate exists. Same robustness contract as the TLS/QUIC parsers: false /
+/// empty on anything that isn't a well-formed request with a Host header, never
+/// throws.
 /// </summary>
 internal static class HttpHostParser
 {

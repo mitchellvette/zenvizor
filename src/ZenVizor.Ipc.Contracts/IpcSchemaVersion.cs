@@ -24,7 +24,19 @@ public static class IpcSchemaVersion
     /// Shared schema version of the Phase-4 query result payloads
     /// (AppList / AppDetail / ConnectionList / TrafficHistory).
     /// </summary>
-    public const int Query = 1;
+    /// <remarks>
+    /// v2 (Phase 8): <c>ConnectionRow.ResolvedHost</c> added as a trailing
+    /// optional positional field. The four query payloads move together
+    /// under one constant — see Phase 8 design decision D2 in
+    /// <c>docs/zenvizor-sprint-plan.md</c> — so AppList / AppDetail /
+    /// TrafficHistory step to v2 alongside ConnectionList even though
+    /// their own shape is unchanged. A v1 client receiving a v2 envelope
+    /// will deserialize fine (STJ ignores unknown fields) but a v2 client
+    /// against a v1 server faults via the client-side schema floor check;
+    /// the check is load-bearing for the new field.
+    /// v1 (Phase 4): initial.
+    /// </remarks>
+    public const int Query = 2;
 
     /// <summary>Schema version of <see cref="Dto.DailyReportResult"/> payloads.</summary>
     /// <remarks>

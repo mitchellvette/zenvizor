@@ -1,14 +1,19 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace SniSpike;
+namespace ZenVizor.Capture.Sni;
 
 /// <summary>
-/// Phase 8.5 spike — QUIC v1 Initial-packet crypto primitives, BCL only
+/// Phase 8.6 — QUIC v1 Initial-packet crypto primitives, BCL only
 /// (<see cref="HKDF"/> + <see cref="Aes"/> + <see cref="AesGcm"/>). The QUIC
 /// Initial is "encrypted" with keys derived deterministically from the client's
 /// Destination Connection ID and the fixed RFC 9001 v1 salt — i.e. readable by
-/// any passive observer. No secrets, no network, pure computation.
+/// any passive observer. No secrets, no network, pure computation (invariant #1).
+/// <para>
+/// The key schedule is pinned to the RFC 9001 §A.1 published vector by a CI
+/// test, so a derivation bug cannot hide behind a symmetric encrypt path. Do
+/// not "simplify" this — a rewrite reintroduces retired risk.
+/// </para>
 /// </summary>
 internal static class QuicCrypto
 {

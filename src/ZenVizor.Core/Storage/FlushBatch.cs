@@ -39,7 +39,8 @@ public sealed record PendingConnection(
     long BytesUpDelta,
     long BytesDownDelta,
     long FirstSeenUnixMs,
-    long LastSeenUnixMs);
+    long LastSeenUnixMs,
+    string? ResolvedHost = null);
 
 /// <summary>
 /// Returned by a successful <see cref="IFlushSink.Flush"/> call. Tells the

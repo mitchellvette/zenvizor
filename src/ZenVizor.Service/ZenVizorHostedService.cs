@@ -7,9 +7,12 @@ using ZenVizor.Attribution.IpHelper;
 using ZenVizor.Attribution.Paths;
 using ZenVizor.Attribution.Services;
 using ZenVizor.Capture;
+using ZenVizor.Capture.Dns;
+using ZenVizor.Capture.Sni;
 using ZenVizor.Core.Aggregation;
 using ZenVizor.Core.Alerts;
 using ZenVizor.Core.Attribution;
+using ZenVizor.Core.Dns;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ipc.Server;
 using ZenVizor.Storage;
@@ -34,12 +37,21 @@ internal sealed class ZenVizorHostedService : IHostedService
     private static readonly TimeSpan RetentionPurgeInterval = TimeSpan.FromHours(24);
     private const long PidTablePollMs = 1000;
 
+    // Phase 8.6 — passive SNI/QUIC/Host recovery. Feature toggle until a
+    // settings-table row replaces it; default-on. When the PktMon control
+    // surface is unavailable, capture transparently falls back to the
+    // receive-only SIO_RCVALL raw-socket substrate (IPv4 only).
+    private const bool SniCaptureEnabled = true;
+
     private readonly ILogger<ZenVizorHostedService> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private ZenVizorPipeServer? _pipeServer;
     private AlertBroadcaster? _alertBroadcaster;
     private CaptureMonitor? _captureMonitor;
     private EtwCaptureSource? _captureSource;
+    private DnsCaptureSource? _dnsSource;
+    private SniCaptureSource? _sniSource;
+    private DnsResolutionStore? _dnsStore;
     private CancellationTokenSource? _retentionCts;
     private Task? _retentionLoop;
     private CancellationTokenSource? _backfillCts;
@@ -185,13 +197,23 @@ internal sealed class ZenVizorHostedService : IHostedService
             _loggerFactory.CreateLogger<EnrichmentBackfill>());
 
         var sessionTracker = new SessionTracker(imageResolver, appEnricher, serviceHostResolver);
+
+        // Phase 8 — the DNS resolution store is constructed BEFORE the
+        // aggregator so the aggregator can read from it at flush time. The
+        // DnsCaptureSource (started further below, after CaptureMonitor) is
+        // the producer. If DnsCaptureSource.Start() throws, the store
+        // simply stays empty and every aggregator lookup misses — the rest
+        // of the pipeline carries on with resolved_host = null.
+        _dnsStore = new DnsResolutionStore();
+
         var aggregator = new TrafficAggregator(
             sessionTracker,
             new PidCorrector(),
             pidTableSource,
             flushSink,
             logger: _loggerFactory.CreateLogger<TrafficAggregator>(),
-            alertEventSink: alertProducer);
+            alertEventSink: alertProducer,
+            dnsStore: _dnsStore);
 
         _captureSource = new EtwCaptureSource(
             logger: _loggerFactory.CreateLogger<EtwCaptureSource>(),
@@ -204,6 +226,48 @@ internal sealed class ZenVizorHostedService : IHostedService
             _loggerFactory.CreateLogger<CaptureMonitor>());
 
         await _captureMonitor.StartAsync(cancellationToken).ConfigureAwait(false);
+
+        // ---- Phase 8 — passive DNS observer (sibling capture path) ----
+        // Sibling TraceEventSession listening to Microsoft-Windows-DNS-Client
+        // event 3008; populates _dnsStore (constructed above and already
+        // wired into the aggregator) so the aggregator's flush-time lookup
+        // can stamp connections.resolved_host. Strictly observational —
+        // invariant #1 (zero own traffic) still holds; the new provider
+        // does not originate traffic, it surfaces what the host resolver
+        // already does.
+        //
+        // DNS observation is an enrichment, not load-bearing. A failed start
+        // logs loud and continues — capture still works, hostnames stay null
+        // until the next service restart.
+        _dnsSource = new DnsCaptureSource(
+            _dnsStore,
+            logger: _loggerFactory.CreateLogger<DnsCaptureSource>());
+        try
+        {
+            _dnsSource.Start();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "DNS capture source failed to start; resolved_host will be null until next service start.");
+        }
+
+        // ---- Phase 8.6 — passive SNI / QUIC-SNI / HTTP-Host observer ----
+        // Sibling source feeding the SAME _dnsStore the DNS observer feeds, so
+        // the aggregator's existing flush-time lookup stamps
+        // connections.resolved_host with no IPC/UI/schema change. Closes the
+        // Phase 8 DoH gap (Chrome and other in-app resolvers bypass the Windows
+        // DNS resolver, so the DNS observer sees nothing for them) by recovering
+        // the hostname from the wire instead. Strictly observational —
+        // invariant #1 holds; both substrates are receive-only.
+        //
+        // Like DNS, this is enrichment, not load-bearing: a failed start logs
+        // and continues. ECH (TLS 1.3 Encrypted ClientHello) keeps its SNI
+        // encrypted and stays unrecoverable — the documented residual gap.
+        if (SniCaptureEnabled)
+        {
+            _sniSource = TryStartSniCapture(_dnsStore);
+        }
 
         // ---- IPC ----
         var queryRepo       = new AppHistoryQueryRepository(connections);
@@ -554,6 +618,42 @@ internal sealed class ZenVizorHostedService : IHostedService
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// Start the SNI source on the primary PktMon substrate; on a hard start
+    /// failure (the PktMon control surface is unavailable — Phase 8.5 §7) fall
+    /// back to the receive-only raw-socket substrate. Returns null if neither
+    /// substrate could be started; SNI enrichment is then simply absent and the
+    /// rest of the pipeline carries on with resolved_host left to the DNS
+    /// observer. Disposes a partially-started source before falling back so we
+    /// don't leak its ETW session / PktMon filters.
+    /// </summary>
+    private SniCaptureSource? TryStartSniCapture(DnsResolutionStore store)
+    {
+        foreach (var substrate in new[] { SniSubstrate.PktMon, SniSubstrate.RawSocket })
+        {
+            var source = new SniCaptureSource(
+                store,
+                logger: _loggerFactory.CreateLogger<SniCaptureSource>(),
+                substrate: substrate);
+            try
+            {
+                source.Start();
+                _logger.LogInformation("SNI capture started on the {Substrate} substrate.", substrate);
+                return source;
+            }
+            catch (Exception ex)
+            {
+                _ = source.DisposeAsync();
+                _logger.LogWarning(ex,
+                    "SNI capture failed to start on the {Substrate} substrate.", substrate);
+            }
+        }
+
+        _logger.LogWarning(
+            "SNI capture could not start on any substrate; resolved_host falls back to DNS observation only.");
+        return null;
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("ZenVizor service stopping.");
@@ -595,6 +695,19 @@ internal sealed class ZenVizorHostedService : IHostedService
             await _captureMonitor.StopAsync(cancellationToken).ConfigureAwait(false);
             _captureMonitor = null;
         }
+
+        if (_sniSource is not null)
+        {
+            await _sniSource.DisposeAsync().ConfigureAwait(false);
+            _sniSource = null;
+        }
+
+        if (_dnsSource is not null)
+        {
+            await _dnsSource.DisposeAsync().ConfigureAwait(false);
+            _dnsSource = null;
+        }
+        _dnsStore = null;
 
         _captureSource = null;
     }

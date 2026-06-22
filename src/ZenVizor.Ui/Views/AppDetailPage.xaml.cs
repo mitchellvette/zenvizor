@@ -812,7 +812,8 @@ public sealed record ConnectionRowViewModel(
     int RemotePort,
     string RemoteClass,
     string UpText,
-    string DownText)
+    string DownText,
+    string? ResolvedHost)
 {
     public static ConnectionRowViewModel From(ConnectionRow c) => new(
         Protocol: c.Protocol,
@@ -820,7 +821,16 @@ public sealed record ConnectionRowViewModel(
         RemotePort: c.RemotePort,
         RemoteClass: c.RemoteClass,
         UpText: PerAppPage.FormatBytes(c.BytesUp),
-        DownText: PerAppPage.FormatBytes(c.BytesDown));
+        DownText: PerAppPage.FormatBytes(c.BytesDown),
+        ResolvedHost: c.ResolvedHost);
+
+    /// <summary>
+    /// True when a passive observer (the DNS observer, or Phase 8.6 SNI / QUIC /
+    /// HTTP-Host recovery) produced a hostname for this endpoint. The XAML cell
+    /// template uses this to switch between the hostname-primary dual-line
+    /// layout and the IP-only fall-back.
+    /// </summary>
+    public bool HasHostname => !string.IsNullOrWhiteSpace(ResolvedHost);
 
     /// <summary>
     /// Plain-language caption for well-known ports. Returns null for

@@ -29,6 +29,13 @@
          MinHeight exactly to the visible area. ToastBanner sits OUTSIDE
          the ScrollViewer so it pins to the viewport bottom regardless of
          scroll position. -->
+    <Page.Resources>
+        <!--  Phase 8 — used by the Connections grid's "Remote endpoint"
+              column to hide the hostname line when ResolvedHost is null,
+              falling back to the IP-only template. Stock WPF converter,
+              keyed BoolToVisibility to match the AlertsPage precedent.  -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </Page.Resources>
     <Grid>
         <ScrollViewer x:Name="PageScroll"
                       Background="Transparent"
@@ -753,10 +760,40 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0"
-                                                           Text="{Binding RemoteAddress}"
-                                                           Style="{StaticResource text.mono}"
-                                                           VerticalAlignment="Center" />
+                                                <!--  Phase 8 — when the passive DNS observer
+                                                      attached a hostname, render it as the
+                                                      primary line with the raw address as a
+                                                      smaller subscript. When no hostname is
+                                                      present, the StackPanel still shows the
+                                                      raw address alone (the subscript inherits
+                                                      that fallback). RemoteAddress remains the
+                                                      sort key and the value copied by the
+                                                      hover chip — diagnostics need the IP.  -->
+                                                <StackPanel Grid.Column="0"
+                                                            Orientation="Vertical"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ResolvedHost}"
+                                                               Visibility="{Binding HasHostname, Converter={StaticResource BoolToVisibility}}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding ResolvedHost}" />
+                                                    <TextBlock Text="{Binding RemoteAddress}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding RemoteAddress}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                                                <Style.Triggers>
+                                                                    <!--  Subscript treatment ONLY when a hostname
+                                                                          sits above it. Without a hostname this
+                                                                          line IS the endpoint and stays full-size.  -->
+                                                                    <DataTrigger Binding="{Binding HasHostname}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource text.tertiary}" />
+                                                                        <Setter Property="FontSize" Value="11" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
                                                 <Border Grid.Column="1"
                                                         Tag="{Binding RemoteAddress}"
                                                         Padding="6,2"
@@ -1188,7 +1225,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="The IP address this app talked to." />
+                                               Text="The server this app talked to. When ZenVizor can work out the site's name it shows that above the IP address; some connections stay IP-only because the name was hidden inside encrypted traffic and can't be read." />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="PORT" />

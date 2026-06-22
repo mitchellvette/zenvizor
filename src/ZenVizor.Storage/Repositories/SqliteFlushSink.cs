@@ -244,23 +244,33 @@ public sealed class SqliteFlushSink : IFlushSink
 
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
+        // Phase 8 — resolved_host carries the passive-DNS observation if the
+        // aggregator's flush-time lookup hit. On UPDATE we COALESCE the
+        // existing value first so a non-null hostname is never overwritten
+        // by a later null (the DNS source can race: connection seen before
+        // the response is parsed, or eviction kicked the entry between
+        // flushes). A null existing value still gets filled by a non-null
+        // arrival because COALESCE(NULL, x) = x. See Phase 8 design
+        // decision D3 in docs/zenvizor-sprint-plan.md for the rationale.
         cmd.CommandText = """
             INSERT INTO connections
                 (session_id, protocol, remote_addr, remote_port, remote_class,
-                 bytes_up, bytes_down, first_seen, last_seen)
+                 resolved_host, bytes_up, bytes_down, first_seen, last_seen)
             VALUES
                 ($session, $proto, $addr, $port, $class,
-                 $up, $down, $first, $last)
+                 $host, $up, $down, $first, $last)
             ON CONFLICT (session_id, protocol, remote_addr, remote_port) DO UPDATE SET
-                bytes_up   = bytes_up   + excluded.bytes_up,
-                bytes_down = bytes_down + excluded.bytes_down,
-                last_seen  = MAX(last_seen, excluded.last_seen);
+                bytes_up      = bytes_up   + excluded.bytes_up,
+                bytes_down    = bytes_down + excluded.bytes_down,
+                last_seen     = MAX(last_seen, excluded.last_seen),
+                resolved_host = COALESCE(resolved_host, excluded.resolved_host);
             """;
         var pSession = cmd.Parameters.Add("$session", SqliteType.Integer);
         var pProto   = cmd.Parameters.Add("$proto",   SqliteType.Text);
         var pAddr    = cmd.Parameters.Add("$addr",    SqliteType.Text);
         var pPort    = cmd.Parameters.Add("$port",    SqliteType.Integer);
         var pClass   = cmd.Parameters.Add("$class",   SqliteType.Text);
+        var pHost    = cmd.Parameters.Add("$host",    SqliteType.Text);
         var pUp      = cmd.Parameters.Add("$up",      SqliteType.Integer);
         var pDown    = cmd.Parameters.Add("$down",    SqliteType.Integer);
         var pFirst   = cmd.Parameters.Add("$first",   SqliteType.Integer);
@@ -279,6 +289,7 @@ public sealed class SqliteFlushSink : IFlushSink
             pAddr.Value    = c.RemoteAddress;
             pPort.Value    = c.RemotePort;
             pClass.Value   = c.RemoteClass.ToStorageString();
+            pHost.Value    = (object?)c.ResolvedHost ?? DBNull.Value;
             pUp.Value      = c.BytesUpDelta;
             pDown.Value    = c.BytesDownDelta;
             pFirst.Value   = c.FirstSeenUnixMs;

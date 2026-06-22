@@ -295,12 +295,21 @@ public sealed class AppHistoryQueryRepository
     {
         using var connection = _connections.Open();
         using var cmd = connection.CreateCommand();
+        // Phase 8 — MAX(c.resolved_host) collapses the app's session rows for
+        // a given endpoint into one displayed hostname. Lexicographic pick:
+        // for ~95% of endpoints the underlying rows agree (one IP, one
+        // hostname); the rare CDN-aliasing case where multiple names map
+        // to the same IP yields a deterministic but alphabetical winner.
+        // See Phase 8 design decision D4 in docs/zenvizor-sprint-plan.md
+        // for the tradeoff and the swap-to-"most-recent-non-null" upgrade
+        // path if user testing surfaces confusion.
         cmd.CommandText = """
             SELECT c.protocol, c.remote_addr, c.remote_port, c.remote_class,
                    SUM(c.bytes_up)   AS up,
                    SUM(c.bytes_down) AS down,
                    MIN(c.first_seen) AS first,
-                   MAX(c.last_seen)  AS last
+                   MAX(c.last_seen)  AS last,
+                   MAX(c.resolved_host) AS host
             FROM connections c
             JOIN process_sessions ps ON ps.session_id = c.session_id
             WHERE ps.app_id = $appId
@@ -325,7 +334,8 @@ public sealed class AppHistoryQueryRepository
                 BytesUp:         reader.GetInt64(4),
                 BytesDown:       reader.GetInt64(5),
                 FirstSeenUnixMs: reader.GetInt64(6),
-                LastSeenUnixMs:  reader.GetInt64(7)));
+                LastSeenUnixMs:  reader.GetInt64(7),
+                ResolvedHost:    reader.IsDBNull(8) ? null : reader.GetString(8)));
         }
         return new ConnectionListResult(window, rows);
     }

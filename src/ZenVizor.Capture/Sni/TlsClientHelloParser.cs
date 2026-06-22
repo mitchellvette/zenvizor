@@ -1,8 +1,8 @@
-namespace SniSpike;
+namespace ZenVizor.Capture.Sni;
 
 /// <summary>
-/// Extracts the plaintext SNI host_name from a TLS ClientHello. Mirrors the
-/// robustness contract of ZenVizor's <c>Rfc1035ResponseDecoder</c>: returns
+/// Phase 8.6 — extracts the plaintext SNI host_name from a TLS ClientHello.
+/// Mirrors the robustness contract of <c>Rfc1035ResponseDecoder</c>: returns
 /// false / empty on any malformed, truncated, or non-ClientHello input and
 /// NEVER throws. Bounds-checked on every read.
 /// <para>
@@ -10,14 +10,14 @@ namespace SniSpike;
 /// sent after the handshake completes at the TCP layer). The SNI is plaintext
 /// in TLS 1.2 and in TLS 1.3 *without* Encrypted ClientHello (ECH). ECH moves
 /// the real SNI into an encrypted extension — out of reach by design, the
-/// documented residual gap.
+/// documented residual gap (see Phase 8 verification doc "Known limitations").
 /// </para>
 /// <para>
 /// Handles a ClientHello that spans more than one TLS record fragment only to
 /// the extent the bytes are already in the buffer; the caller is responsible
-/// for accumulating enough of the flow (the spike accumulates up to a cap per
-/// flow). If the SNI extension isn't fully present yet, returns false so the
-/// caller keeps accumulating.
+/// for accumulating enough of the flow (<see cref="SniFlowTracker"/> accumulates
+/// up to a per-flow cap). If the SNI extension isn't fully present yet, returns
+/// false so the caller keeps accumulating.
 /// </para>
 /// </summary>
 internal static class TlsClientHelloParser
@@ -65,7 +65,6 @@ internal static class TlsClientHelloParser
         // Handshake header: msg_type(1) length(3)
         if (hs.Length < 4) return false;
         if (hs[0] != HandshakeTypeClientHello) return false;
-        var bodyLen = ReadUInt24(hs, 1);
         // We don't require the full body to be present (segmentation), but we
         // do need the body region to start where we expect.
         var body = hs[4..];
@@ -178,7 +177,4 @@ internal static class TlsClientHelloParser
 
     private static ushort ReadUInt16(ReadOnlySpan<byte> b, int o) =>
         (ushort)((b[o] << 8) | b[o + 1]);
-
-    private static int ReadUInt24(ReadOnlySpan<byte> b, int o) =>
-        (b[o] << 16) | (b[o + 1] << 8) | b[o + 2];
 }

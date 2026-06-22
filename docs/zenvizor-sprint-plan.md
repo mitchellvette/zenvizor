@@ -1429,18 +1429,29 @@ must be re-evaluated against the Phase 8.5 outcome before it runs.
 
 ## Phase 8.6 — Passive SNI/QUIC/Host hostname recovery (DoH-blind apps)
 
-> **Confirmed by Phase 8.5 (2026-06-21) — scoped, not yet started.**
-> The throwaway prototype settled both open unknowns (PktMon control
-> surface + real-box perf under inbound bulk); see
-> `docs/phase-8.5-endpoint-visibility.md`. The recommendation held at
-> ship-at-full-coverage, so this entry stands as the implementation.
-> §8 of the findings doc carries the concrete build notes the spike
-> surfaced (Ethernet-header strip on PktMon; per-protocol truncation
-> with the QUIC-needs-the-full-datagram constraint; mandatory
-> per-flow gate). One small follow-up the spike could not isolate
-> cleanly (a test confound): confirm on a fresh boot whether the
-> PktMon provider needs `pktmon start` running, or emits payloads from
-> provider-enable alone.
+> **CLOSED 2026-06-21 — CI green + all manual gates walked.**
+> The parsers + QUIC crypto + dual substrate (PktMon primary,
+> raw-socket fallback) are ported from the spike into
+> `src/ZenVizor.Capture/Sni/`, wired into the service composition root
+> (`SniCaptureEnabled` toggle), and feed the unchanged
+> `DnsResolutionStore`. All six headless acceptance criteria pass
+> (41 new tests in `tests/ZenVizor.Core.Tests/Sni/`; 554/554
+> solution-wide) and the four real-box gates pass (Chrome TLS+QUIC
+> hostnames, QUIC YouTube/Google, zero-own-traffic, perf under bulk).
+> Full walkthrough + sign-off in `docs/phase-8.6-verification.md`. The
+> spike (`spike/SniSpike/`) has been deleted now that the port is green.
+>
+> The §7 PktMon control-surface unknown is **resolved**: the capture
+> component is **required** — enabling the `Microsoft-Windows-PktMon`
+> ETW provider alone delivers no payloads; `pktmon start --capture`
+> must be running, so the source's child-process spawn is load-bearing.
+> Settled via a `pktmon stop` counterfactual (fresh site lands with
+> capture on, not with capture off), which controlled the confound the
+> Phase 8.5 spike couldn't isolate (see
+> `docs/phase-8.5-endpoint-visibility.md` §7). §8's build notes
+> (Ethernet-header strip on PktMon; per-protocol truncation with the
+> QUIC-needs-the-full-datagram constraint; mandatory per-flow gate) are
+> all applied.
 
 **Goal:** Close the Phase 8 DoH / in-app-resolver coverage gap by
 adding a **second passive feeder** into the existing
@@ -1524,42 +1535,54 @@ so a rewrite would only reintroduce retired risk.
   `QuicSelfTest`) as a CI test — it is what rules out a derivation bug
   hiding behind a symmetric encrypt path. Reuse `ClientHelloFactory`
   as the fixture builder for the determinism tests.
-- **Spike disposition:** keep the `spike/SniSpike/` branch until this
-  port lands and its tests are green; delete it only then ("spike
-  close" = after 8.6 has taken what it needs, not before).
+- **Spike disposition — done.** `spike/SniSpike/` was deleted
+  2026-06-21 once the port landed and its tests went green ("spike
+  close" = after 8.6 took what it needed). The parsers + `QuicCrypto`
+  ported verbatim; the QUIC crypto was not rewritten. Recoverable from
+  git history if ever needed.
 
-**Acceptance criteria — CI (headless)**
+**Acceptance criteria — CI (headless)** — **all pass, 2026-06-21**
 
-- [ ] Synthetic TLS ClientHello fixtures (TLS 1.2 + TLS 1.3-no-ECH)
+- [x] Synthetic TLS ClientHello fixtures (TLS 1.2 + TLS 1.3-no-ECH)
       → exact-expected SNI extracted (determinism gate per CLAUDE.md
-      "synthetic events assert exact rows").
-- [ ] Synthetic QUIC Initial fixture → decrypt + exact-expected SNI;
-      exercises the RFC 9001 v1 salt + HKDF + AEAD path.
-- [ ] Synthetic HTTP/1.1 request fixture → exact-expected Host.
-- [ ] Malformed / truncated / non-handshake inputs → empty result,
-      never throws (mirror `Rfc1035ResponseDecoder`).
-- [ ] Per-flow gate: once a flow yields a hostname (or N packets pass
+      "synthetic events assert exact rows"). — `TlsClientHelloParserTests`
+- [x] Synthetic QUIC Initial fixture → decrypt + exact-expected SNI;
+      exercises the RFC 9001 v1 salt + HKDF + AEAD path. Keeps the
+      §A.1 key-schedule vector as a gold anchor. — `QuicInitialParserTests`
+- [x] Synthetic HTTP/1.1 request fixture → exact-expected Host. —
+      `HttpHostParserTests`
+- [x] Malformed / truncated / non-handshake inputs → empty result,
+      never throws (mirror `Rfc1035ResponseDecoder`). — across all
+      parser test classes
+- [x] Per-flow gate: once a flow yields a hostname (or N packets pass
       without one), further packets for that 4-tuple are dropped
-      without re-parse.
-- [ ] Store wire-up: extracted SNI populates
+      without re-parse. — `SniFlowTrackerTests` + `SniPacketProcessorTests`
+- [x] Store wire-up: extracted SNI populates
       `connections.resolved_host` at flush for a fixture whose
-      `remote_addr` matches.
+      `remote_addr` matches. — `SniCaptureSourceTests` lands the
+      `(ip → host)` in `DnsResolutionStore`; the store→flush→`resolved_host`
+      join is covered by the existing `AggregatorResolvedHostTests`.
 
-**Acceptance criteria — manual (human QA — real Windows box)**
+**Acceptance criteria — manual (human QA — real Windows box)** —
+**all pass, walked 2026-06-21** (sign-off in `docs/phase-8.6-verification.md`)
 
-- [ ] Chrome with default DoH **on**: AppDetail Connections grid
+- [x] Chrome with default DoH **on**: AppDetail Connections grid
       shows human-readable hostnames for the bulk of `chrome.exe`
       flows (TLS + QUIC). Hit rate materially above the Phase 8
       baseline (near-zero for Chrome).
-- [ ] QUIC-heavy target (YouTube / Google) renders hostnames,
+- [x] QUIC-heavy target (YouTube / Google) renders hostnames,
       confirming the QUIC decrypt path end-to-end.
-- [ ] **Self-monitoring zero-own-traffic gate** (invariant #1) holds
+- [x] **Self-monitoring zero-own-traffic gate** (invariant #1) holds
       with the new capture session active — ZenVizor PIDs still
       attribute zero outbound.
-- [ ] Performance: idle CPU < 1%, service WS < ~80 MB hold under a
+- [x] Performance: idle CPU < 1%, service WS < ~80 MB hold under a
       sustained large HTTPS download (the inbound-bulk stress case).
-- [ ] Residual ECH gap documented in the UI + Phase 8 verification
-      doc, same pattern as the DoH note.
+- [x] Residual ECH gap documented in the UI + Phase 8 verification
+      doc, same pattern as the DoH note. — AppDetail "Remote endpoint"
+      info popup (`AppDetailPage.xaml`) + `docs/phase-8-verification.md`
+      *Known limitations* + the dedicated section in
+      `docs/phase-8.6-verification.md`. (Doc-only criterion; complete
+      without the real-box walk.)
 
 **Sequencing note:** runs after Phase 8.5 closes and before
 Phase 9.6 (re-cut MSI + Burn bundle) — the bundle must pack the 8.6

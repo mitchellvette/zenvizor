@@ -352,6 +352,29 @@ forward is **ECH-enabled origins** (TLS 1.3 Encrypted ClientHello),
 which hide the SNI — a small but growing minority, documented in the
 UI with the same honesty pattern as this DoH note.
 
+### ECH-enabled origins (the residual gap after Phase 8.6)
+
+Phase 8.6 closed the DoH gap above by extracting the hostname from the
+**plaintext** TLS ClientHello / decrypted QUIC Initial / HTTP Host
+header. The one case it cannot reach is TLS 1.3 **Encrypted
+ClientHello (ECH)**: the inner ClientHello — SNI included — is
+encrypted to the origin's public key, so the server name is not in the
+clear and is not recoverable by any passive observer. Those flows
+render IP-only, exactly like a DoH cache-hit row.
+
+This affects a small but growing minority today (Cloudflare-fronted
+opt-in origins). There is no passive workaround — recovery would need
+the origin's private key or an active MITM, both of which violate the
+"passive monitor, not a firewall" charter. We surface it honestly and
+do not chase it:
+
+- **In the UI:** the AppDetail "Remote endpoint" info popup explains
+  that some connections stay IP-only "because the name was hidden
+  inside encrypted traffic and can't be read"
+  (`src/ZenVizor.Ui/Views/AppDetailPage.xaml`).
+- **In the docs:** the full write-up + the manual gates that exercise
+  it live in `docs/phase-8.6-verification.md`.
+
 ### Connection reuse + cache hits
 
 Even on OS-resolver apps, hit rate doesn't reach 100 %. See the

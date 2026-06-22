@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ZenVizor.Core.Alerts;
 using ZenVizor.Core.Attribution;
 using ZenVizor.Core.Classification;
+using ZenVizor.Core.Dns;
 using ZenVizor.Core.Observations;
 using ZenVizor.Core.Storage;
 using ZenVizor.Ipc.Contracts.Dto;
@@ -24,6 +25,7 @@ public sealed class TrafficAggregator
     private readonly IPidTableSnapshotSource _snapshotSource;
     private readonly IFlushSink _sink;
     private readonly IAlertEventSink? _alertEventSink;
+    private readonly IDnsResolutionStore? _dnsStore;
     private readonly int _bucketSeconds;
     private readonly ILogger _logger;
     private readonly Func<long> _nowProvider;
@@ -60,7 +62,8 @@ public sealed class TrafficAggregator
         int bucketSeconds = BucketAligner.DefaultBucketSeconds,
         ILogger<TrafficAggregator>? logger = null,
         Func<long>? nowProvider = null,
-        IAlertEventSink? alertEventSink = null)
+        IAlertEventSink? alertEventSink = null,
+        IDnsResolutionStore? dnsStore = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _corrector = corrector ?? throw new ArgumentNullException(nameof(corrector));
@@ -72,6 +75,12 @@ public sealed class TrafficAggregator
         // AlertProducer with a fake IAlertSink or null when alert
         // pipeline coverage isn't under test.
         _alertEventSink = alertEventSink;
+        // Phase 8 — optional read-only handle on the passive DNS observer's
+        // IP → hostname store. When null, every PendingConnection emitted
+        // has ResolvedHost=null and the storage column stays null (the
+        // pre-Phase-8 behaviour). Production composition root passes the
+        // DnsResolutionStore the DnsCaptureSource populates.
+        _dnsStore = dnsStore;
 
         if (bucketSeconds <= 0)
         {
@@ -201,6 +210,17 @@ public sealed class TrafficAggregator
         {
             // ToString runs once per unique connection here at flush time, not
             // once per event in the hot path.
+            //
+            // Phase 8 — DNS lookup is also a flush-time activity, off the
+            // hot path. Miss is null; null flows through the sink's COALESCE
+            // upsert so an INSERT writes nothing and an UPDATE preserves any
+            // hostname a prior flush already attached.
+            string? resolvedHost = null;
+            if (_dnsStore is not null && _dnsStore.TryGetHostname(key.RemoteAddress, nowUnixMs, out var host))
+            {
+                resolvedHost = host;
+            }
+
             connectionRows.Add(new PendingConnection(
                 Pid: key.Pid,
                 Protocol: key.Protocol,
@@ -210,7 +230,8 @@ public sealed class TrafficAggregator
                 BytesUpDelta: acc.BytesUp,
                 BytesDownDelta: acc.BytesDown,
                 FirstSeenUnixMs: acc.FirstSeenUnixMs,
-                LastSeenUnixMs: acc.LastSeenUnixMs));
+                LastSeenUnixMs: acc.LastSeenUnixMs,
+                ResolvedHost: resolvedHost));
         }
 
         var batch = new FlushBatch(

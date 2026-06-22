@@ -300,6 +300,14 @@ Settled to the degree that matters, with a clean-boot caveat:
   needs **one clean run from a fresh boot** (or after `pktmon stop`) to nail
   down — a 10-minute Phase 8.6 task, not a feasibility risk. Either way the
   raw-socket fallback already covers the downside.
+- **RESOLVED in Phase 8.6 (2026-06-21): `pktmon start --capture` IS
+  required.** The `pktmon stop` counterfactual controlled the confound
+  above — with the service running and hostnames flowing, stopping the
+  capture component (while our ETW subscription stayed alive) halted
+  delivery; restarting it restored delivery for the same fresh site. So
+  enabling the provider alone yields nothing; the production source's
+  `pktmon start` child spawn is load-bearing. Sign-off in
+  `docs/phase-8.6-verification.md` §7.
 
 **Unknown #2 — does filter+truncate+per-flow-gate hold the perf budget
 under inbound bulk?**
