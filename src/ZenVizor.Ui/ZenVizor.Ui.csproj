@@ -6,6 +6,15 @@
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
+    <!-- Phase 9.1: pin to win-x64 so SkiaSharp (via LiveChartsCore) only copies
+         libSkiaSharp.dll for this RID. Without the pin, the osx (~18 MB),
+         win-arm64 (~12 MB), and win-x86 (~11 MB) SkiaSharp natives all
+         ship in runtimes\ — ~52 MB of dead weight on a WPF/Windows-only app.
+         AppendRuntimeIdentifierToOutputPath keeps the output path at
+         bin\<Config>\net10.0-windows\ so installer/ZenVizor.wxs globs
+         continue to resolve. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- NU1701: LiveChartsCore.SkiaSharpView.WPF 2.0.4 transitively depends on
          SkiaSharp.Views.WPF and OpenTK packages that still target legacy net48.
          They are runtime-compatible with net10.0-windows; the warning is noise.

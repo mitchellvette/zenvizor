@@ -5,6 +5,14 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <AssemblyName>zvctl</AssemblyName>
     <RootNamespace>ZenVizor.Cli</RootNamespace>
+    <!-- Phase 9.1: pinned to win-x64 for consistency with Service + UI. The
+         CLI has no current native deps, but locking the platform contract
+         here prevents a future dependency that ships per-RID natives from
+         silently fanning out to 23 RID folders. AppendRuntimeIdentifierToOutputPath
+         keeps the output path at bin\<Config>\net10.0-windows\ so
+         installer/ZenVizor.wxs globs continue to resolve. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
   <ItemGroup>

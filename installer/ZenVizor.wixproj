@@ -16,8 +16,17 @@
          the two components live in the same Feature they are always
          installed/uninstalled together, so the ICE69 cross-component
          reference is harmless. Documented in ZenVizor.wxs above the
-         ComponentGroup "StartMenu". -->
-    <SuppressIces>ICE69</SuppressIces>
+         ComponentGroup "StartMenu".
+
+         ICE60 fires on the SQLitePCLRaw 3.0.3 native binary (e_sqlite3.dll)
+         shipped under the Service. The dll carries a version resource but
+         no Language column — neither attribute is settable on a harvested
+         <Files> match, and the upstream package (SourceGear.sqlite3) does
+         not embed a Language resource. ICE60 is a metadata completeness
+         check, not an install-correctness one: the file copies and loads
+         correctly without it. Exposed by Phase 9.1's RID specialization
+         (the native moved from runtimes\<rid>\native\ to the bin root). -->
+    <SuppressIces>ICE69;ICE60</SuppressIces>
 
     <!-- The WiX SDK auto-Compile glob is recursive (**/*.wxs) and honors
          $(DefaultItemExcludes) on its Exclude. Phase 7's bundle wxs lives

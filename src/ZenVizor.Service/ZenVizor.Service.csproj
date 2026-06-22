@@ -4,6 +4,15 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Exe</OutputType>
     <UserSecretsId>dotnet-ZenVizor.Service-c2112731-baf1-4780-b260-8b8e830a2d91</UserSecretsId>
+    <!-- Phase 9.1: pin to win-x64 so the SDK only copies this RID's native
+         assets (e_sqlite3.dll) from transitive deps into bin\. Without the
+         pin, Microsoft.Data.Sqlite's 23 RID folders (linux-x64, osx-arm64,
+         browser-wasm, etc.) all land in runtimes\ — ~67 MB of dead weight
+         for a Windows-only service. AppendRuntimeIdentifierToOutputPath
+         keeps the output path at bin\<Config>\net10.0-windows\ so the
+         installer/ZenVizor.wxs <Files Include> globs continue to resolve. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
   <ItemGroup>

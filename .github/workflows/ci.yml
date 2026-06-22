@@ -34,6 +34,33 @@ jobs:
       - name: Build
         run: dotnet build ZenVizor.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
 
+      # Phase 9.1 regression guard — assert no non-win-x64 RID folder reappears
+      # under any runtimes\ in the three RID-pinned projects (Service, UI, CLI).
+      # Today the runtimes\ folders don't exist at all (natives are flat at the
+      # bin root); guard against (a) a future package whose layout adds a
+      # runtimes\<rid>\ tree containing the wrong RID, and (b) accidental
+      # removal of <RuntimeIdentifier>win-x64</RuntimeIdentifier> from one
+      # of the csprojs. win-x64 itself is allowed; everything else fails CI.
+      - name: Guard against non-win-x64 RID asset bloat
+        if: success()
+        shell: pwsh
+        run: |
+          $projects = @('ZenVizor.Service', 'ZenVizor.Ui', 'ZenVizor.Cli')
+          $bad = @()
+          foreach ($p in $projects) {
+              $runtimes = "src/$p/bin/${{ env.CONFIGURATION }}/net10.0-windows/runtimes"
+              if (Test-Path $runtimes) {
+                  Get-ChildItem -Path $runtimes -Directory |
+                      Where-Object { $_.Name -ne 'win-x64' } |
+                      ForEach-Object { $bad += "$p :: runtimes/$($_.Name)" }
+              }
+          }
+          if ($bad.Count -gt 0) {
+              Write-Error ("Phase 9.1 RID guard failed — non-win-x64 RID folder(s) detected:`n" + ($bad -join "`n"))
+              exit 1
+          }
+          Write-Host "Phase 9.1 RID guard passed — no non-win-x64 runtime asset folders present."
+
       - name: Test
         run: >
           dotnet test ZenVizor.slnx
