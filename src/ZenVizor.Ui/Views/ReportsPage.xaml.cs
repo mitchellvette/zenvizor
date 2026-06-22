@@ -20,14 +20,16 @@ namespace ZenVizor.Ui.Views;
 [SupportedOSPlatform("windows")]
 public sealed partial class ReportsPage : Page
 {
-    // Initial date used until the user picks one. Matches the canonical
-    // mockup screenshot date (2026-06-08) so dev / QA visuals align with the
-    // mockup hand-off without depending on real data. Phase 5b's real
-    // aggregator will receive varying dates from the picker; the Phase 5a
-    // stub provider ignores the date and always returns the same payload.
-    private static readonly DateTime InitialDate = new(2026, 6, 8);
+    // Date the page opens on before the user picks one. Snapshotted at
+    // construction time from the Clock seam so each fresh page instance
+    // reflects "today" — a new navigation to Reports always lands on the
+    // current date. The seam is overrideable from tests (InternalsVisibleTo
+    // grants ZenVizor.Integration.Tests access) so the default-date wiring
+    // is verifiable without time-of-day flake.
+    internal static Func<DateTime> Clock { get; set; } = () => DateTime.Today;
+    private readonly DateTime _initialDate = Clock();
 
-    // A2: assigned from MainWindow.HistoryQueryClient in OnLoaded.
+    // Assigned from MainWindow.HistoryQueryClient in OnLoaded.
     private HistoryQueryClient _client = null!;
     private readonly DailyReportCsvWriter _csvWriter = new();
     private readonly DailyReportHtmlWriter _htmlWriter = new();
@@ -43,24 +45,24 @@ public sealed partial class ReportsPage : Page
     // Mockup Q2b lock: default 7-day average. Updated by OnAnchorSelected;
     // refresh fires on every change.
     private AnchorMode _anchor = AnchorMode.Avg7d;
-    // Phase 5a only wires the three rolling-average anchors (Avg7d/30d/90d);
-    // the SpecificDate anchor in the menu is a placeholder until Phase 5b
-    // adds a second date picker for the comparison date. Field stays null
-    // for now; readonly suppresses the assignment-required warning.
+    // MVP wires only the three rolling-average anchors (Avg7d/30d/90d). The
+    // SpecificDate anchor in the menu is a UI-only placeholder pending a
+    // second date picker for the comparison date; field stays null and
+    // readonly suppresses the assignment-required warning.
     private readonly DateOnly? _anchorSpecificDate = null;
 
-    // Per-refresh chart state. Phase 2 had these as consts because the mock
-    // data was static; Phase 5a recomputes them each refresh from the
-    // DailyReportHourPoint series the service returns.
-    private DateTime _chartReportDate = InitialDate;
+    // Per-refresh chart state, recomputed each refresh from the
+    // DailyReportHourPoint series the service returns. _chartReportDate
+    // seeds at _initialDate so FormatHourTick renders the empty chart's
+    // 00:00 tick correctly before the first refresh lands.
+    private DateTime _chartReportDate;
     private int _peakHour;
     private double _peakValue;
     private double _maxYValue = 1;
 
-    // State-machine field — Phase 4 wired Loading / Disconnected / Error /
-    // Empty / QuietDay visual chrome. Phase 5a drives the transitions from
-    // the refresh outcome (Loading on entry, Default/Empty/QuietDay from
-    // result classification, Disconnected/Error from catch).
+    // State-machine field. RefreshAsync drives transitions: Loading on
+    // entry; Default/Empty/QuietDay from result classification on success;
+    // Disconnected/Error from catch.
     private enum ReportsState { Default, Empty, QuietDay, Loading, Disconnected, Error }
     private ReportsState _state = ReportsState.Default;
     private DispatcherTimer? _loadingCaptionTimer;
@@ -76,10 +78,11 @@ public sealed partial class ReportsPage : Page
     {
         InitializeComponent();
 
+        _chartReportDate = _initialDate;
         InitDatePicker();
         InitAnchorMenu();
         InitSparkline();
-        UpdateHeroEyebrow(InitialDate);
+        UpdateHeroEyebrow(_initialDate);
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -100,11 +103,10 @@ public sealed partial class ReportsPage : Page
         RepositionPeakOverlay();
         ChartTheming.Changed += OnThemeChanged;
 
-        // A2: pick up the shared query client from MainWindow.
-        // Subscribe to the wipe fan-out so the user sees an empty state
-        // immediately after Reset history, without having to navigate
-        // away and back. A1: also subscribe to ServiceReconnected so a
-        // service restart refreshes the page automatically.
+        // Pick up the shared query client from MainWindow. Subscribe to the
+        // wipe fan-out so the user sees an empty state immediately after
+        // Reset history, and to ServiceReconnected so a service restart
+        // refreshes the page automatically.
         if (Application.Current.MainWindow is MainWindow mw)
         {
             _client = mw.HistoryQueryClient;
@@ -114,8 +116,7 @@ public sealed partial class ReportsPage : Page
 
         // Apply the initial MaxHeight bound BEFORE the first IPC fetch — the
         // backfill of TopApps rows must measure against a finite cap or the
-        // virtualizer materializes every row at once (the original Phase 3
-        // failure mode that this whole pattern exists to prevent).
+        // virtualizer materializes every row at once.
         EnforceTopAppsGridBound();
 
         // First IPC fetch — populates Hero / sparkline / Top Apps /
@@ -127,8 +128,8 @@ public sealed partial class ReportsPage : Page
 
     private async void OnServiceReconnected(object? sender, EventArgs e)
     {
-        // A2: MainWindow.OnStatusChanged force-reconnected the shared
-        // client before raising this event.
+        // MainWindow.OnStatusChanged force-reconnects the shared client
+        // before raising this event.
         await RefreshAsync();
     }
 
@@ -173,7 +174,7 @@ public sealed partial class ReportsPage : Page
 
     private void InitDatePicker()
     {
-        PrimaryDatePicker.Date = InitialDate;
+        PrimaryDatePicker.Date = _initialDate;
 
         // Wpf.Ui's CalendarDatePicker exposes Date as a DependencyProperty
         // but doesn't surface a public DateChanged event. Listen on the DP
@@ -194,7 +195,7 @@ public sealed partial class ReportsPage : Page
         // per-item date-range captions and prime the button face to the
         // default "7-day average" selection. Captions refresh on every
         // date change via RefreshAnchorCaptions.
-        RefreshAnchorCaptions(InitialDate);
+        RefreshAnchorCaptions(_initialDate);
         ApplyAnchorSelection("Avg7d");
     }
 
@@ -225,7 +226,7 @@ public sealed partial class ReportsPage : Page
     private async void OnPrimaryDateChanged(object? sender, EventArgs e)
     {
         if (!IsLoaded) return;
-        var d = PrimaryDatePicker.Date ?? InitialDate;
+        var d = PrimaryDatePicker.Date ?? _initialDate;
         RefreshAnchorCaptions(d);
         UpdateHeroEyebrow(d);
         await RefreshAsync();
@@ -298,7 +299,7 @@ public sealed partial class ReportsPage : Page
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  RefreshAsync — single entry point for Phase 5a state transitions.
+    //  RefreshAsync — single entry point for state transitions.
     //  Loading → IPC → result classification (Default / QuietDay / Empty)
     //  or catch → Disconnected / Error. Mirrors the
     //  HistoryQueryClient.IsConnectionLost pattern from
@@ -312,7 +313,7 @@ public sealed partial class ReportsPage : Page
         {
             var date = PrimaryDatePicker.Date is { } d
                 ? DateOnly.FromDateTime(d)
-                : DateOnly.FromDateTime(InitialDate);
+                : DateOnly.FromDateTime(_initialDate);
             var result = await _client.GetDailyReportAsync(date, _anchor, _anchorSpecificDate);
             ApplyResult(result);
         }
@@ -350,11 +351,10 @@ public sealed partial class ReportsPage : Page
     }
 
     // Filter + dispatch Notable items into the three severity sections.
-    // Sections with zero items collapse entirely (header + cards). Phase 5b
-    // emits Critical entries only from the MVP UnsignedFromUserPath rule;
-    // Warning + Info exist in the enum for forward compat (Phase 6 widens
-    // the rule set) and will typically be empty on a real machine until
-    // then.
+    // Sections with zero items collapse entirely (header + cards). The MVP
+    // emits Critical entries only (UnsignedFromUserPath rule); Warning +
+    // Info exist in the enum for forward compat and will typically be
+    // empty on a real machine.
     private void ApplyNotable(IReadOnlyList<DailyReportNotable> items)
     {
         var critical = items.Where(n => n.Severity == NotableSeverity.Critical).Select(MapNotable).ToArray();
@@ -391,10 +391,9 @@ public sealed partial class ReportsPage : Page
             AlertId:    n.AlertId);
     }
 
-    // Decide the data-bearing state from the result shape. The stub provider
-    // (Phase 5a) always returns Default-shape data; Phase 5b's real
-    // aggregator may return Empty (zero-traffic days) or QuietDay
-    // (sparse but non-zero) variants.
+    // Decide the data-bearing state from the result shape: Empty when no
+    // traffic and no apps; QuietDay when traffic is sparse and there's
+    // nothing notable or uncommon to surface; Default otherwise.
     private static ReportsState ClassifyResult(DailyReportResult r)
     {
         var hasTraffic = r.HourlyTraffic.Any(p => p.BytesUp + p.BytesDown > 0);
@@ -575,17 +574,17 @@ public sealed partial class ReportsPage : Page
 
     private void InitSparkline()
     {
-        // Phase 5a — chart axes / margin / chrome only. Data comes from
-        // ApplySparkline once the first refresh result lands. Initial
-        // MinLimit/MaxLimit point at InitialDate so the empty chart shows
-        // the correct hour ticks (00:00 … 24:00) before any data arrives.
+        // Chart axes / margin / chrome only. Data comes from ApplySparkline
+        // once the first refresh result lands. Initial MinLimit/MaxLimit
+        // point at _initialDate so the empty chart shows the correct hour
+        // ticks (00:00 … 24:00) before any data arrives.
         _xAxis = new Axis
         {
             Labeler   = FormatHourTick,
             MinStep   = TimeSpan.FromHours(6).Ticks,
             UnitWidth = TimeSpan.FromHours(1).Ticks,
-            MinLimit  = InitialDate.Ticks,
-            MaxLimit  = InitialDate.AddHours(24).Ticks,
+            MinLimit  = _initialDate.Ticks,
+            MaxLimit  = _initialDate.AddHours(24).Ticks,
             TextSize  = 11,
         };
         _yAxis = new Axis
@@ -670,10 +669,10 @@ public sealed partial class ReportsPage : Page
         }
     }
 
-    // Phase 5c — CSV export. SaveFileDialog seeds the brief §17 filename
-    // template (zenvizor-report-YYYY-MM-DD.csv) and the user's Documents
-    // folder. Errors surface via the existing Error state banner so the
-    // user notices without a modal interrupting their flow.
+    // CSV export. SaveFileDialog seeds the brief §17 filename template
+    // (zenvizor-report-YYYY-MM-DD.csv) and the user's Documents folder.
+    // Errors surface via the existing Error state banner so the user
+    // notices without a modal interrupting their flow.
     private void OnExportCsvClick(object sender, RoutedEventArgs e)
     {
         if (_lastResult is null) return;
@@ -697,7 +696,7 @@ public sealed partial class ReportsPage : Page
         }
     }
 
-    // Phase 5d — HTML export. After save, open in the default browser via
+    // HTML export. After save, open in the default browser via
     // ShellExecute (matches the brief's intent: the file is the deliverable
     // and the user inspects it immediately). The HTML itself is
     // self-contained — opening it fires zero network requests (the brief's
@@ -737,11 +736,8 @@ public sealed partial class ReportsPage : Page
 
     // ────────────────────────────────────────────────────────────────────
     //  Drill handlers — Top Apps row + Uncommon Talker row both navigate
-    //  to HistoryPage. The (app, date) filter parameter capability lands
-    //  in Phase 5e — until then the destination is a no-op: navigation
-    //  succeeds, History opens unfiltered, the visual chevron + hand-
-    //  cursor + single-click handler is exercised end-to-end so any
-    //  regression surfaces immediately.
+    //  to AppDetailPage with the report date pre-applied (see
+    //  DrillToAppDetail below).
     //  ────────────────────────────────────────────────────────────────────
 
     private void OnTopAppsGridLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -828,8 +824,8 @@ public sealed partial class ReportsPage : Page
         e.Handled = true;
     }
 
-    // Phase 5e — drill to AppDetailPage with the report date so the user
-    // arrives looking at that app's 24-hour traffic on the report day. The
+    // Drill to AppDetailPage with the report date so the user arrives
+    // looking at that app's 24-hour traffic on the report day. The
     // navigation parameter is an AppDetailNavParams record so AppDetailPage
     // can disambiguate from the legacy "DataContext = bare int appId" path
     // (PerAppPage still uses that). Date passed only when _lastResult is
@@ -842,11 +838,11 @@ public sealed partial class ReportsPage : Page
         nav.Navigate(typeof(AppDetailPage), new AppDetailNavParams(appId, date));
     }
 
-    // Phase 6.4 — Reports → Alerts deep-link. The chip is the only
-    // affordance on a Notable card that targets the Alerts page; clicking
-    // anywhere else on the card stays in Reports (no full-card drill).
-    // No-op when AlertId == 0 — the LEFT JOIN didn't find a matching row,
-    // so there's nothing to deep-link to.
+    // Reports → Alerts deep-link. The chip is the only affordance on a
+    // Notable card that targets the Alerts page; clicking anywhere else on
+    // the card stays in Reports (no full-card drill). No-op when
+    // AlertId == 0 — the LEFT JOIN didn't find a matching row, so there's
+    // nothing to deep-link to.
     private void OnAlertsChipClick(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
@@ -872,10 +868,10 @@ public sealed partial class ReportsPage : Page
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  State machine — Phase 4 visual chrome, driven by Phase 5a's
-    //  RefreshAsync / ApplyResult. ApplyState is the single code path that
-    //  toggles Visibility / Opacity / banner content / Export.IsEnabled;
-    //  data values are not mutated by state methods — ApplyResult owns that.
+    //  State machine — driven by RefreshAsync / ApplyResult. ApplyState is
+    //  the single code path that toggles Visibility / Opacity / banner
+    //  content / Export.IsEnabled; data values are not mutated by state
+    //  methods — ApplyResult owns that.
     //  ────────────────────────────────────────────────────────────────────
 
     private void ApplyState(ReportsState s, string? errorMessage = null)
@@ -966,13 +962,11 @@ public sealed partial class ReportsPage : Page
 
     private void ApplyDisconnectedState()
     {
-        // Phase 6.5 standardized service-disconnect to caution-amber +
-        // PlugDisconnected20 glyph across every page. (The pre-6.5 code
-        // here also pointed at a non-existent "status.critical.text"
-        // token; SetResourceReference left the brush unresolved, so the
-        // banner text painted with the inherited Foreground rather than
-        // the intended critical red. That silent bug goes away with the
-        // canonicalization.)
+        // Service-disconnect is canonicalized to caution-amber +
+        // PlugDisconnected20 glyph across every page. Don't reach for the
+        // critical-red token here — "status.critical.text" doesn't exist,
+        // SetResourceReference would silently leave the brush unresolved,
+        // and banner text would paint with the inherited Foreground.
         SetBanner(SymbolRegular.PlugDisconnected20,
                   "status.caution.background",
                   "status.caution.text",
@@ -1071,7 +1065,7 @@ public sealed record UncommonTalker(
 // Notable card view-model bound by reports.notable.card DataTemplate.
 // EntityRef + AlertsText are pre-formatted strings so the DataTemplate can
 // stay binding-only — no inline string formatting / converters in XAML.
-// AlertId is the raw value used by Phase 6.4's deep-link click handler;
+// AlertId is the raw value used by the Alerts-chip deep-link click handler;
 // AlertsText is the rendered "Alerts · #N" caption.
 public sealed record NotableCardViewModel(
     NotableSeverity Severity,
