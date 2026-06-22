@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.Versioning;
 using System.Windows;
@@ -10,6 +11,7 @@ using LiveChartsCore.Defaults;
 using LiveChartsCore.Measure;
 using LiveChartsCore.SkiaSharpView;
 using Wpf.Ui.Controls;
+using ZenVizor.Core.Aggregation;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
 
@@ -22,7 +24,7 @@ public partial class AppDetailPage : Page
     private HistoryQueryClient _client = null!;
     private readonly DispatcherTimer _toastTimer;
 
-    public ObservableCollection<ConnectionRowViewModel> Connections { get; } = new();
+    public ObservableCollection<EndpointGroupViewModel> Connections { get; } = new();
     public ObservableCollection<SessionRowViewModel> Sessions { get; } = new();
 
     public int? AppId { get; private set; }
@@ -395,12 +397,30 @@ public partial class AppDetailPage : Page
     private void OnCopyEndpointClick(object sender, MouseButtonEventArgs e)
     {
         // The hover-revealed copy chip in the Remote endpoint cell template
-        // carries the row's RemoteAddress in its Tag. Cells in this grid
+        // carries the row's endpoint identity in its Tag — that's the
+        // hostname when one was resolved (most useful for whois / nslookup
+        // / reputation lookups) and the IP otherwise. Cells in this grid
         // aren't selectable (no SelectionMode wired) so this is the user's
         // only path to grab the address for external diagnostics.
         if (sender is FrameworkElement fe && fe.Tag is string address && !string.IsNullOrEmpty(address))
         {
             TryCopyToClipboard(address);
+        }
+    }
+
+    /// <summary>
+    /// Toggle a Connections-grid row's expand-in-place children. Wired to
+    /// the leading chevron cell's MouseLeftButtonUp — chevron is hidden
+    /// for single-port groups (no children to reveal), so this handler
+    /// only fires for multi-port rows. The two-way binding on the
+    /// DataGridRow style mirrors IsExpanded into DetailsVisibility.
+    /// </summary>
+    private void OnEndpointExpandToggle(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is EndpointGroupViewModel vm)
+        {
+            vm.IsExpanded = !vm.IsExpanded;
+            e.Handled = true;
         }
     }
 
@@ -798,47 +818,192 @@ public partial class AppDetailPage : Page
 
     private void ApplyConnections(ConnectionListResult result)
     {
+        // Phase 9.5 — flat per-(proto, IP, port) rows from the server
+        // collapse to endpoint identity (hostname else IP) here in the
+        // UI. The grouper lives in ZenVizor.Core; this method is the
+        // single bridge between the IPC payload and the visual model.
         Connections.Clear();
-        foreach (var c in result.Connections)
+        var groups = ConnectionGrouper.Collapse(result.Connections);
+        foreach (var g in groups)
         {
-            Connections.Add(ConnectionRowViewModel.From(c));
+            Connections.Add(EndpointGroupViewModel.From(g));
         }
     }
 }
 
-public sealed record ConnectionRowViewModel(
-    string Protocol,
-    string RemoteAddress,
-    int RemotePort,
-    string RemoteClass,
-    string UpText,
-    string DownText,
-    string? ResolvedHost)
+/// <summary>
+/// One row in the Phase 9.5 collapsed Connections grid — an endpoint
+/// identity rolled up across its underlying (proto, IP, port) triples.
+/// A group with a single port and single address renders
+/// indistinguishably from the pre-9.5 flat row; multi-port groups
+/// surface their per-port detail in the DataGrid's RowDetailsTemplate
+/// when the user expands the row (single click on the chevron).
+/// </summary>
+public sealed class EndpointGroupViewModel : INotifyPropertyChanged
 {
-    public static ConnectionRowViewModel From(ConnectionRow c) => new(
-        Protocol: c.Protocol,
-        RemoteAddress: c.RemoteAddress,
-        RemotePort: c.RemotePort,
-        RemoteClass: c.RemoteClass,
-        UpText: PerAppPage.FormatBytes(c.BytesUp),
-        DownText: PerAppPage.FormatBytes(c.BytesDown),
-        ResolvedHost: c.ResolvedHost);
+    public EndpointGroupViewModel(
+        string identity,
+        string? resolvedHost,
+        IReadOnlyList<string> addresses,
+        string remoteClass,
+        long bytesUp,
+        long bytesDown,
+        int distinctPortCount,
+        IReadOnlyList<PortChildViewModel> ports)
+    {
+        Identity = identity;
+        ResolvedHost = resolvedHost;
+        Addresses = addresses;
+        RemoteClass = remoteClass;
+        UpText = PerAppPage.FormatBytes(bytesUp);
+        DownText = PerAppPage.FormatBytes(bytesDown);
+        DistinctPortCount = distinctPortCount;
+        Ports = ports;
+    }
 
-    /// <summary>
-    /// True when a passive observer (the DNS observer, or Phase 8.6 SNI / QUIC /
-    /// HTTP-Host recovery) produced a hostname for this endpoint. The XAML cell
-    /// template uses this to switch between the hostname-primary dual-line
-    /// layout and the IP-only fall-back.
-    /// </summary>
+    public static EndpointGroupViewModel From(EndpointGroup g) => new(
+        identity:          g.Identity,
+        resolvedHost:      g.ResolvedHost,
+        addresses:         g.Addresses,
+        remoteClass:       g.RemoteClass,
+        bytesUp:           g.BytesUp,
+        bytesDown:         g.BytesDown,
+        distinctPortCount: g.DistinctPortCount,
+        ports:             g.Ports.Select(PortChildViewModel.From).ToArray());
+
+    public string Identity { get; }
+    public string? ResolvedHost { get; }
+    public IReadOnlyList<string> Addresses { get; }
+    public string RemoteClass { get; }
+    public string UpText { get; }
+    public string DownText { get; }
+    public int DistinctPortCount { get; }
+    public IReadOnlyList<PortChildViewModel> Ports { get; }
+
+    /// <summary>True when the identity is a resolved hostname (drives the
+    /// dual-line address treatment in the cell template).</summary>
     public bool HasHostname => !string.IsNullOrWhiteSpace(ResolvedHost);
 
     /// <summary>
-    /// Plain-language caption for well-known ports. Returns null for
-    /// unknown ports — the Port column then renders the number alone.
-    /// Covers the protocols we expect to see most often in ZenVizor
-    /// traffic; extend as gaps surface during use.
+    /// IP shown as a subscript under the hostname. When the hostname fans
+    /// across CDN edges, surfaces the first sorted address plus a "+N more"
+    /// suffix; the full list lives in <see cref="AddressTooltip"/>.
     /// </summary>
-    public string? PortServiceCaption => RemotePort switch
+    public string AddressSubscript => Addresses.Count switch
+    {
+        0 => string.Empty,
+        1 => Addresses[0],
+        _ => $"{Addresses[0]} +{Addresses.Count - 1} more",
+    };
+
+    /// <summary>Tooltip enumerating every IP the identity covered.</summary>
+    public string AddressTooltip => string.Join(", ", Addresses);
+
+    /// <summary>True when the identity covers more than one IP.</summary>
+    public bool HasMultipleAddresses => Addresses.Count > 1;
+
+    /// <summary>
+    /// Protocol summary for the parent row. When every child shares a
+    /// single protocol, that protocol is shown verbatim (matches the
+    /// pre-9.5 flat row's Proto column for the dominant single-proto
+    /// case). When a group mixes TCP and UDP children, "Mixed" surfaces
+    /// — the per-protocol detail lives in the expanded children.
+    /// </summary>
+    public string ProtocolSummary
+    {
+        get
+        {
+            if (Ports.Count == 0) return string.Empty;
+            var first = Ports[0].Protocol;
+            for (int i = 1; i < Ports.Count; i++)
+            {
+                if (!string.Equals(Ports[i].Protocol, first, StringComparison.Ordinal))
+                {
+                    return "Mixed";
+                }
+            }
+            return first;
+        }
+    }
+
+    /// <summary>
+    /// Port-column content. Single-port groups show the bare number
+    /// (matching the flat-row case). Multi-port groups surface the
+    /// distinct-port count; the per-port enumeration lives in the
+    /// expand-in-place children and in <see cref="PortTooltip"/>.
+    /// </summary>
+    public string PortSummary => Ports.Count == 1
+        ? Ports[0].Port.ToString(CultureInfo.InvariantCulture)
+        : $"{DistinctPortCount} ports";
+
+    /// <summary>
+    /// Plain-language port caption — non-null only when the group covers
+    /// a single well-known port (so single-port groups look identical to
+    /// the pre-9.5 row). Multi-port groups suppress the caption.
+    /// </summary>
+    public string? PortServiceCaption => Ports.Count == 1
+        ? WellKnownPort.Caption(Ports[0].Port)
+        : null;
+
+    /// <summary>Tooltip enumerating every (proto, port) in the group.</summary>
+    public string PortTooltip => string.Join(", ",
+        Ports.Select(p => $"{p.Protocol}/{p.Port}"));
+
+    /// <summary>True when the parent row has more than one underlying
+    /// port — the trigger for the leading chevron + RowDetailsTemplate.</summary>
+    public bool HasMultiplePorts => Ports.Count > 1;
+
+    /// <summary>True when the endpoint is classified as upstream (WAN).</summary>
+    public bool IsWan => string.Equals(RemoteClass, "Wan", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>"WAN" / "Local" display string for the Reach pill.</summary>
+    public string ReachText => IsWan ? "WAN" : "Local";
+
+    private bool _isExpanded;
+    /// <summary>
+    /// Two-way bound to the DataGridRow's DetailsVisibility via a style
+    /// trigger; toggled by the chevron cell's MouseLeftButtonUp handler.
+    /// </summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>
+/// One per-port row inside an <see cref="EndpointGroupViewModel"/>'s
+/// expand-in-place detail panel.
+/// </summary>
+public sealed record PortChildViewModel(
+    string Protocol,
+    int Port,
+    string? PortServiceCaption,
+    string UpText,
+    string DownText)
+{
+    public static PortChildViewModel From(EndpointPortChild p) => new(
+        Protocol:           p.Protocol,
+        Port:               p.Port,
+        PortServiceCaption: WellKnownPort.Caption(p.Port),
+        UpText:             PerAppPage.FormatBytes(p.BytesUp),
+        DownText:           PerAppPage.FormatBytes(p.BytesDown));
+}
+
+internal static class WellKnownPort
+{
+    /// <summary>
+    /// Plain-language caption for well-known ports. Returns null for
+    /// unknown ports — the rendering surface then shows the number alone.
+    /// </summary>
+    public static string? Caption(int port) => port switch
     {
         80 => "HTTP",
         443 => "HTTPS",
@@ -868,20 +1033,6 @@ public sealed record ConnectionRowViewModel(
         636 => "LDAPS",
         _ => null,
     };
-
-    /// <summary>
-    /// Display string for the Reach pill. RemoteClass ships as
-    /// "Wan"/"Local" on the wire; the pill uses the conventional WAN
-    /// initialism for the upstream side and title-case "Local" for the
-    /// local-network side.
-    /// </summary>
-    public string ReachText => IsWan ? "WAN" : "Local";
-
-    /// <summary>
-    /// True when the endpoint is classified as upstream (WAN). Drives
-    /// the Reach pill's background colour and icon via DataTrigger.
-    /// </summary>
-    public bool IsWan => string.Equals(RemoteClass, "Wan", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record SessionRowViewModel(

@@ -1097,7 +1097,14 @@ mock must NOT design for them in this round.
   identity)** is the near-term Connections-grid work; if expand-in-place
   for the rolled-up port detail proves infeasible there, this
   endpoint-detail surface is where a collapsed identity's full
-  session/port breakdown would land.
+  session/port breakdown would land. **Update (2026-06-22):** Phase 9.5
+  shipped expand-in-place successfully via WPF
+  `DataGrid.RowDetailsTemplate` (with the per-row Visibility binding
+  pushed onto the template's root Border to side-step the
+  `DataGridRow.DetailsVisibility` local-value precedence trap), so the
+  fallback never fired and the per-port breakdown lives inline beneath
+  the parent row. F1's endpoint-detail surface remains deferred future
+  work, no longer a contingency on 9.5's outcome.
 - **F2. Reverse DNS / hostname column on Connections.** **SUPERSEDED
   (2026-06-21).** PRD §7.4's reserved `connections.resolved_host` is no
   longer future work — Phase 8 (passive DNS) + Phase 8.6 (SNI/QUIC/Host)

@@ -724,6 +724,14 @@
                             </StackPanel>
                         </TabItem.Header>
                         <Grid>
+                        <!--  Phase 9.5 — Connections grid is keyed by endpoint
+                              identity (resolved hostname else bare IP). Rows
+                              that collapse multiple underlying (proto, port)
+                              triples carry a leading chevron; clicking it
+                              reveals the per-port children via the grid's
+                              RowDetailsTemplate. Single-port groups suppress
+                              the chevron and render visually identical to the
+                              pre-9.5 flat row (Q7 ruling).  -->
                         <DataGrid x:Name="ConnectionsGrid"
                                   AutoGenerateColumns="False" IsReadOnly="True"
                                   HeadersVisibility="Column" GridLinesVisibility="None"
@@ -734,25 +742,97 @@
                                   EnableColumnVirtualization="False"
                                   VirtualizingPanel.IsVirtualizing="True"
                                   VirtualizingPanel.VirtualizationMode="Recycling"
-                                  VirtualizingPanel.ScrollUnit="Item"
+                                  VirtualizingPanel.ScrollUnit="Pixel"
                                   ScrollViewer.CanContentScroll="True"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Proto" Binding="{Binding Protocol}" Width="60" />
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  RowDetailsVisibilityMode="Visible">
+                            <!--  Phase 9.5 — RowDetailsVisibilityMode="Visible"
+                                  always materializes the details slot; the
+                                  per-row visibility lives on the template's
+                                  root Border (see RowDetailsTemplate below)
+                                  bound to IsExpanded. The "drive via row Style
+                                  trigger on DetailsVisibility" pattern fails
+                                  here because DataGrid stamps a local value
+                                  for DetailsVisibility on every row whenever
+                                  RowDetailsVisibilityMode is set, and local
+                                  values trump Style triggers in WPF's
+                                  precedence rules — the chevron rotates but
+                                  the row never expands. Pushing the binding
+                                  one level deeper (template root Visibility)
+                                  side-steps the precedence collision; a
+                                  Collapsed Border takes zero layout space,
+                                  so single-port rows still render flush.  -->
 
-                                <!--  Remote endpoint — IP address in mono, with
-                                      a hover-revealed copy affordance. Cells
-                                      can't be selected in this grid (no
-                                      selection mode wired), so without this
-                                      the user had to type the address out
-                                      manually for diagnostics. Border +
-                                      MouseLeftButtonUp matches the AppId chip /
-                                      path-row pattern from Phase 2.x rather
-                                      than a Button (avoids fighting the
-                                      default Button chrome inside a cell).  -->
+                            <DataGrid.Columns>
+                                <!--  Leading chevron — visible only when the
+                                      group has more than one port child.
+                                      Single-port groups render this cell
+                                      empty so the row visually matches the
+                                      old flat layout. Width=32 with Border
+                                      Padding=2 leaves enough horizontal
+                                      content area for the ChevronDown20
+                                      glyph — its visual mass spans the full
+                                      advance width (unlike ChevronRight20's
+                                      left-weighted wedge), so a tighter
+                                      column clipped the expanded state on
+                                      the right.  -->
+                                <DataGridTemplateColumn Header="" Width="32">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border MouseLeftButtonUp="OnEndpointExpandToggle"
+                                                    Background="Transparent"
+                                                    Cursor="Hand"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Padding="2"
+                                                    ToolTip="Show per-port breakdown">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasMultiplePorts}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <ui:SymbolIcon FontSize="12"
+                                                               Foreground="{DynamicResource text.secondary}">
+                                                    <ui:SymbolIcon.Style>
+                                                        <Style TargetType="ui:SymbolIcon">
+                                                            <Setter Property="Symbol" Value="ChevronRight20" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                    <Setter Property="Symbol" Value="ChevronDown20" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ui:SymbolIcon.Style>
+                                                </ui:SymbolIcon>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!--  Proto — the rolled-up protocol summary.
+                                      Single-proto groups (the dominant case)
+                                      show "TCP" / "UDP" verbatim; groups
+                                      that span both protocols show "Mixed"
+                                      and reveal the per-proto detail in the
+                                      expand-in-place children.  -->
+                                <DataGridTextColumn Header="Proto" Binding="{Binding ProtocolSummary}" Width="60" />
+
+                                <!--  Remote endpoint — identity (hostname or IP)
+                                      with a hover-revealed copy affordance.
+                                      Cells aren't selectable, so this is the
+                                      user's only path to grab the value for
+                                      diagnostics. Phase 9.5 — when a hostname
+                                      fans across multiple CDN edge IPs, the
+                                      subscript reads "<first-ip> +N more" and
+                                      the tooltip enumerates every IP.  -->
                                 <DataGridTemplateColumn Header="Remote endpoint"
                                                         Width="*"
-                                                        SortMemberPath="RemoteAddress">
+                                                        SortMemberPath="Identity">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid>
@@ -760,25 +840,16 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <!--  Phase 8 — when the passive DNS observer
-                                                      attached a hostname, render it as the
-                                                      primary line with the raw address as a
-                                                      smaller subscript. When no hostname is
-                                                      present, the StackPanel still shows the
-                                                      raw address alone (the subscript inherits
-                                                      that fallback). RemoteAddress remains the
-                                                      sort key and the value copied by the
-                                                      hover chip — diagnostics need the IP.  -->
                                                 <StackPanel Grid.Column="0"
                                                             Orientation="Vertical"
                                                             VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding ResolvedHost}"
+                                                    <TextBlock Text="{Binding Identity}"
                                                                Visibility="{Binding HasHostname, Converter={StaticResource BoolToVisibility}}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               ToolTip="{Binding ResolvedHost}" />
-                                                    <TextBlock Text="{Binding RemoteAddress}"
+                                                               ToolTip="{Binding Identity}" />
+                                                    <TextBlock Text="{Binding AddressSubscript}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               ToolTip="{Binding RemoteAddress}">
+                                                               ToolTip="{Binding AddressTooltip}">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
                                                                 <Style.Triggers>
@@ -795,7 +866,7 @@
                                                     </TextBlock>
                                                 </StackPanel>
                                                 <Border Grid.Column="1"
-                                                        Tag="{Binding RemoteAddress}"
+                                                        Tag="{Binding Identity}"
                                                         Padding="6,2"
                                                         Margin="6,0,0,0"
                                                         CornerRadius="{StaticResource radius.control}"
@@ -829,17 +900,20 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <!--  Port — mono number + plain-language
-                                      service caption (443 HTTPS, 5353 mDNS,
-                                      8443 HTTPS-alt). Caption is null for
-                                      unknown ports and the TextBlock renders
-                                      empty so the row stays clean.  -->
+                                <!--  Port — single-port groups render the bare
+                                      number + plain-language caption (matching
+                                      the flat-row case). Multi-port groups
+                                      show "N ports" with a tooltip enumerating
+                                      the (proto, port) list; the per-port
+                                      detail also surfaces via expand-in-place.  -->
                                 <DataGridTemplateColumn Header="Port" Width="120"
-                                                        SortMemberPath="RemotePort">
+                                                        SortMemberPath="DistinctPortCount">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding RemotePort}"
+                                            <StackPanel Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="{Binding PortTooltip}">
+                                                <TextBlock Text="{Binding PortSummary}"
                                                            Style="{StaticResource text.mono}"
                                                            VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding PortServiceCaption}"
@@ -923,6 +997,75 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
                             </DataGrid.Columns>
+
+                            <!--  Phase 9.5 expand-in-place — when a group
+                                  collapses more than one (proto, port), this
+                                  template reveals the per-port breakdown
+                                  inline beneath the parent row. The chevron
+                                  in the leading column toggles IsExpanded on
+                                  the bound EndpointGroupViewModel, which the
+                                  RowStyle mirrors to DetailsVisibility.  -->
+                            <DataGrid.RowDetailsTemplate>
+                                <DataTemplate>
+                                    <Border Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}"
+                                            Background="{DynamicResource surface.subtle}"
+                                            BorderBrush="{DynamicResource border.subtle}"
+                                            BorderThickness="0,1,0,0"
+                                            Padding="36,8,12,8">
+                                        <ItemsControl ItemsSource="{Binding Ports}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="60" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="90" />
+                                                            <ColumnDefinition Width="90" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding Protocol}"
+                                                                   Style="{StaticResource text.caption}"
+                                                                   Foreground="{DynamicResource text.secondary}"
+                                                                   VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1"
+                                                                    Orientation="Horizontal"
+                                                                    VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Port}"
+                                                                       Style="{StaticResource text.mono}"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding PortServiceCaption}"
+                                                                       Style="{StaticResource text.caption}"
+                                                                       Foreground="{DynamicResource text.tertiary}"
+                                                                       Margin="6,0,0,0"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2"
+                                                                   Text="{Binding UpText}"
+                                                                   HorizontalAlignment="Right"
+                                                                   VerticalAlignment="Center">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="3"
+                                                                   Text="{Binding DownText}"
+                                                                   HorizontalAlignment="Right"
+                                                                   VerticalAlignment="Center">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource text.secondary}" />
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGrid.RowDetailsTemplate>
                         </DataGrid>
                         <!--  Connections loading overlay — centered ring +
                               caption. Visibility flips via the 1s timer in
@@ -1217,7 +1360,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="TCP or UDP. The transport protocol the connection uses." />
+                                               Text="TCP or UDP: the transport this connection uses." />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="REMOTE ENDPOINT" />
@@ -1225,7 +1368,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="The server this app talked to. When ZenVizor can work out the site's name it shows that above the IP address; some connections stay IP-only because the name was hidden inside encrypted traffic and can't be read." />
+                                               Text="The server this app talked to. Site name when ZenVizor can read it; otherwise IP-only. To identify an IP, copy it and search using a whois lookup like lookup.icann.org." />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="PORT" />
@@ -1233,7 +1376,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="The destination port, with a hint at the service it usually means (HTTPS for 443, mDNS for 5353, etc.)." />
+                                               Text="Destination port with a service hint (443 for HTTPS, 5353 for mDNS, etc.)." />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="REACH" />
@@ -1241,7 +1384,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="Where the endpoint sits. WAN means out on the public internet; Local means somewhere on your home network." />
+                                               Text="Where the endpoint sits: WAN for the public internet, Local for your home network." />
                                 </StackPanel>
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource text.eyebrow}" Text="UP / DOWN" />
@@ -1249,7 +1392,7 @@
                                                Foreground="{DynamicResource text.secondary}"
                                                TextWrapping="Wrap"
                                                Margin="0,2,0,0"
-                                               Text="Bytes this app sent and received over the selected window." />
+                                               Text="Bytes the app sent and received in this window." />
                                 </StackPanel>
                             </StackPanel>
 
