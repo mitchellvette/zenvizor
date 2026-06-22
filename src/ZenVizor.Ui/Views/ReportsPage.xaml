@@ -23,11 +23,16 @@
               2-segment WAN/Local bar  -->
 
     <Page.Resources>
-        <!--  Delta-chip CornerRadius = 9999 (pill). Kept as a page-local
-              resource rather than radius.pill so a single value drift
-              re-tones every delta chip together. The CSS source-of-truth
-              ships the same value (radius.pill).  -->
-        <CornerRadius x:Key="delta.chip.radius">9999</CornerRadius>
+        <!--  Delta-chip CornerRadius. Held as a page-local resource so the
+              three chips (Total / Up / Down) re-tone together if the value
+              ever drifts. Literal 10, not radius.pill (9999) — per
+              docs/design/claude-design-primer.md §(e): WPF Border.CornerRadius
+              does NOT clamp to half-height the way CSS border-radius does,
+              so the sentinel renders as overlapping arcs (flattened
+              ellipse) on a short chip. 10 ≈ half the rendered chip height
+              (12 px caption + 2×2 padding + line-height slack) and gives a
+              true pill capsule silhouette.  -->
+        <CornerRadius x:Key="delta.chip.radius">10</CornerRadius>
 
         <!--  metal.accent.fill (the violet button face gradient) lifted to
               DesignTokens.xaml on 2026-06-13 when the AlertsPage Reset CTA
@@ -216,13 +221,19 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!--  topapps.sig.pill.text routes through the .text-variant tokens
+              so badge body text clears AA on the soft tinted background.
+              Signed → status.success.text (darker teal in light, bright in
+              dark). Unsigned/Invalid → status.critical.text. The pill icon
+              and border stay on the bright status.X family — visual cue
+              first, text legibility second. -->
         <Style x:Key="topapps.sig.pill.text" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource font.display}" />
             <Setter Property="FontSize" Value="{StaticResource font.size.caption}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="4,0,0,0" />
-            <Setter Property="Foreground" Value="{DynamicResource status.success}" />
+            <Setter Property="Foreground" Value="{DynamicResource status.success.text}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding SignatureStatus}" Value="Unsigned">
                     <Setter Property="Foreground" Value="{DynamicResource status.critical.text}" />
@@ -689,6 +700,34 @@
                             </ContextMenu>
                         </ui:Button.ContextMenu>
                     </ui:Button>
+
+                    <!--  Specific-date picker popover — anchored below the
+                          AnchorButton, opened programmatically when the user
+                          selects "A specific date" from the AnchorMenu.
+                          StaysOpen="False" so clicking outside dismisses,
+                          matching the menu idiom. The Calendar's
+                          SelectedDatesChanged stores the chosen DateOnly into
+                          _anchorSpecificDate, closes the popup, and refreshes
+                          the report. Re-selecting "A specific date" from the
+                          menu re-opens this popup — no extra chrome control
+                          in the row. -->
+                    <Popup x:Name="AnchorDatePopup"
+                           PlacementTarget="{Binding ElementName=AnchorButton}"
+                           Placement="Bottom"
+                           VerticalOffset="6"
+                           StaysOpen="False"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade">
+                        <Border Background="{DynamicResource metal.card}"
+                                BorderBrush="{DynamicResource border.card}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource radius.overlay}"
+                                Effect="{DynamicResource shadow.card}"
+                                Padding="6">
+                            <Calendar x:Name="AnchorDateCalendar"
+                                      SelectedDatesChanged="OnAnchorDateSelected" />
+                        </Border>
+                    </Popup>
                 </StackPanel>
 
                 <!--  Export button — canonical filled-accent treatment via

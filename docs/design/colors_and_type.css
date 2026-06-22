@@ -125,6 +125,16 @@
                             Phase 6.5 add: pre-6.5 critical banner TEXT
                             painted status.critical (same hue as the
                             tinted background) in dark, washy.
+     status.success.text    #02786A (light)    #02786A (light)       synced
+                            #2BD1BD (dark)     #2BD1BD (dark)
+                            (theme-aware via   (--status-success-text
+                             BrandAccent.      per-theme block)
+                             {Light,Dark}.xaml)
+                            Phase 9.3 add: pre-9.3 Top-Apps Signed-badge
+                            TEXT painted status.success (bright teal) on
+                            success-bg in light theme — failed AA (~2.4:1
+                            on white). Dark theme reuses bright teal
+                            (mirrors caution.text dark convention).
 
    Identical in both (no delta to track): space.4/8/12/16/20/24/32/40/48/64,
    font.size.body (14), font.size.caption (12), radius.xs (4), radius.pill,
@@ -379,6 +389,7 @@
 
   /* Status (status.*) */
   --status-success:    #06b6a3;  --status-success-bg: rgba(6,182,163,0.14);
+  --status-success-text: #02786a;  /* success.text — darker teal for TEXT on the success tint (~5.5:1 AA on white); --status-success (#06b6a3) only clears ~2.4:1 as text and fails AA */
   --status-caution:    #ec9a0b;  --status-caution-bg: rgba(236,154,11,0.16);
   --status-caution-text: #8a5a00;  /* caution.text — darker amber for TEXT on the caution tint (~5.2:1 AA); --status-caution stays bright for dots/graphics */
   --status-critical:   #d62b62;  --status-critical-bg: rgba(214,43,98,0.12);
@@ -469,6 +480,7 @@
   --accent-glow:      rgba(130,84,230,0.45);
 
   --status-success:    #2bd1bd;  --status-success-bg: rgba(43,209,189,0.16);
+  --status-success-text: var(--status-success);  /* bright teal already clears AA on the dark tint — mirrors the caution.text dark-theme convention */
   --status-caution:    #f1ad34;  --status-caution-bg: rgba(241,173,52,0.18);
   --status-caution-text: var(--status-caution);  /* bright amber already clears AA on the dark tint */
   --status-critical:   #f5547f;  --status-critical-bg: rgba(245,84,127,0.18);

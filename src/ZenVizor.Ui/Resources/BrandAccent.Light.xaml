@@ -77,6 +77,18 @@
           and unreadable). -->
     <SolidColorBrush x:Key="status.critical.text" Color="#D62B62" />
 
+    <!--  status.success.text — body text on the soft success tint. Light
+          theme uses a darker teal (#02786A) so 12-14 px body clears AA
+          against the pale success background; the bright status.success
+          (#06B6A3) used as text only clears ~2.4:1 on white and fails AA
+          (the Phase 9.3 Signed-badge contrast miss). Bright teal stays
+          for dots / icons / pill fills. Dark theme override in
+          BrandAccent.Dark.xaml reuses the bright teal — the dark tint has
+          enough luminance contrast against it.
+          Source of truth: docs/design/colors_and_type.css
+          status-success-text (per-theme). -->
+    <SolidColorBrush x:Key="status.success.text" Color="#02786A" />
+
     <!--  status.neutral — brand cool blue-violet (#4d5fd0), NOT Wpf.Ui's
           SystemFillColorNeutral (warm gray). DesignTokens.xaml aliases
           status.neutral.Color to SystemFillColorNeutral; overriding the

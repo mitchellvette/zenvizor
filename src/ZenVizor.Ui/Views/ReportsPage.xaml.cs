@@ -45,11 +45,13 @@ public sealed partial class ReportsPage : Page
     // Mockup Q2b lock: default 7-day average. Updated by OnAnchorSelected;
     // refresh fires on every change.
     private AnchorMode _anchor = AnchorMode.Avg7d;
-    // MVP wires only the three rolling-average anchors (Avg7d/30d/90d). The
-    // SpecificDate anchor in the menu is a UI-only placeholder pending a
-    // second date picker for the comparison date; field stays null and
-    // readonly suppresses the assignment-required warning.
-    private readonly DateOnly? _anchorSpecificDate = null;
+    // Comparison date when the user picks "A specific date" from the anchor
+    // menu. Null when any rolling-average anchor is active. Set by
+    // OnAnchorDateSelected when the user picks a date in AnchorDatePopup;
+    // cleared by OnAnchorSelected when the user switches back to a
+    // rolling-average anchor. Flows through to LoadAnchorBaseline as the
+    // window-of-one comparison target.
+    private DateOnly? _anchorSpecificDate;
 
     // Per-refresh chart state, recomputed each refresh from the
     // DailyReportHourPoint series the service returns. _chartReportDate
@@ -206,7 +208,12 @@ public sealed partial class ReportsPage : Page
         // to keep self-consistent — today's report is incomplete by
         // definition.
         var dayBefore = forDate.AddDays(-1);
-        AnchorSpecificCaption.Text = dayBefore.AddDays(-6).ToString("ddd, MMM d", CultureInfo.InvariantCulture);
+        // SpecificDate caption shows the actual picked date so the menu
+        // accurately previews the comparison target. "Pick a date" before
+        // any selection invites the user into the popover.
+        AnchorSpecificCaption.Text = _anchorSpecificDate is { } sd
+            ? sd.ToString("ddd, MMM d", CultureInfo.InvariantCulture)
+            : "Pick a date";
         Anchor7DayCaption.Text = FormatRange(dayBefore.AddDays(-6), dayBefore);
         Anchor30DayCaption.Text = FormatRange(dayBefore.AddDays(-29), dayBefore);
         Anchor90DayCaption.Text = FormatRange(dayBefore.AddDays(-89), dayBefore);
@@ -258,10 +265,61 @@ public sealed partial class ReportsPage : Page
         // what arrives here.
         if (sender is System.Windows.Controls.MenuItem mi && mi.Tag is string tag)
         {
-            ApplyAnchorSelection(tag);
             _anchor = ParseAnchor(tag);
+
+            if (_anchor == AnchorMode.SpecificDate)
+            {
+                // Don't refresh yet — wait for the user to pick a comparison
+                // date in the popup. OpenAnchorDatePicker seeds the calendar
+                // with the prior pick (or yesterday) and opens the popup;
+                // OnAnchorDateSelected handles the picked-date storage and
+                // the deferred refresh. Re-selecting "A specific date" from
+                // the menu re-opens the popup every time per the UX brief.
+                ApplyAnchorSelection(tag);
+                OpenAnchorDatePicker();
+                return;
+            }
+
+            // Leaving SpecificDate — clear the picked date so a subsequent
+            // re-pick starts from the yesterday default rather than the
+            // stale prior choice.
+            _anchorSpecificDate = null;
+            ApplyAnchorSelection(tag);
             if (IsLoaded) await RefreshAsync();
         }
+    }
+
+    private void OpenAnchorDatePicker()
+    {
+        // Comparison must be earlier than the report date itself — anchoring
+        // a "vs" comparison to today or the future doesn't read sensibly.
+        // PrimaryDatePicker.Date is the user-selected report date.
+        var reportDate = PrimaryDatePicker.Date ?? _initialDate;
+        AnchorDateCalendar.DisplayDateEnd = reportDate.AddDays(-1);
+
+        var initial = _anchorSpecificDate?.ToDateTime(TimeOnly.MinValue)
+                      ?? DateTime.Today.AddDays(-1);
+        // Clamp to the picker's MaxDate so the calendar opens on a visible
+        // month even if the prior pick is now after the new MaxDate
+        // (e.g., the user shrank the report date).
+        if (initial > AnchorDateCalendar.DisplayDateEnd)
+            initial = AnchorDateCalendar.DisplayDateEnd.Value;
+
+        AnchorDateCalendar.DisplayDate  = initial;
+        AnchorDateCalendar.SelectedDate = _anchorSpecificDate?.ToDateTime(TimeOnly.MinValue);
+        AnchorDatePopup.IsOpen = true;
+    }
+
+    private async void OnAnchorDateSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (AnchorDateCalendar.SelectedDate is not { } picked) return;
+        _anchorSpecificDate = DateOnly.FromDateTime(picked);
+        AnchorDatePopup.IsOpen = false;
+        // Refresh the button face label so it now reads "vs {date}" and the
+        // menu caption so the next open shows the just-picked date.
+        ApplyAnchorSelection("SpecificDate");
+        RefreshAnchorCaptions(PrimaryDatePicker.Date ?? _initialDate);
+        if (IsLoaded) await RefreshAsync();
     }
 
     private static AnchorMode ParseAnchor(string tag) => tag switch
@@ -274,13 +332,32 @@ public sealed partial class ReportsPage : Page
 
     private void ApplyAnchorSelection(string tag)
     {
-        var (glyph, label) = tag switch
+        SymbolRegular glyph;
+        string label;
+        switch (tag)
         {
-            "SpecificDate" => (SymbolRegular.CalendarLtr20, "A specific date"),
-            "Avg30d"       => (SymbolRegular.History24,     "30-day average"),
-            "Avg90d"       => (SymbolRegular.History24,     "90-day average"),
-            _              => (SymbolRegular.History24,     "7-day average"),
-        };
+            case "SpecificDate":
+                glyph = SymbolRegular.CalendarLtr20;
+                // Once a date is picked, the button face reads "vs {date}"
+                // so the chrome answers the question the menu asked. Before
+                // any pick (popup still pending), keep the menu's label.
+                label = _anchorSpecificDate is { } sd
+                    ? $"vs {sd.ToString("ddd, MMM d", CultureInfo.InvariantCulture)}"
+                    : "A specific date";
+                break;
+            case "Avg30d":
+                glyph = SymbolRegular.History24;
+                label = "30-day average";
+                break;
+            case "Avg90d":
+                glyph = SymbolRegular.History24;
+                label = "90-day average";
+                break;
+            default:
+                glyph = SymbolRegular.History24;
+                label = "7-day average";
+                break;
+        }
         AnchorGlyph.Symbol = glyph;
         AnchorLabel.Text = label;
     }
@@ -574,11 +651,17 @@ public sealed partial class ReportsPage : Page
         _ => 1,
     };
 
-    private static string AnchorVsCaption(AnchorMode mode) => mode switch
+    // Instance, not static, so the SpecificDate case can read
+    // _anchorSpecificDate and render the actual chosen date. "vs yesterday"
+    // is the fallback wording when SpecificDate is active but no date is
+    // picked yet — matches the server's null → reportDate - 1 fallback.
+    private string AnchorVsCaption(AnchorMode mode) => mode switch
     {
         AnchorMode.Avg30d       => "vs 30-day avg",
         AnchorMode.Avg90d       => "vs 90-day avg",
-        AnchorMode.SpecificDate => "vs specific day",
+        AnchorMode.SpecificDate => _anchorSpecificDate is { } sd
+            ? $"vs {sd.ToString("ddd, MMM d", CultureInfo.InvariantCulture)}"
+            : "vs yesterday",
         _                       => "vs 7-day avg",
     };
 

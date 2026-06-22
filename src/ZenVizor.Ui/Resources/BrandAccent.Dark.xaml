@@ -56,6 +56,13 @@
           surface (same-hue washy). -->
     <SolidColorBrush x:Key="status.critical.text" Color="#FBA3B7" />
 
+    <!--  status.success.text — body text on the dark success tint. Mirrors
+          the caution-text convention: bright teal (#2BD1BD, same hue as
+          status.success itself) clears AA against the dark tint without a
+          luminance shift. Light theme override in BrandAccent.Light.xaml
+          uses a darker teal because the bright value fails AA on white. -->
+    <SolidColorBrush x:Key="status.success.text" Color="#2BD1BD" />
+
     <!--  status.neutral — brand cool blue-violet (lighter ramp for dark
           backdrop legibility, #7e8ef7). NOT Wpf.Ui's SystemFillColorNeutral
           (warm gray). Used by alert Info severity (dot / tile bg / badge).
