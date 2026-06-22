@@ -858,6 +858,19 @@
                                    Text="vs 7-day avg" />
                     </StackPanel>
 
+                    <!--  Phase 9.3 — partial-baseline disclosure. Default
+                          Collapsed; ApplyHero surfaces it (status.caution.text)
+                          when BaselineDaysAvailable is in (3, anchorDays),
+                          while treatment (a) (< 3 days) collapses the delta
+                          chips entirely and rewrites HeroAnchorCaption with
+                          a "Comparisons unlock on …" caption instead.  -->
+                    <TextBlock x:Name="HeroBaselineNote"
+                               Visibility="Collapsed"
+                               Margin="0,6,0,0"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource status.caution.text}"
+                               TextWrapping="Wrap" />
+
                     <!--  Up/Down split — two equal columns. Each: eyebrow row
                           (arrow + label) + value row (mono value + unit + delta
                           chip). Value paints in chart.{upSeries|downSeries} so
@@ -894,7 +907,8 @@
                                            VerticalAlignment="Bottom"
                                            Margin="4,0,0,4"
                                            Text="GB" />
-                                <Border VerticalAlignment="Bottom"
+                                <Border x:Name="HeroUpDeltaChip"
+                                        VerticalAlignment="Bottom"
                                         Margin="10,0,0,4"
                                         Background="{DynamicResource status.neutral.background}"
                                         CornerRadius="{StaticResource delta.chip.radius}"
@@ -934,7 +948,8 @@
                                            VerticalAlignment="Bottom"
                                            Margin="4,0,0,4"
                                            Text="GB" />
-                                <Border VerticalAlignment="Bottom"
+                                <Border x:Name="HeroDownDeltaChip"
+                                        VerticalAlignment="Bottom"
                                         Margin="10,0,0,4"
                                         Background="{DynamicResource status.success.background}"
                                         CornerRadius="{StaticResource delta.chip.radius}"

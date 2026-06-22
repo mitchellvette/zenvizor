@@ -57,13 +57,14 @@ public sealed class DailyReportCsvWriterTests
     public void Hero_EmitsAllMetricsWithFriendlyFormatting()
     {
         var hero = new DailyReportHero(
-            TotalUpBytes:   1_200_000_000L,
-            TotalDownBytes: 8_700_000_000L,
-            WanRatio:       0.73,
-            LocalRatio:     0.27,
-            TotalDeltaPct:  -3.0,
-            UpDeltaPct:     18.0,
-            DownDeltaPct:   -6.0);
+            TotalUpBytes:           1_200_000_000L,
+            TotalDownBytes:         8_700_000_000L,
+            WanRatio:               0.73,
+            LocalRatio:             0.27,
+            TotalDeltaPct:          -3.0,
+            UpDeltaPct:             18.0,
+            DownDeltaPct:           -6.0,
+            BaselineDaysAvailable:  7);
         var output = WriteToString(MinimalReport() with { Hero = hero });
 
         output.Should().Contain("# Hero");
@@ -247,7 +248,7 @@ public sealed class DailyReportCsvWriterTests
         Date:               ReportDate,
         Anchor:             AnchorMode.Avg7d,
         AnchorSpecificDate: null,
-        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0),
+        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0, 0),
         HourlyTraffic:      Array.Empty<DailyReportHourPoint>(),
         TopApps:            Array.Empty<DailyReportAppRow>(),
         UncommonTalkers:    Array.Empty<DailyReportTalker>(),

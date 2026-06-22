@@ -106,7 +106,7 @@ internal sealed class FakeIpcHandler : IZenVizorIpc
         Date:               new DateOnly(2026, 6, 8),
         Anchor:             AnchorMode.Avg7d,
         AnchorSpecificDate: null,
-        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0),
+        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0, 0),
         HourlyTraffic:      Array.Empty<DailyReportHourPoint>(),
         TopApps:            Array.Empty<DailyReportAppRow>(),
         UncommonTalkers:    Array.Empty<DailyReportTalker>(),

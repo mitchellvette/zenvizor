@@ -119,13 +119,14 @@ public sealed class DailyReportHtmlWriterTests
     public void Summary_RendersHeroNumerics()
     {
         var hero = new DailyReportHero(
-            TotalUpBytes:   1_200_000_000L,
-            TotalDownBytes: 8_700_000_000L,
-            WanRatio:       0.73,
-            LocalRatio:     0.27,
-            TotalDeltaPct:  -3.0,
-            UpDeltaPct:     18.0,
-            DownDeltaPct:   -6.0);
+            TotalUpBytes:           1_200_000_000L,
+            TotalDownBytes:         8_700_000_000L,
+            WanRatio:               0.73,
+            LocalRatio:             0.27,
+            TotalDeltaPct:          -3.0,
+            UpDeltaPct:             18.0,
+            DownDeltaPct:           -6.0,
+            BaselineDaysAvailable:  7);
         var output = WriteToString(MinimalReport() with { Hero = hero });
 
         // Total = 9.9e9 bytes ≈ 9.2 GB; up ≈ 1.1 GB; down ≈ 8.1 GB.
@@ -233,7 +234,7 @@ public sealed class DailyReportHtmlWriterTests
         Date:               ReportDate,
         Anchor:             AnchorMode.Avg7d,
         AnchorSpecificDate: null,
-        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0),
+        Hero:               new DailyReportHero(0, 0, 0, 0, 0, 0, 0, 0),
         HourlyTraffic:      Array.Empty<DailyReportHourPoint>(),
         TopApps:            Array.Empty<DailyReportAppRow>(),
         UncommonTalkers:    Array.Empty<DailyReportTalker>(),
@@ -246,7 +247,7 @@ public sealed class DailyReportHtmlWriterTests
             Date:               ReportDate,
             Anchor:             AnchorMode.Avg7d,
             AnchorSpecificDate: null,
-            Hero:               new DailyReportHero(1_200_000_000L, 8_700_000_000L, 0.73, 0.27, -3, 18, -6),
+            Hero:               new DailyReportHero(1_200_000_000L, 8_700_000_000L, 0.73, 0.27, -3, 18, -6, 7),
             HourlyTraffic:      Array.Empty<DailyReportHourPoint>(),
             TopApps: new[]
             {

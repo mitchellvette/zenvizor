@@ -490,6 +490,8 @@ public sealed partial class ReportsPage : Page
         HeroUpDeltaText.Text    = FormatDeltaPct(hero.UpDeltaPct);
         HeroDownDeltaText.Text  = FormatDeltaPct(hero.DownDeltaPct);
 
+        ApplyBaselineSufficiency(hero.BaselineDaysAvailable);
+
         var wanPct   = (int)Math.Round(hero.WanRatio * 100);
         var localPct = Math.Max(0, 100 - wanPct);
         HeroWanPercent.Text   = $"{wanPct}%";
@@ -500,6 +502,85 @@ public sealed partial class ReportsPage : Page
         WanBarCol.Width   = new GridLength(Math.Max(1, hero.WanRatio * 100),   GridUnitType.Star);
         LocalBarCol.Width = new GridLength(Math.Max(1, hero.LocalRatio * 100), GridUnitType.Star);
     }
+
+    // Phase 9.3 — fresh-install hero-deltas guard. The deltas come back from
+    // the server already computed; this method picks the visual treatment
+    // based on how many days of pre-report history the service has actually
+    // observed (capped at the anchor's nominal size — see
+    // DailyReportRepository.LoadBaselineDaysAvailable).
+    //
+    // Both partial-baseline warnings route through HeroBaselineNote (amber
+    // status.caution.text on its own line below the headline) so the
+    // "no comparison available" and "comparison is incomplete" cases read
+    // with equal visual weight — both are honesty markers the user needs
+    // to see, not severity-graded.
+    //
+    // < 3 days → treatment (a): chips collapsed, inline anchor caption
+    // collapsed (the "vs 7-day avg" tag has nothing to reference), amber
+    // note reads "Comparisons unlock on {date}".
+    // 3..anchor-1 → treatment (b): chips visible, inline anchor caption
+    // visible, amber note reads "Comparison based on N days of history…".
+    // ≥ anchor → normal display, note collapsed.
+    // SpecificDate is a UI-only placeholder for the MVP and is exempt.
+    private void ApplyBaselineSufficiency(int available)
+    {
+        if (_anchor == AnchorMode.SpecificDate)
+        {
+            ShowDeltasAndAnchorCaption();
+            HeroBaselineNote.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var required = AnchorRequiredDays(_anchor);
+        if (available >= required)
+        {
+            ShowDeltasAndAnchorCaption();
+            HeroBaselineNote.Visibility = Visibility.Collapsed;
+        }
+        else if (available < 3)
+        {
+            HeroTotalDeltaChip.Visibility  = Visibility.Collapsed;
+            HeroUpDeltaChip.Visibility     = Visibility.Collapsed;
+            HeroDownDeltaChip.Visibility   = Visibility.Collapsed;
+            HeroAnchorCaption.Visibility   = Visibility.Collapsed;
+            var unlockDate = DateTime.Today.AddDays(3 - available);
+            HeroBaselineNote.Text =
+                $"Comparisons unlock on {unlockDate.ToString("ddd, MMM d", CultureInfo.InvariantCulture)}.";
+            HeroBaselineNote.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ShowDeltasAndAnchorCaption();
+            HeroBaselineNote.Text =
+                $"Comparison based on {available} days of history. May not reflect typical usage.";
+            HeroBaselineNote.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void ShowDeltasAndAnchorCaption()
+    {
+        HeroTotalDeltaChip.Visibility = Visibility.Visible;
+        HeroUpDeltaChip.Visibility    = Visibility.Visible;
+        HeroDownDeltaChip.Visibility  = Visibility.Visible;
+        HeroAnchorCaption.Visibility  = Visibility.Visible;
+        HeroAnchorCaption.Text        = AnchorVsCaption(_anchor);
+    }
+
+    private static int AnchorRequiredDays(AnchorMode mode) => mode switch
+    {
+        AnchorMode.Avg7d  => 7,
+        AnchorMode.Avg30d => 30,
+        AnchorMode.Avg90d => 90,
+        _ => 1,
+    };
+
+    private static string AnchorVsCaption(AnchorMode mode) => mode switch
+    {
+        AnchorMode.Avg30d       => "vs 30-day avg",
+        AnchorMode.Avg90d       => "vs 90-day avg",
+        AnchorMode.SpecificDate => "vs specific day",
+        _                       => "vs 7-day avg",
+    };
 
     private static (string Value, string Unit) FormatBytesPart(long bytes)
     {

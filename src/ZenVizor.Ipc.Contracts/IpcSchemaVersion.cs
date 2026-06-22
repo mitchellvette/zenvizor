@@ -40,6 +40,10 @@ public static class IpcSchemaVersion
 
     /// <summary>Schema version of <see cref="Dto.DailyReportResult"/> payloads.</summary>
     /// <remarks>
+    /// v3 (Phase 9.3): <c>DailyReportHero.BaselineDaysAvailable</c> added as
+    /// a required trailing positional field. Drives the fresh-install
+    /// hero-deltas guard. A v2 payload won't deserialize as v3 (positional
+    /// record); floor check on the client is load-bearing.
     /// v2 (Phase 6.4): <c>DailyReportNotable.AlertId</c> now carries the real
     /// <c>alerts.alert_id</c> projected via LEFT JOIN, not the always-zero
     /// sentinel Phase 5b emitted. Shape is unchanged (the field already
@@ -47,7 +51,7 @@ public static class IpcSchemaVersion
     /// traceable in client-side diagnostics and the floor check.
     /// v1 (Phase 5b): initial.
     /// </remarks>
-    public const int DailyReport = 2;
+    public const int DailyReport = 3;
 
     /// <summary>
     /// Schema version of <see cref="Dto.AlertsResult"/> payloads and the

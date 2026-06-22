@@ -65,15 +65,18 @@ public sealed class DailyReportRepository
         var (todayUp, todayDown, wan, local) = LoadHero(connection, dayStart, dayEnd);
         var (anchorAvgUp, anchorAvgDown) =
             LoadAnchorBaseline(connection, date, anchor, anchorSpecificDate, localTz);
+        var baselineDaysAvailable =
+            LoadBaselineDaysAvailable(connection, date, AnchorDays(anchor), localTz);
 
         var hero = new DailyReportHero(
-            TotalUpBytes:   todayUp,
-            TotalDownBytes: todayDown,
-            WanRatio:       Ratio(wan,   wan + local),
-            LocalRatio:     Ratio(local, wan + local),
-            TotalDeltaPct:  PercentDelta(todayUp + todayDown, anchorAvgUp + anchorAvgDown),
-            UpDeltaPct:     PercentDelta(todayUp,             anchorAvgUp),
-            DownDeltaPct:   PercentDelta(todayDown,           anchorAvgDown));
+            TotalUpBytes:           todayUp,
+            TotalDownBytes:         todayDown,
+            WanRatio:               Ratio(wan,   wan + local),
+            LocalRatio:             Ratio(local, wan + local),
+            TotalDeltaPct:          PercentDelta(todayUp + todayDown, anchorAvgUp + anchorAvgDown),
+            UpDeltaPct:             PercentDelta(todayUp,             anchorAvgUp),
+            DownDeltaPct:           PercentDelta(todayDown,           anchorAvgDown),
+            BaselineDaysAvailable:  baselineDaysAvailable);
 
         var hourly = LoadHourlySeries(connection, dayStart, dayEnd, localTz);
         var topApps = LoadTopApps(connection, dayStart, dayEnd);
@@ -157,13 +160,7 @@ public sealed class DailyReportRepository
         DateOnly? specificDate,
         TimeZoneInfo localTz)
     {
-        int days = anchor switch
-        {
-            AnchorMode.Avg7d  => 7,
-            AnchorMode.Avg30d => 30,
-            AnchorMode.Avg90d => 90,
-            _ => 1, // SpecificDate
-        };
+        int days = AnchorDays(anchor);
 
         DateOnly anchorEnd; // exclusive
         DateOnly anchorStart;
@@ -213,6 +210,58 @@ public sealed class DailyReportRepository
 
     private static double Ratio(long part, long whole) =>
         whole <= 0 ? 0.0 : (double)part / whole;
+
+    // ─── Baseline sufficiency ──────────────────────────────────────────────
+
+    // Anchor window's nominal size in days. SpecificDate compares against a
+    // single day, so it's effectively 1 — but the UI treatment skips the
+    // sufficiency guard for SpecificDate (it's a UI-only placeholder for the
+    // MVP) so the value is mostly a defensive fallback.
+    private static int AnchorDays(AnchorMode anchor) => anchor switch
+    {
+        AnchorMode.Avg7d  => 7,
+        AnchorMode.Avg30d => 30,
+        AnchorMode.Avg90d => 90,
+        _ => 1,
+    };
+
+    // Days of pre-report history available for the chosen anchor, capped at
+    // the anchor's nominal size. Sourced from MIN(bucket_start) on
+    // traffic_daily — the tier LoadAnchorBaseline actually reads from. An
+    // empty traffic_daily (truly fresh install or post-wipe state) returns
+    // 0, which surfaces treatment (a) suppression in the UI.
+    //
+    // Why traffic_daily and not apps.first_seen: RetentionRepository.WipeHistory
+    // deliberately preserves the apps registry so the per-app vocabulary
+    // (image_name, publisher, signature_status, app_id continuity across
+    // tiers) survives "Reset history". Sourcing from apps would over-report
+    // baseline days after a wipe — the user's mental model says comparisons
+    // should reset alongside the data, and the data tier is where the
+    // baseline math grounds out.
+    //
+    // Distinct from UnusualVolumeMinBaselineDays (which counts per-app
+    // non-zero baseline days from traffic_daily for a different decision):
+    // the hero-deltas guard cares "is there enough rolled-up history at
+    // all?"; the unusual-volume guard cares "is there enough for THIS app?".
+    private static int LoadBaselineDaysAvailable(
+        SqliteConnection connection,
+        DateOnly reportDate,
+        int anchorDays,
+        TimeZoneInfo localTz)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT MIN(bucket_start) FROM traffic_daily;";
+        var result = cmd.ExecuteScalar();
+        if (result is null || result is DBNull) return 0;
+
+        var earliestMs    = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        var earliestUtc   = DateTimeOffset.FromUnixTimeMilliseconds(earliestMs).UtcDateTime;
+        var earliestLocal = TimeZoneInfo.ConvertTimeFromUtc(earliestUtc, localTz);
+        var earliestDate  = DateOnly.FromDateTime(earliestLocal);
+
+        var daysSpan = reportDate.DayNumber - earliestDate.DayNumber;
+        return Math.Clamp(daysSpan, 0, anchorDays);
+    }
 
     // ─── Hourly sparkline series ───────────────────────────────────────────
 

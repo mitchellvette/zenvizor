@@ -78,6 +78,16 @@ public sealed record DailyReportResult(
 /// chip). The brief locks the delta-color semantics on mockup page 12:
 /// "status.neutral for more-traffic, status.success for less."
 /// </para>
+/// <para>
+/// <see cref="BaselineDaysAvailable"/> is the number of pre-report days
+/// of history the service has observed, capped at the anchor's nominal
+/// size (7 / 30 / 90). The UI uses it to gate the deltas: &lt; 3 days
+/// hides the chips entirely and surfaces a "Comparisons unlock on N"
+/// caption; 3..anchor-1 keeps the chips with a partial-baseline caution
+/// note; &gt;= anchor uses the deltas as-is. Closes the fresh-install
+/// honesty gap where partial baselines produced misleading
+/// percentages.
+/// </para>
 /// </summary>
 public sealed record DailyReportHero(
     long TotalUpBytes,
@@ -86,7 +96,8 @@ public sealed record DailyReportHero(
     double LocalRatio,
     double TotalDeltaPct,
     double UpDeltaPct,
-    double DownDeltaPct);
+    double DownDeltaPct,
+    int BaselineDaysAvailable);
 
 /// <summary>
 /// One hour-bucket of the daily sparkline series. <see cref="Hour"/> is

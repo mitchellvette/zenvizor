@@ -69,7 +69,8 @@ public sealed class ProductionHandlerEnvelopeTests
                 LocalRatio: 0.1,
                 TotalDeltaPct: 12.5,
                 UpDeltaPct: 8.0,
-                DownDeltaPct: 14.0),
+                DownDeltaPct: 14.0,
+                BaselineDaysAvailable: 7),
             HourlyTraffic: Array.Empty<DailyReportHourPoint>(),
             TopApps: new[]
             {

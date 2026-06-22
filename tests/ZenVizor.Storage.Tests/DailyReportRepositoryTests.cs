@@ -61,6 +61,10 @@ public sealed class DailyReportRepositoryTests : IDisposable
         result.Hero.TotalUpBytes.Should().Be(0);
         result.Hero.TotalDownBytes.Should().Be(0);
         result.Hero.WanRatio.Should().Be(0);
+        // Empty apps table → no observations yet → baseline-days-available is 0
+        // (treatment (a) suppression in the UI; chips hide, "Comparisons
+        // unlock on…" caption surfaces).
+        result.Hero.BaselineDaysAvailable.Should().Be(0);
         result.HourlyTraffic.Should().HaveCount(24);
         result.HourlyTraffic.Should().OnlyContain(p => p.BytesUp == 0 && p.BytesDown == 0);
         result.TopApps.Should().BeEmpty();
@@ -437,6 +441,72 @@ public sealed class DailyReportRepositoryTests : IDisposable
         // floating slop justifies BeApproximately here; assert the exact value
         // so a drift in the delta math doesn't silently slide under 0.5%.
         result.Hero.TotalDeltaPct.Should().Be(100.0);
+    }
+
+    // ─── Phase 9.3 baseline-sufficiency guard ──────────────────────────────
+
+    [Fact]
+    public void BaselineDaysAvailable_NoTrafficDaily_IsZero()
+    {
+        // Fresh install OR post-Reset-History state: traffic_daily is empty
+        // (the wipe clears the tier the baseline math reads from). apps may
+        // still exist — the registry survives by design — but the guard
+        // sources from the data tier, so it correctly returns 0.
+        SeedApp(1, "a.exe");
+
+        var result = Run(AnchorMode.Avg7d);
+        result.Hero.BaselineDaysAvailable.Should().Be(0);
+    }
+
+    [Fact]
+    public void BaselineDaysAvailable_Avg7d_PartialHistory_ReturnsExactDaySpan()
+    {
+        // traffic_daily earliest row 3 days before report day → 3 days of
+        // pre-report history available.
+        SeedApp(1, "a.exe");
+        InsertDaily(1, DayStartMs - 3 * Day, bytesUp: 100, bytesDown: 200, "Wan");
+
+        var result = Run(AnchorMode.Avg7d);
+        result.Hero.BaselineDaysAvailable.Should().Be(3);
+    }
+
+    [Fact]
+    public void BaselineDaysAvailable_Avg7d_FullHistory_CapsAtAnchorSize()
+    {
+        // traffic_daily earliest row 30 days before report day → far older
+        // than the 7-day anchor window; clamp to 7.
+        SeedApp(1, "a.exe");
+        InsertDaily(1, DayStartMs - 30 * Day, bytesUp: 100, bytesDown: 200, "Wan");
+
+        var result = Run(AnchorMode.Avg7d);
+        result.Hero.BaselineDaysAvailable.Should().Be(7);
+    }
+
+    [Fact]
+    public void BaselineDaysAvailable_Avg30d_TwentyDayHistory_ReturnsTwenty()
+    {
+        // Partial baseline on a wider anchor window — treatment (b) territory:
+        // 20 of 30 days available, deltas stay visible with the partial-
+        // baseline caution caption.
+        SeedApp(1, "a.exe");
+        InsertDaily(1, DayStartMs - 20 * Day, bytesUp: 100, bytesDown: 200, "Wan");
+
+        var result = Run(AnchorMode.Avg30d);
+        result.Hero.BaselineDaysAvailable.Should().Be(20);
+    }
+
+    [Fact]
+    public void BaselineDaysAvailable_MultipleDailyRows_UsesEarliestBucket()
+    {
+        // Two traffic_daily rows; the earlier bucket_start wins. Confirms
+        // the MIN(bucket_start) sourcing — newer rows don't shorten the
+        // baseline.
+        SeedApp(1, "a.exe");
+        InsertDaily(1, DayStartMs - 1 * Day, bytesUp: 100, bytesDown: 200, "Wan");
+        InsertDaily(1, DayStartMs - 5 * Day, bytesUp: 100, bytesDown: 200, "Wan");
+
+        var result = Run(AnchorMode.Avg7d);
+        result.Hero.BaselineDaysAvailable.Should().Be(5);
     }
 
     // ─── Path abbreviation helper ──────────────────────────────────────────
