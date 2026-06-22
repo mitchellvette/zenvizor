@@ -12,10 +12,14 @@ update checks, no DNS lookups, no "phone home." The tool pointed at
 itself reports no outbound from its own processes; this is enforced as
 a manual gate at every MVP phase boundary.
 
-> **Status:** pre-release. Working toward the 1.0 MVP per
-> [`docs/zenvizor-sprint-plan.md`](docs/zenvizor-sprint-plan.md). The
-> installer below is functional but not yet through its full manual
-> acceptance pass.
+> **Status:** 1.0.0 (MVP). All Phase 0–9 acceptance criteria pass —
+> CI test suite + manual gates on a clean Windows VM (installer flow)
+> and on a real desktop (self-monitoring zero-own-traffic invariant +
+> performance budget). See
+> [`docs/zenvizor-sprint-plan.md`](docs/zenvizor-sprint-plan.md) for
+> the phased history and
+> [`docs/phase-9.7-verification.md`](docs/phase-9.7-verification.md)
+> for the ship-gate run.
 
 ---
 
@@ -68,15 +72,23 @@ entry. The `%ProgramData%\ZenVizor\` directory — i.e., the history
 database — is **preserved by default**, so a reinstall picks up where
 the previous install left off.
 
-To wipe the data directory as part of uninstall, run from an elevated
-PowerShell:
+To wipe the data directory as part of uninstall, run the bundle with
+the `REMOVE_DATA=1` flag from an elevated PowerShell:
 
 ```powershell
-msiexec /x "{put product code here}" REMOVE_DATA=1 /qn
+.\ZenVizorSetup.exe /uninstall REMOVE_DATA=1 /quiet
 ```
 
-(Or, for a development build, see `scripts\uninstall-dev.ps1
--PurgeData` below.)
+If the bundle EXE is no longer on hand, the equivalent direct-MSI
+invocation finds the `ProductCode` dynamically:
+
+```powershell
+$code = (Get-WmiObject Win32_Product -Filter "Name='ZenVizor'").IdentifyingNumber
+msiexec /x $code REMOVE_DATA=1 /qn
+```
+
+(For a development build, see `scripts\uninstall-dev.ps1 -PurgeData`
+below.)
 
 The bundled .NET 10 Desktop Runtime is **left in place** on
 uninstall — it is a shared component and may be used by other

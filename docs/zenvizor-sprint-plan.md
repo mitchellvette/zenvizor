@@ -1943,8 +1943,13 @@ deferred.
       `TRADEMARK.txt`, `NOTICES.txt` are present and Notepad-readable.
 - [ ] Bootstrapper license panel during install shows the new GPL
       summary + trademark line, not "All rights reserved."
-- [ ] Add/Remove Programs entry credits "Mitchell Gray" (via the
-      `<Copyright>` flowing into the MSI metadata).
+- [ ] `<Copyright>` from `Directory.Build.props` flows through to the
+      installed binaries' file-version metadata (right-click `.exe` →
+      Properties → Details → Copyright reads "Copyright (c) 2026 Mitchell
+      Gray"), and the bundle's `License.rtf` panel during install credits
+      Mitchell Gray. MSI `Manufacturer` (= ARP **Publisher** column) stays
+      "ZenVizor" — brand-as-publisher per DEC-1 in
+      `docs/phase-9.7-verification.md`.
 
 ### 9.7 — Re-cut MSI + Burn bundle; final manual gates
 
@@ -1958,8 +1963,10 @@ the 9.1–9.c changes, then re-run:
   (≥ 1 hour pointed at itself; no ZenVizor PID in `apps` or
   `connections`).
 - Full-system pass: attribution sane, live + history + daily report
-  reconcile, performance budget holds (idle CPU < 1%, service working
-  set < ~80 MB).
+  reconcile, performance budget holds (idle CPU < 1%, service active
+  **private** working set < ~80 MB — the `\Process(<name>)\Working
+  Set - Private` perf counter, NOT `Get-Process .WorkingSet64` which
+  double-counts shared CLR / native pages and overreads by ~2.5×).
 
 Update `README.md` if any user-facing instructions changed (RID
 specialization doesn't; version bump may surface in install dialog

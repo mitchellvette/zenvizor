@@ -857,6 +857,8 @@ public sealed class EndpointGroupViewModel : INotifyPropertyChanged
         ResolvedHost = resolvedHost;
         Addresses = addresses;
         RemoteClass = remoteClass;
+        BytesUp = bytesUp;
+        BytesDown = bytesDown;
         UpText = PerAppPage.FormatBytes(bytesUp);
         DownText = PerAppPage.FormatBytes(bytesDown);
         DistinctPortCount = distinctPortCount;
@@ -877,6 +879,8 @@ public sealed class EndpointGroupViewModel : INotifyPropertyChanged
     public string? ResolvedHost { get; }
     public IReadOnlyList<string> Addresses { get; }
     public string RemoteClass { get; }
+    public long BytesUp { get; }
+    public long BytesDown { get; }
     public string UpText { get; }
     public string DownText { get; }
     public int DistinctPortCount { get; }

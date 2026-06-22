@@ -379,7 +379,7 @@ Default drill path: **app → its connections → its history.**
 | Requirement | Target (acceptance-testable) |
 |---|---|
 | Idle CPU | **< 1%** on a typical desktop at idle |
-| Service working set | **< ~80 MB** |
+| Service working set | **< ~80 MB** active **private** working set (Task Manager column, or `\Process(<name>)\Working Set - Private` perf counter — *not* `Get-Process .WorkingSet64`, which double-counts shared CLR / native pages and overreads by ~2.5×) |
 | DB write pattern | **No per-event writes** — in-memory aggregation flushed on a fixed interval (default ~5s) |
 | Own network usage | **Zero** — tool pointed at itself reports no outbound from its own processes |
 | Startup | Service auto-start **user-configurable** (default on) |

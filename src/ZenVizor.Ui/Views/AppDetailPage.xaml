@@ -979,8 +979,16 @@
                                 </DataGridTemplateColumn>
 
                                 <!--  Up / Down — mono right-aligned so the
-                                      byte values stack tidily as a column.  -->
-                                <DataGridTextColumn Header="Up" Binding="{Binding UpText}" Width="90">
+                                      byte values stack tidily as a column.
+                                      Binding is the formatted display text
+                                      but SortMemberPath is the raw byte field
+                                      so header-click sort orders numerically
+                                      rather than lexically (the original bug
+                                      where "900 KB" ranked above "400 MB").  -->
+                                <DataGridTextColumn Header="Up"
+                                                    Binding="{Binding UpText}"
+                                                    SortMemberPath="BytesUp"
+                                                    Width="90">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
                                             <Setter Property="VerticalAlignment" Value="Center" />
@@ -988,7 +996,10 @@
                                         </Style>
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Down" Binding="{Binding DownText}" Width="90">
+                                <DataGridTextColumn Header="Down"
+                                                    Binding="{Binding DownText}"
+                                                    SortMemberPath="BytesDown"
+                                                    Width="90">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource text.mono}">
                                             <Setter Property="VerticalAlignment" Value="Center" />
