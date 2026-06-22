@@ -1092,11 +1092,21 @@ mock must NOT design for them in this round.
   primer's old "App Detail flyout is opaque, not acrylic" decision
   is no longer load-bearing — if endpoint detail is built, the
   surface treatment (flyout, sub-page, expandable inline row, side
-  panel) is itself an open question, not pre-decided.
-- **F2. Reverse DNS / hostname column on Connections.** PRD §7.4
-  reserves `connections.resolved_host` for a future passive-DNS
-  module — NOT IN MVP. Hard "do not propose this column" boundary;
-  the mock must NOT add a hostname column.
+  panel) is itself an open question, not pre-decided. **Update
+  (2026-06-21):** sprint-plan **Phase 9.5 (collapse to endpoint
+  identity)** is the near-term Connections-grid work; if expand-in-place
+  for the rolled-up port detail proves infeasible there, this
+  endpoint-detail surface is where a collapsed identity's full
+  session/port breakdown would land.
+- **F2. Reverse DNS / hostname column on Connections.** **SUPERSEDED
+  (2026-06-21).** PRD §7.4's reserved `connections.resolved_host` is no
+  longer future work — Phase 8 (passive DNS) + Phase 8.6 (SNI/QUIC/Host)
+  populate it, so the grid now carries resolved hostnames. The old hard
+  "do not propose this column" boundary no longer applies. How resolved
+  vs. unresolved endpoints collapse and present in the grid is scoped in
+  sprint-plan **Phase 9.5 (Connections grid: collapse to endpoint
+  identity)** — collapse to endpoint identity (hostname else bare IP),
+  never a flat per-`(proto, IP, port)` wall.
 - **F3. Brush-to-zoom on the chart.** Click-and-drag to select a
   sub-window. New interaction surface; deferred.
 - **F4. Export endpoint list to CSV.** Phase 5 owns export.
@@ -1109,7 +1119,10 @@ mock must NOT design for them in this round.
   feature backlog.
 - **F7. Filter / search within Connections** (by port, address,
   class). New capability; deferred. (Per-App has a client-side
-  filter; App Detail does not in this round.)
+  filter; App Detail does not in this round.) **Update (2026-06-21):**
+  now unblocked — `phase-4-filter-recommendations.md` §4 gated
+  IP/domain filtering on `resolved_host`, which Phase 8.6 populated.
+  Tracked as the natural follow-on to sprint-plan **Phase 9.5**.
 
 ---
 

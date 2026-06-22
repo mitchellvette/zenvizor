@@ -1422,7 +1422,7 @@ spike close.
 **Sequencing note:** Phase 8.5 runs after Phase 8 closes and
 *before* Phase 9 — Phase 9 is the MVP finalization phase and
 needs to know whether it's wrapping Phase 8 alone or Phase 8 + a
-Phase 8.6 implementation. Phase 9.6 (re-cut MSI + Burn bundle)
+Phase 8.6 implementation. Phase 9.7 (re-cut MSI + Burn bundle)
 must be re-evaluated against the Phase 8.5 outcome before it runs.
 
 ---
@@ -1585,8 +1585,8 @@ so a rewrite would only reintroduce retired risk.
       without the real-box walk.)
 
 **Sequencing note:** runs after Phase 8.5 closes and before
-Phase 9.6 (re-cut MSI + Burn bundle) — the bundle must pack the 8.6
-service binaries, so 8.6 lands first or 9.6 re-cuts. IPC stays at
+Phase 9.7 (re-cut MSI + Burn bundle) — the bundle must pack the 8.6
+service binaries, so 8.6 lands first or 9.7 re-cuts. IPC stays at
 schema v2: SNI feeds the same `ResolvedHost` field, so no wire bump.
 
 ---
@@ -1688,7 +1688,65 @@ warning/error); `Console.WriteLine` only in `Cli/Program.cs` (it's a
 CLI); single `Debug.WriteLine` in `App.xaml.cs:259` is a legit
 fallback catch. No further cleanup warranted.
 
-### 9.5 — Version bump 0.1.1 → 1.0.0 + SemVer policy
+### 9.5 — Connections grid: collapse to endpoint identity
+
+**Discovered:** Phase 8.6 close, 2026-06-21 (App Detail design discussion).
+
+**The problem:** The App Detail *Connections* grid is keyed by
+`(Protocol, RemoteAddress, RemotePort)` and aggregated across sessions —
+one row per distinct triple. Now that Phase 8/8.6 populates
+`resolved_host`, the mismatch between that grain and the way a human
+reads "which endpoint is this app talking to" surfaces hard. A
+CDN-fronted app (Chrome is the worst case) fans a single logical
+destination across a rotating pool of edge IPs, plus TCP-443 and
+QUIC/UDP-443 duplication, producing dozens of near-identical rows. The
+*bulk* of the noise is **unresolved bare IPs** — e.g. 10 connections to
+one IPv6 address on varying remote ports — where the per-connection
+breakdown carries no interpretive payload the per-app total
+(`Chrome used 150 MB`) doesn't already give.
+
+**The design — collapse to endpoint identity:** Group/collapse the grid
+by **endpoint identity** = the resolved hostname when present, else the
+bare `RemoteAddress`. One row per identity, rolling up bytes-up,
+bytes-down, connection-count, and distinct-port-count. The collapse
+mechanism is identical for resolved and unresolved endpoints; they
+diverge only in presentation. Same IP / different ports collapses to one
+row; *different* IPs stay as N distinct rows (the count of distinct
+unresolved IPs is itself signal — a swarm/scan pattern, not noise).
+
+**Reasoning (do not regress these):**
+
+- *Discovery > ranking holds.* Collapsing is grouping, not filtering —
+  nothing leaves the view. Never hide or down-rank unresolved rows; an
+  unresolved + high-byte endpoint is the single most interesting row in
+  the product (the beacon / exfil / P2P profile). **Emphasize and sort
+  it up**, do not offer a "hide unresolved" filter that would mask
+  exactly the talker a user needs to see.
+- *The collapsed row earns its place; the duplicates do not.* The signal
+  is **concentration** — "150 MB went to a single unresolved IP" is
+  something the per-app total structurally cannot express, whereas ten
+  per-port duplicates of that same IP add nothing.
+- *For a bare IP the only actionable unit is the unique IP* — an
+  out-of-band WHOIS / geo-IP / reputation lookup, needed once, not per
+  row. Passively there is nothing to *do* in-app (no block/kill, §13);
+  the value is recognition and concentration awareness.
+
+**Open question (resolve during the sub-phase):** how the collapsed row
+surfaces the rolled-up *port* detail. Preferred is **expand-the-row
+in place** to reveal the underlying `(proto, port)` triples if
+technically feasible in the grid; fallback is an "N ports" marker in the
+Port column with a hover tooltip enumerating them. Decide during
+implementation, not now.
+
+**Companion work now unblocked:** `docs/phase-4-filter-recommendations.md`
+§4 deferred IP/domain filtering *until `resolved_host` was populated* —
+Phase 8.6 satisfied that precondition, so a Connections filter/search
+(`docs/design-briefs/app-detail.md` F7) is now buildable and is the
+natural follow-on to this collapse. F1 (click-row → endpoint detail) is
+the surface where a collapsed identity's full session/port breakdown
+would live if expand-in-place proves infeasible.
+
+### 9.6 — Version bump 0.1.1 → 1.0.0 + SemVer policy
 
 Update `<Version>1.0.0</Version>` in `Directory.Build.props` (single
 source of truth — both WiX projects read `$(Version)`). Establish the
@@ -1708,10 +1766,10 @@ post-MVP versioning policy:
 Document the policy in `docs/versioning.md` (new file, short) and link
 from `CLAUDE.md`.
 
-### 9.6 — Re-cut MSI + Burn bundle; final manual gates
+### 9.7 — Re-cut MSI + Burn bundle; final manual gates
 
 Last gate before 1.0.0 ship. Re-cut both installer artifacts on top of
-the 9.1 / 9.2 / 9.3 / 9.4 / 9.5 changes, then re-run:
+the 9.1–9.6 changes, then re-run:
 
 - All four Phase 7 manual gates (clean-VM install with + without .NET 10
   pre-installed, uninstall preserves runtime + `%ProgramData%\ZenVizor\`,
@@ -1736,6 +1794,10 @@ chrome).
       reflects `DateTime.Today` (mock the clock for determinism).
 - [ ] 9.3: Insufficient-history baseline tests assert the chosen
       treatment fires correctly when baseline rows < anchor window.
+- [ ] 9.5: Deterministic synthetic-event test asserts the Connections
+      grid collapses to endpoint identity (resolved hostname, else bare
+      IP) — exact rolled-up bytes up/down, connection-count, and
+      distinct-port-count; distinct IPs stay distinct rows.
 - [ ] All existing CI test suites continue to pass.
 - [ ] Both MSI + bundle build cleanly on CI; artifacts uploaded.
 
@@ -1746,15 +1808,19 @@ chrome).
       the 1.0.0 build.
 - [ ] Fresh install + launch: Reports opens on today's date, not
       2026-06-08.
+- [ ] Connections grid with a CDN-heavy app (e.g. Chrome): a high-byte
+      unresolved IP surfaces as ONE emphasized row, not a wall of
+      per-port duplicates; the port-count affordance reveals the
+      underlying ports.
 - [ ] `%ProgramFiles%\ZenVizor\` total size ≤ ~140 MB
       (binaries; runtime is shared separately).
 - [ ] Add/Remove Programs shows version `1.0.0`.
 
 **Sequencing rationale:** 9.1 first because it changes build output
 structure every later step (re-cut, install test) depends on. 9.2 / 9.3
-/ 9.4 are independent and parallelizable. 9.5 second-to-last so the
-version-bumped MSI is what 9.6 tests. 9.6 is the ship gate — don't
-flip the project to `1.0.0` until 9.6 is GREEN.
+/ 9.4 / 9.5 are independent and parallelizable. 9.6 second-to-last so the
+version-bumped MSI is what 9.7 tests. 9.7 is the ship gate — don't
+flip the project to `1.0.0` until 9.7 is GREEN.
 
 ---
 
