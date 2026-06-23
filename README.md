@@ -17,9 +17,7 @@ a manual gate at every MVP phase boundary.
 > and on a real desktop (self-monitoring zero-own-traffic invariant +
 > performance budget). See
 > [`docs/zenvizor-sprint-plan.md`](docs/zenvizor-sprint-plan.md) for
-> the phased history and
-> [`docs/phase-9.7-verification.md`](docs/phase-9.7-verification.md)
-> for the ship-gate run.
+> the phased history.
 
 ---
 

@@ -57,3 +57,12 @@ secrets.json
 # Large local test media (e.g. Windows eval ISOs for VM testing) — never commit.
 # Scoped to *.iso so tracked brand assets under assets/ stay versioned.
 *.iso
+
+# Claude Code per-machine settings (personal allowlist — not shared state)
+.claude/settings.local.json
+
+# VS-regenerated launch profiles (machine-specific; not committed)
+**/Properties/launchSettings.json
+
+# Design mockup PDFs — kept locally for reference, not versioned in origin
+docs/design/mockups/

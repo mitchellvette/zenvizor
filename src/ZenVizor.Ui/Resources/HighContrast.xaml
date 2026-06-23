@@ -11,7 +11,7 @@
         Application.Current.Resources.MergedDictionaries when
         SystemParameters.HighContrast flips. ApplyDirectLevelOverrides
         early-returns under HC so brand direct-level writes don't shadow
-        Wpf.Ui's own HC chrome. Verification: docs/phase-6.5-verification.md.
+        Wpf.Ui's own HC chrome.
 
         SUPPORT BOUNDARY — DARK-BACKDROP HC THEMES ONLY. ZenVizor's HC
         treatment is tuned for the three dark-backdrop themes Windows

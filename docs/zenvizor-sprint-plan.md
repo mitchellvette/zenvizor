@@ -7,6 +7,8 @@
 
 > Full product spec — features, data model, architecture, IPC contract, data model, out-of-scope boundaries — lives in **`zenvizor-prd.md`**. This file is the build sequence and the QA gates.
 
+> **Archival note (post-1.0.0 repo hygiene, 2026-06-22):** the per-phase verification docs (`docs/phase-*-verification.md`), phase plans (`docs/Phase-*-plan.md`), design-briefs (`docs/design-briefs/**`), and other dev-history artifacts referenced inline below were removed from `HEAD` after the 1.0.0 ship. They remain permanently available at the `v1.0.0` git tag — e.g. `git show v1.0.0:docs/phase-7-verification.md`. Inline paths to those files are kept as a historical record of what each phase produced, not as live links.
+
 ---
 
 ## Standalone context (load-bearing facts repeated for use without the PRD)

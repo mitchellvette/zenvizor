@@ -87,9 +87,8 @@ acceptable; the rule is "do not crash and do not silently hide it").
 | `Warning` | Anomalous, worth review. User decides. | `status.caution` |
 | `Critical` | Strong indicator pattern. User should examine. | `status.critical` |
 
-Three levels, no more. The findings doc's severity-to-color mapping
-(`docs/design-briefs/findings/alerts.md` §3) is the rendering side of
-the same table.
+Three levels, no more. These severity-to-color tokens are the rendering
+side of the same table on the Alerts page.
 
 ### 1.5 Dedupe and cooldown
 

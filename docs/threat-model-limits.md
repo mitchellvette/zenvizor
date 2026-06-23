@@ -123,7 +123,7 @@ When a future investigation surfaces a new gap, add a section with:
 Do NOT add:
 
 - "We haven't shipped feature X yet" — that's sprint plan scope.
-- "We have a bug in module Y" — that's `docs/known-bugs.md`.
+- "We have a bug in module Y" — that's a defect to fix, not a structural limit.
 - Speculative threats with no concrete attack pattern.
 
 The list should be short and load-bearing; if it grows to dozens of

@@ -25,8 +25,7 @@
     <Page.Resources>
         <!--  Delta-chip CornerRadius. Held as a page-local resource so the
               three chips (Total / Up / Down) re-tone together if the value
-              ever drifts. Literal 10, not radius.pill (9999) — per
-              docs/design/claude-design-primer.md §(e): WPF Border.CornerRadius
+              ever drifts. Literal 10, not radius.pill (9999): WPF Border.CornerRadius
               does NOT clamp to half-height the way CSS border-radius does,
               so the sentinel renders as overlapping arcs (flattened
               ellipse) on a short chip. 10 ≈ half the rendered chip height
