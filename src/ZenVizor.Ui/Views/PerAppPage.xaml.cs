@@ -13,6 +13,7 @@ using System.Windows.Threading;
 using Wpf.Ui.Controls;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
+using ZenVizor.Ui.Views.Controls;
 
 namespace ZenVizor.Ui.Views;
 
@@ -26,6 +27,34 @@ public partial class PerAppPage : Page
     private readonly DispatcherTimer _loadingCaptionTimer;
     private readonly DispatcherTimer _filterDebounceTimer;
     private readonly CollectionViewSource _rowsView = new();
+
+    // Epic A — combo items are WindowSelection (5 rolling presets + a
+    // "Custom range…" sentinel pinned at the end + an optional ephemeral
+    // Custom fixed entry inserted at position 0 when active).
+    // ObservableCollection so the Custom fixed entry can be inserted /
+    // removed in place on nav arrival / flyout Apply / preset pick.
+    private readonly ObservableCollection<WindowSelection> _windowItems;
+
+    // Re-entrancy guard for the sentinel revert in OnWindowSelectionChanged:
+    // when the user picks "Custom range…" we set SelectedItem back to the
+    // previous selection before opening the flyout, and that programmatic
+    // revert would otherwise re-fire SelectionChanged.
+    private bool _isInternalSelectionChange;
+
+    // Backdrop dismiss tracking — a click counts as "outside dismiss" only
+    // if BOTH MouseDown AND MouseUp landed on the backdrop. This naturally
+    // ignores leaked MouseUp events from calendar date picks (the
+    // CalendarDatePicker popup closes during the date MouseDown, the
+    // matching MouseUp leaks to the now-exposed backdrop; since MouseDown
+    // wasn't on backdrop, this flag stays false and dismissal is skipped).
+    // Cleared on MouseLeave so a "drag-out without releasing on backdrop"
+    // can't leave a stale true that fires on a later unrelated MouseUp.
+    private bool _clickStartedOnBackdrop;
+
+    // The custom-range flyout content. Built in code-behind (see ctor),
+    // not declared in XAML, to sidestep the WPF SDK same-assembly
+    // UserControl metadata gap.
+    private readonly CustomRangeFlyout _customRangeContent;
 
     // _hasLoadedOnce gates the summary em-dash placeholder. Brief §4: the
     // em-dash only paints "until first paint completes" — subsequent
@@ -43,12 +72,31 @@ public partial class PerAppPage : Page
     public PerAppPage()
     {
         InitializeComponent();
-        WindowCombo.ItemsSource = WindowPreset.All;
+        _windowItems = new ObservableCollection<WindowSelection>(
+            WindowSelection.Presets.Append(WindowSelection.CustomSentinel));
+        WindowCombo.ItemsSource = _windowItems;
         // Display is driven by the ComboBox.ItemTemplate in PerAppPage.xaml
         // (shorthand text + per-item ToolTip with the long Label). Setting
         // DisplayMemberPath here would throw InvalidOperationException because
         // ItemTemplate and DisplayMemberPath are mutually exclusive.
         WindowCombo.SelectedIndex = 1; // Last 24 hours
+
+        // Epic A — accept a PerAppNavParams DataContext from the History
+        // popover's "+N more" deep-link. Inserting a Custom entry happens
+        // here (pre-Loaded), so the OnLoaded RefreshAsync picks it up
+        // without an extra round-trip.
+        DataContextChanged += (_, _) => OnNavParamsReceived();
+
+        // Build the custom-range flyout in code-behind and assign it as
+        // the chrome ContentControl's content. The flyout's UserControl
+        // can't be referenced directly from this page's XAML — the
+        // same-assembly MarkupCompilePass1 metadata gap drops UserControl
+        // types from the _wpftmp temp project. Hosting via
+        // ContentControl.Content in code sidesteps that.
+        _customRangeContent = new CustomRangeFlyout();
+        _customRangeContent.Applied   += OnCustomRangeApplied;
+        _customRangeContent.Cancelled += OnCustomRangeCancelled;
+        CustomRangeChromeContent.Content = BuildFlyoutChrome(_customRangeContent);
 
         // CollectionViewSource over Rows so the filter predicate layers on
         // top of the underlying ObservableCollection without touching it.
@@ -62,7 +110,7 @@ public partial class PerAppPage : Page
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        SizeChanged += (_, _) => EnforceAppsGridBound();
+        SizeChanged += (_, _) => { EnforceAppsGridBound(); PositionOverlay(); };
 
         _loadingCaptionTimer = new DispatcherTimer
         {
@@ -131,20 +179,183 @@ public partial class PerAppPage : Page
 
     private async void OnWindowSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isInternalSelectionChange) return;
+
+        var selected = WindowCombo.SelectedItem as WindowSelection;
+
+        // Sentinel — revert to the prior selection (carried in
+        // e.RemovedItems) and open the custom-range overlay. The revert
+        // is guarded so it doesn't re-fire SelectionChanged.
+        if (selected is { IsSentinel: true })
+        {
+            var previous = e.RemovedItems.Count > 0
+                ? e.RemovedItems[0] as WindowSelection
+                : null;
+            OpenCustomRangeFlyout(previous);
+            return;
+        }
+
+        // Picking a real (rolling) preset retires any Custom entry that
+        // the popover deep-link or a prior flyout Apply added — Custom is
+        // ephemeral. The removed Fixed entry was never the selected item
+        // (selection is the new preset), so this doesn't re-fire
+        // SelectionChanged. Also dismiss the overlay if it's still up:
+        // the WindowCombo stays clickable through/around the overlay, so
+        // a user mid-overlay can pick a preset directly and expects the
+        // overlay to close.
+        if (selected is { IsFixed: false, IsSentinel: false })
+        {
+            RemoveCustomEntry();
+            CustomRangeOverlay.Visibility = Visibility.Collapsed;
+        }
+
         if (!IsLoaded) return;
         await RefreshAsync();
+    }
+
+    private void OpenCustomRangeFlyout(WindowSelection? previous)
+    {
+        // Pre-populate the flyout from the currently active fixed window
+        // (if any), otherwise from defaults (To = now snapped to 15 min,
+        // From = To - 1 h).
+        var currentFixed = previous?.FixedWindow;
+        _isInternalSelectionChange = true;
+        try
+        {
+            WindowCombo.SelectedItem = previous;
+        }
+        finally
+        {
+            _isInternalSelectionChange = false;
+        }
+        _customRangeContent.Open(currentFixed);
+        CustomRangeOverlay.Visibility = Visibility.Visible;
+        PositionOverlay();
+    }
+
+    /// <summary>
+    /// Anchor the flyout chrome top-left under the WindowCombo's bottom-left
+    /// corner. Runs on overlay open and on SizeChanged (in case the user
+    /// resizes the window mid-flyout). TransformToVisual converts the
+    /// combo's local coords to the overlay's parent coordinate space so the
+    /// nesting doesn't matter.
+    /// </summary>
+    private void PositionOverlay()
+    {
+        if (CustomRangeOverlay.Visibility != Visibility.Visible) return;
+        if (!WindowCombo.IsLoaded || !CustomRangeOverlay.IsLoaded) return;
+        var origin = WindowCombo.TransformToVisual(CustomRangeOverlay)
+            .Transform(new Point(0, WindowCombo.ActualHeight));
+        // Round to whole pixels — TransformToVisual returns doubles, and
+        // a fractional Margin shifts the chrome's children to sub-pixel
+        // positions, which blurs small text (12px eyebrows) noticeably.
+        // UseLayoutRounding on the ContentControl is the other half of
+        // this fix; we round here too so the Margin itself is exact.
+        CustomRangeChromeContent.Margin = new Thickness(
+            Math.Round(origin.X), Math.Round(origin.Y + 4), 0, 0);
+    }
+
+    /// <summary>
+    /// Down half of the backdrop dismiss pair. Sets the flag that
+    /// <see cref="OnBackdropMouseUp"/> checks. e.Handled stops the
+    /// MouseDown from bubbling to siblings (e.g. AppsGrid) — modal
+    /// surfaces should fully absorb input that lands on the backdrop.
+    /// </summary>
+    private void OnBackdropMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _clickStartedOnBackdrop = true;
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Up half of the backdrop dismiss pair. Dismisses only if the
+    /// matching MouseDown also landed on the backdrop. Anything else
+    /// (leaked MouseUp from a calendar date pick, drag-in from chrome,
+    /// stray events) is ignored.
+    /// </summary>
+    private void OnBackdropMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        var startedHere = _clickStartedOnBackdrop;
+        _clickStartedOnBackdrop = false;
+        if (!startedHere) return;
+        e.Handled = true;
+        OnCustomRangeCancelled(sender, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// If a backdrop-down was followed by a drag onto chrome or a
+    /// calendar popup (mouse leaves the backdrop), clear the flag so a
+    /// later unrelated MouseUp on backdrop doesn't fire stale.
+    /// </summary>
+    private void OnBackdropMouseLeave(object sender, MouseEventArgs e)
+    {
+        _clickStartedOnBackdrop = false;
+    }
+
+    /// <summary>
+    /// Wrap the flyout UserControl in the canonical card chrome
+    /// (metal/border/radius/shadow) — same recipe as the InfoPopup at
+    /// AppDetailPage.xaml:1339. Built in code (not XAML) for the same
+    /// reason as the flyout itself: avoid the same-assembly UserControl
+    /// metadata gap.
+    /// </summary>
+    private static System.Windows.Controls.Border BuildFlyoutChrome(CustomRangeFlyout content) => new()
+    {
+        BorderThickness = new Thickness(1),
+        Padding = new Thickness(20),
+        Child = content,
+        Background = (System.Windows.Media.Brush)Application.Current.FindResource("surface.card"),
+        BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("border.card"),
+        CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
+        Effect = (System.Windows.Media.Effects.Effect)Application.Current.FindResource("shadow.card"),
+    };
+
+    private async void OnCustomRangeApplied(object? sender, QueryWindow window)
+    {
+        CustomRangeOverlay.Visibility = Visibility.Collapsed;
+        // Replace any prior Custom entry and select the new one — this
+        // fires SelectionChanged → RefreshAsync.
+        RemoveCustomEntry();
+        var custom = WindowSelection.FromFixedWindow(window);
+        _windowItems.Insert(0, custom);
+        WindowCombo.SelectedItem = custom;
+        if (!IsLoaded) await RefreshAsync();
+    }
+
+    private void OnCustomRangeCancelled(object? sender, EventArgs e)
+    {
+        CustomRangeOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnNavParamsReceived()
+    {
+        if (DataContext is not PerAppNavParams nav) return;
+        // Re-nav with a different window: scrub any prior Custom entry first
+        // so we never accumulate.
+        RemoveCustomEntry();
+        var custom = WindowSelection.FromFixedWindow(nav.Window);
+        _windowItems.Insert(0, custom);
+        WindowCombo.SelectedItem = custom;
+    }
+
+    private void RemoveCustomEntry()
+    {
+        for (var i = _windowItems.Count - 1; i >= 0; i--)
+        {
+            if (_windowItems[i].IsFixed) _windowItems.RemoveAt(i);
+        }
     }
 
     private async void OnRefreshClick(object sender, RoutedEventArgs e) => await RefreshAsync();
 
     private async Task RefreshAsync()
     {
-        if (WindowCombo.SelectedItem is not WindowPreset preset) return;
+        if (WindowCombo.SelectedItem is not WindowSelection sel) return;
 
         StartLoadingState();
         try
         {
-            var result = await _client.GetAppListAsync(preset.ToWindow());
+            var result = await _client.GetAppListAsync(sel.ToWindow());
             ApplySuccessState(result.Apps);
         }
         catch (Exception ex) when (HistoryQueryClient.IsConnectionLost(ex))
@@ -365,6 +576,14 @@ public partial class PerAppPage : Page
     /// </summary>
     private void OnGridLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        // Epic A — while the custom-range overlay is up, the
+        // CalendarDatePicker's calendar popup (a separate
+        // AllowsTransparency HWND) can leak its date-cell clicks down to
+        // the WPF window underneath. The grid is meant to be inert during
+        // modal interaction; skip the drill so a calendar date pick
+        // doesn't navigate to an app detail page.
+        if (CustomRangeOverlay.Visibility == Visibility.Visible) return;
+
         var element = e.OriginalSource as DependencyObject;
         while (element is not null and not DataGridRow)
             element = VisualTreeHelper.GetParent(element);
@@ -421,6 +640,15 @@ public partial class PerAppPage : Page
         return value.ToString(value >= 100 ? "0" : "0.0", CultureInfo.InvariantCulture) + " " + units[unit];
     }
 }
+
+/// <summary>
+/// Epic A (1.1.0) — navigation parameter for opening <c>PerAppPage</c>
+/// scoped to an arbitrary fixed <see cref="QueryWindow"/>. Used by the
+/// History popover's "+N more" deep-link, where the popover's clicked
+/// window becomes the windowed Per-App view. Bare-int / null DataContext
+/// continues to land on the default rolling preset (Last 24 hours).
+/// </summary>
+public sealed record PerAppNavParams(QueryWindow Window);
 
 public sealed record AppRowViewModel(
     int AppId,

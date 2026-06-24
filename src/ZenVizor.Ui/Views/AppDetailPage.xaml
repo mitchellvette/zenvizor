@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+      xmlns:controls="clr-namespace:ZenVizor.Ui.Views.Controls"
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
@@ -168,7 +169,7 @@
                 </ui:Button>
                 <ComboBox x:Name="WindowCombo"
                           Margin="12,0,0,0"
-                          Width="120"
+                          Width="140"
                           VerticalAlignment="Center"
                           Background="{DynamicResource metal.control}"
                           BorderBrush="{DynamicResource border.card}"
@@ -180,6 +181,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
+
             </StackPanel>
         </Grid>
 
@@ -1506,5 +1508,25 @@
                            VerticalAlignment="Center" />
             </StackPanel>
         </Border>
+
+        <!--  Epic A — user-driven custom-range overlay. See PerAppPage
+              for the full rationale (invisible backdrop, PreviewMouseUp
+              dismissal, UseLayoutRounding on chrome for crisp text).
+              Chrome here anchors top-RIGHT under the WindowCombo (combo
+              lives on the right side of the chrome row on this page, vs
+              the left on PerAppPage).  -->
+        <Grid x:Name="CustomRangeOverlay"
+              Panel.ZIndex="100"
+              Visibility="Collapsed">
+            <Border x:Name="CustomRangeBackdrop"
+                    Background="Transparent"
+                    PreviewMouseLeftButtonDown="OnBackdropMouseDown"
+                    PreviewMouseLeftButtonUp="OnBackdropMouseUp"
+                    MouseLeave="OnBackdropMouseLeave" />
+            <ContentControl x:Name="CustomRangeChromeContent"
+                            UseLayoutRounding="True"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top" />
+        </Grid>
     </Grid>
 </Page>

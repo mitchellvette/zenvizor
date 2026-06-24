@@ -1,0 +1,166 @@
+<!--  SPDX-License-Identifier: GPL-3.0-or-later  -->
+<UserControl x:Class="ZenVizor.Ui.Views.Controls.CustomRangeFlyout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <!--  Flyout content for the user-driven custom range picker (Epic A).
+          Hosted via the in-page overlay declared in PerAppPage /
+          AppDetailPage (Popup approach was abandoned — clicks fell
+          through and the popup flew outside the window).
+
+          Date pickers (ui:CalendarDatePicker):
+            * Width=180 Height=32 mirror ReportsPage.xaml:561 and
+              AppDetailPage.xaml:127 exactly. Without an explicit Width
+              the picker shrinks to its column's available space (~100px
+              in our layout) and the date label overlay clips.
+            * F1 fallback (date label overlay): Wpf.Ui v4.0.2's
+              CalendarDatePicker closed-state button face doesn't render
+              the formatted Date — same workaround used elsewhere. A
+              sibling TextBlock bound to picker.Date sits on top,
+              IsHitTestVisible=False so the open-popup click propagates.
+
+          Time pickers (hour / minute / AM-PM ComboBoxes):
+            * Width=80 / 80 / 88 and Padding=6,2,2,2 compensate for
+              Wpf.Ui v4.0.2's default ComboBox template which reserves
+              substantial padding for the chevron — at narrower widths the
+              second digit / second letter falls outside the content area.
+            * No explicit Height — pinning Height clipped descenders.  -->
+
+    <StackPanel Width="440">
+
+        <TextBlock Style="{StaticResource text.body.strong}"
+                   Text="Custom range"
+                   Margin="0,0,0,16" />
+
+        <!--  From row  -->
+        <TextBlock Style="{StaticResource text.eyebrow}"
+                   Text="FROM"
+                   Margin="0,0,0,4" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <Grid>
+                <ui:CalendarDatePicker x:Name="FromDatePicker"
+                                       Width="180" Height="32"
+                                       IsTodayHighlighted="False" />
+                <TextBlock IsHitTestVisible="False"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Left"
+                           Margin="14,0,0,0"
+                           Foreground="{DynamicResource text.primary}"
+                           Text="{Binding ElementName=FromDatePicker,
+                                          Path=Date,
+                                          StringFormat={}{0:MMM d yyyy}}" />
+            </Grid>
+
+            <ComboBox x:Name="FromHourCombo"
+                      Width="80"
+                      Margin="8,0,0,0"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+
+            <TextBlock Text=":"
+                       VerticalAlignment="Center"
+                       Margin="4,0,4,0"
+                       Foreground="{DynamicResource text.secondary}" />
+
+            <ComboBox x:Name="FromMinuteCombo"
+                      Width="80"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+
+            <ComboBox x:Name="FromAmPmCombo"
+                      Width="88"
+                      Margin="8,0,0,0"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+        </StackPanel>
+
+        <!--  To row  -->
+        <TextBlock Style="{StaticResource text.eyebrow}"
+                   Text="TO"
+                   Margin="0,0,0,4" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <Grid>
+                <ui:CalendarDatePicker x:Name="ToDatePicker"
+                                       Width="180" Height="32"
+                                       IsTodayHighlighted="False" />
+                <TextBlock IsHitTestVisible="False"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Left"
+                           Margin="14,0,0,0"
+                           Foreground="{DynamicResource text.primary}"
+                           Text="{Binding ElementName=ToDatePicker,
+                                          Path=Date,
+                                          StringFormat={}{0:MMM d yyyy}}" />
+            </Grid>
+
+            <ComboBox x:Name="ToHourCombo"
+                      Width="80"
+                      Margin="8,0,0,0"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+
+            <TextBlock Text=":"
+                       VerticalAlignment="Center"
+                       Margin="4,0,4,0"
+                       Foreground="{DynamicResource text.secondary}" />
+
+            <ComboBox x:Name="ToMinuteCombo"
+                      Width="80"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+
+            <ComboBox x:Name="ToAmPmCombo"
+                      Width="88"
+                      Margin="8,0,0,0"
+                      Padding="6,2,2,2"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource metal.control}"
+                      BorderBrush="{DynamicResource border.card}"
+                      SelectionChanged="OnInputChanged" />
+        </StackPanel>
+
+        <!--  Span line + validation hint (mutually exclusive — error text
+              hides the span when invalid).  -->
+        <Grid Margin="0,0,0,16">
+            <TextBlock x:Name="SpanLine"
+                       Style="{StaticResource text.body}"
+                       Foreground="{DynamicResource text.secondary}" />
+            <TextBlock x:Name="ErrorLine"
+                       Style="{StaticResource text.body}"
+                       Foreground="{DynamicResource status.caution.text}"
+                       Visibility="Collapsed" />
+        </Grid>
+
+        <!--  Cancel / Apply row.  -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <ui:Button x:Name="CancelButton"
+                       Background="{DynamicResource metal.control}"
+                       BorderBrush="{DynamicResource border.card}"
+                       Click="OnCancelClick">
+                <TextBlock Text="Cancel" VerticalAlignment="Center" />
+            </ui:Button>
+            <ui:Button x:Name="ApplyButton"
+                       Margin="8,0,0,0"
+                       Background="{DynamicResource metal.control}"
+                       BorderBrush="{DynamicResource border.card}"
+                       Click="OnApplyClick">
+                <TextBlock Text="Apply" VerticalAlignment="Center" />
+            </ui:Button>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

@@ -155,6 +155,10 @@ ZenVizor has two design-token surfaces — the app and Claude Design mocks — a
 - The crosswalk in the `colors_and_type.css` header is the bridge: it records every value delta between the two and the migration direction. When you change a token value in either file, update the other and the crosswalk in the same commit.
 - `docs/design-system.md` is the human-readable companion to DesignTokens.xaml — keep it in sync when XAML keys change. `docs/claude-design-primer.md` is the paste-into-Claude-Design projection of `colors_and_type.css` — keep it in sync when CSS variables change.
 
+### UI conventions worth honouring without re-litigating
+
+- **Popover-style UI larger than a tiny anchored menu uses an in-page `<Grid>` overlay, NOT `<Popup>`.** `<Popup>` with `AllowsTransparency=True` lives in its own HWND that flies outside the window on smaller sizes, and nested popups (a CalendarDatePicker inside a Popup) leak clicks through z-order quirks. Backdrop dismiss requires a matched MouseDown + MouseUp on the backdrop (partial events don't count) — see `docs/design-system.md` §9 "Modal / popover overlay pattern" for the canonical recipe and reference implementation. Small anchored menus (the existing `InfoPopup` / `AnchorDatePopup`) can stay on `<Popup>`; the rule applies to new larger surfaces.
+
 ---
 
 ## Performance budget (enforce, don't drift)

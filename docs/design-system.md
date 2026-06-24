@@ -751,6 +751,120 @@ per-screen HC work is needed beyond verifying.
 - Standard Win32 `ContextMenu` items: Show ZenVizor / Exit.
 - No tokenization needed — uses OS chrome.
 
+### Modal / popover overlay pattern (Epic A precedent)
+
+**For any popover-style UI larger than a tiny anchored menu, default to
+an in-page `<Grid>` overlay with a transparent click-catching backdrop,
+NOT `<Popup>`.** Recorded after Epic A Phase 1 surfaced two repeating
+WPF `<Popup>` problems:
+
+- `<Popup>` with `AllowsTransparency=True` renders in its own HWND that
+  flies outside the window on smaller sizes (cumulative pain across
+  multiple features over the MVP).
+- Nested popups (e.g. our flyout's `CalendarDatePicker` opening its own
+  calendar) leak clicks to the underlying window when the outer is a
+  `<Popup>` (popup-on-popup z-order quirk + AllowsTransparency
+  hit-region behaviour).
+
+`<Popup>` remains acceptable for tiny menus that anchor near the
+top-left and can't reach the window edge (the existing `InfoPopup` on
+AppDetailPage, the `AnchorDatePopup` on ReportsPage) — these are
+working surfaces and don't need migration.
+
+#### Canonical recipe
+
+```xml
+<!-- Inside the page's root <Grid>, at high Z-index -->
+<Grid x:Name="OverlayContainer"
+      Panel.ZIndex="100"
+      Visibility="Collapsed">
+    <Border x:Name="OverlayBackdrop"
+            Background="Transparent"
+            PreviewMouseLeftButtonDown="OnBackdropMouseDown"
+            PreviewMouseLeftButtonUp="OnBackdropMouseUp"
+            MouseLeave="OnBackdropMouseLeave" />
+    <ContentControl x:Name="OverlayChromeContent"
+                    UseLayoutRounding="True"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top" />
+</Grid>
+```
+
+Code-behind builds the chrome `<Border>` (canonical card recipe:
+`surface.card` / `border.card` / `radius.card` / `shadow.card`, see
+§9 *Card surface — canonical treatment*) and assigns it to
+`OverlayChromeContent.Content`. The chrome wraps whichever
+`UserControl` / panel is the overlay's body.
+
+**Why `Transparent` (not `null`) on the backdrop:** still hit-testable
+(so it catches outside clicks) but doesn't paint anything (so it doesn't
+chop at the NavigationView / window-chrome boundary like a partial dim
+would).
+
+**Why `UseLayoutRounding="True"` on the chrome:** if the chrome's
+`Margin` is computed via `TransformToVisual` (anchoring under another
+element), the Margin will be fractional. Without rounding, descendants
+land at sub-pixel positions and small text renders blurry. Same root
+cause + same fix as the alerts-badge digit centering at
+`MainWindow.xaml:270`.
+
+#### Backdrop dismiss — MouseDown + MouseUp pairing
+
+```csharp
+private bool _clickStartedOnBackdrop;
+
+private void OnBackdropMouseDown(object sender, MouseButtonEventArgs e)
+{
+    _clickStartedOnBackdrop = true;
+    e.Handled = true; // consume so nothing else (siblings) sees the down
+}
+
+private void OnBackdropMouseUp(object sender, MouseButtonEventArgs e)
+{
+    var startedHere = _clickStartedOnBackdrop;
+    _clickStartedOnBackdrop = false;
+    if (!startedHere) return;
+    e.Handled = true;
+    CancelOverlay();
+}
+
+private void OnBackdropMouseLeave(object sender, MouseEventArgs e)
+{
+    // Drag-out without releasing on backdrop — clear so a later
+    // unrelated MouseUp doesn't fire on a stale flag.
+    _clickStartedOnBackdrop = false;
+}
+```
+
+A "click" is the unit. Partial events (MouseUp without a matching
+MouseDown on backdrop) don't dismiss. This naturally absorbs:
+- Leaked MouseUp from a nested popup closing during MouseDown handling
+  (e.g., date pick on a CalendarDatePicker whose calendar overflows the
+  chrome shape).
+- Drag-from-chrome-to-outside (user changed their mind).
+- Stray events from focus changes / IME interactions.
+
+It also satisfies the intuitive contract: no user would intentionally
+click inside the modal and drag outside to dismiss, or vice versa.
+
+#### Hosting UserControls in the overlay
+
+WPF has a same-assembly metadata gap where `<controls:Foo/>` from a
+sibling page's XAML fails (`MC3074`) because `_wpftmp.csproj` doesn't
+stub `UserControl` types the way it does `Page`/`Window`. Workaround:
+declare the `<ContentControl>` empty in XAML and assign the UserControl
+instance from code-behind. See `project_wpf_usercontrol_same_assembly`
+project memory for the full diagnosis.
+
+#### Reference implementation
+
+`PerAppPage` (overlay anchored top-left under `WindowCombo`) and
+`AppDetailPage` (overlay anchored top-right under `WindowCombo`).
+`PositionOverlay` in each page computes the anchor via
+`WindowCombo.TransformToVisual(CustomRangeOverlay)` and applies a
+rounded `Margin` on `CustomRangeChromeContent`. Re-runs on overlay open
+and on the page's `SizeChanged` so resizing keeps the anchor.
+
 ---
 
 ## 10. Verification gate (design-system polish interlude)

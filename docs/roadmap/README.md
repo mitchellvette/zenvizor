@@ -60,7 +60,7 @@ per release.
 
 | # | Release | Epic(s) | Content | Status |
 |---|---------|---------|---------|--------|
-| 1 | 1.1.0 | A | **History click-to-attribute** (complete). Per-App windowing (window selector + arbitrary-window display state) **and** the click-anywhere History popover: top-5 talkers (rate-primary, both up/down) + "+N more" remainder that deep-links into the windowed Per-App view. New IPC method. | proposed |
+| 1 | 1.1.0 | A | **History click-to-attribute** (complete). Per-App windowing (window selector + arbitrary-window display state) **and** the click-anywhere History popover: top-5 talkers (combined up+down, labeled in the chart's per-grain rate unit) + "+N more" remainder that deep-links into the windowed Per-App view. Reuses `GetAppListAsync` — no new IPC method, no schema bump. | in-progress |
 | 2 | 1.2.0 | C | **Dismiss All** (visible-only) on the Alerts page: a header action that dismisses the *filtered* set, not the entire active set. Reuses the existing per-id idempotent dismiss IPC. | proposed |
 | 3 | 1.3.0 | E | **Dashboard gap + live window** (complete). Gap-break fix (keep feeding the buffer off-page; draw an explicit break across a real absence instead of a straight line) **and** the live-window dropdown (2 m / 10 m / 1 h) with DB back-fill via `GetTrafficHistoryAsync`. | proposed |
 | 4 | 1.4.0 | B + D | **Alert noise gating** (complete: ~48 h install-baseline window + running-process setup-scan seed + per-severity toast toggles; Critical keeps firing throughout) **and** **KPI reverse-filter** (click a severity tile to isolate it + Clear chip). | proposed |

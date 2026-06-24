@@ -7,6 +7,7 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
@@ -16,6 +17,7 @@ using Wpf.Ui.Controls;
 using ZenVizor.Core.Aggregation;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
+using ZenVizor.Ui.Views.Controls;
 
 namespace ZenVizor.Ui.Views;
 
@@ -64,6 +66,30 @@ public partial class AppDetailPage : Page
     private bool _inErrorState;
     private readonly DispatcherTimer _loadingDelayTimer;
 
+    // Epic A — combo items are WindowSelection (5 rolling presets + a
+    // "Custom range…" sentinel pinned at the end + an optional ephemeral
+    // Custom fixed entry inserted at position 0 when active).
+    // ObservableCollection so the Custom fixed entry can be inserted /
+    // removed in place. Precedence in RefreshAsync: _specificDate (Reports
+    // drill) > WindowCombo selection (which itself may be the Custom
+    // fixed entry from the popover deep-link or the flyout Apply, or a
+    // rolling preset).
+    private readonly ObservableCollection<WindowSelection> _windowItems;
+
+    // Re-entrancy guard for the sentinel revert in OnSelectionChanged:
+    // when the user picks "Custom range…" we set SelectedItem back to the
+    // previous selection before opening the flyout, and that programmatic
+    // revert would otherwise re-fire SelectionChanged.
+    private bool _isInternalSelectionChange;
+
+    // Backdrop dismiss tracking — see PerAppPage for the down+up pairing
+    // rationale.
+    private bool _clickStartedOnBackdrop;
+
+    // The custom-range flyout content. See PerAppPage rationale for why
+    // it's built in code-behind rather than declared in XAML.
+    private readonly CustomRangeFlyout _customRangeContent;
+
     // Chart axes — created ONCE in the ctor and mutated per refresh
     // (UpdateAxesForGrain assigns fresh Labeler / MinStep / UnitWidth values).
     // We deliberately do NOT reassign SeriesChart.XAxes / YAxes arrays after
@@ -83,8 +109,19 @@ public partial class AppDetailPage : Page
         // also assign DisplayMemberPath here. ItemTemplate and DisplayMemberPath
         // are mutually exclusive on ItemsControl; setting both throws
         // InvalidOperationException at runtime.
-        WindowCombo.ItemsSource = WindowPreset.All;
+        _windowItems = new ObservableCollection<WindowSelection>(
+            WindowSelection.Presets.Append(WindowSelection.CustomSentinel));
+        WindowCombo.ItemsSource = _windowItems;
         WindowCombo.SelectedIndex = 1;
+
+        // Build the custom-range flyout in code-behind and assign it as
+        // the chrome ContentControl's content — see PerAppPage for the
+        // rationale.
+        _customRangeContent = new CustomRangeFlyout();
+        _customRangeContent.Applied   += OnCustomRangeApplied;
+        _customRangeContent.Cancelled += OnCustomRangeCancelled;
+        CustomRangeChromeContent.Content = BuildFlyoutChrome(_customRangeContent);
+        SizeChanged += (_, _) => PositionOverlay();
 
         // Toast auto-dismiss timer: ~1.5s after ShowCopiedToast() flips the
         // banner Visible, the Tick callback flips it back. Restarting the
@@ -282,11 +319,20 @@ public partial class AppDetailPage : Page
 
     private void OnAppIdReceived()
     {
-        // Two navigation-parameter shapes are accepted:
-        //   * bare int / long — legacy PerAppPage drill (no date override).
-        //   * AppDetailNavParams — Phase 5e drill from Reports with an
-        //     optional date that pre-populates the chrome-row DatePicker
-        //     and overrides the WindowCombo on first refresh.
+        // Three navigation-parameter shapes are accepted:
+        //   * bare int / long — legacy PerAppPage drill (no date / window
+        //     override).
+        //   * AppDetailNavParams with Date — Phase 5e drill from Reports;
+        //     the date pre-populates the chrome-row DatePicker and
+        //     overrides the WindowCombo on first refresh.
+        //   * AppDetailNavParams with Window — Epic A (1.1.0) drill from
+        //     the History popover; the window is inserted as a Custom
+        //     entry on the combo and selected, becoming the active
+        //     query window.
+        // Date wins over Window when both are set (Date is the more
+        // specific "I want this whole day" intent), but the popover never
+        // passes both together so this fallback is a defensive ordering.
+        QueryWindow? navWindow = null;
         switch (DataContext)
         {
             case int i:
@@ -300,12 +346,14 @@ public partial class AppDetailPage : Page
             case AppDetailNavParams p:
                 AppId = p.AppId;
                 ApplySpecificDate(p.Date);
+                if (p.Date is null) navWindow = p.Window;
                 break;
             default:
                 AppId = null;
                 ApplySpecificDate(null);
                 break;
         }
+        ApplyCustomWindow(navWindow);
         // Title shows the image name once ApplyDetail lands; before that we
         // show the page placeholder. AppId surfaces in the labeled chip
         // beside the title (Q4 lock — never inline in the title text).
@@ -352,8 +400,147 @@ public partial class AppDetailPage : Page
 
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isInternalSelectionChange) return;
+
+        var selected = WindowCombo.SelectedItem as WindowSelection;
+
+        // Sentinel — revert to the prior selection (carried in
+        // e.RemovedItems) and open the custom-range overlay. The revert
+        // is guarded so it doesn't re-fire SelectionChanged.
+        if (selected is { IsSentinel: true })
+        {
+            var previous = e.RemovedItems.Count > 0
+                ? e.RemovedItems[0] as WindowSelection
+                : null;
+            OpenCustomRangeFlyout(previous);
+            return;
+        }
+
+        // Picking a real (rolling) preset retires any Custom entry that
+        // the popover deep-link or a prior flyout Apply added. Custom is
+        // ephemeral. Also dismiss the overlay if it's still up — combo
+        // stays clickable through/around the overlay, so picking a
+        // preset mid-overlay closes it automatically.
+        if (selected is { IsFixed: false, IsSentinel: false })
+        {
+            RemoveCustomEntry();
+            CustomRangeOverlay.Visibility = Visibility.Collapsed;
+        }
+
         if (!IsLoaded) return;
         await RefreshAsync();
+    }
+
+    private void OpenCustomRangeFlyout(WindowSelection? previous)
+    {
+        var currentFixed = previous?.FixedWindow;
+        _isInternalSelectionChange = true;
+        try
+        {
+            WindowCombo.SelectedItem = previous;
+        }
+        finally
+        {
+            _isInternalSelectionChange = false;
+        }
+        _customRangeContent.Open(currentFixed);
+        CustomRangeOverlay.Visibility = Visibility.Visible;
+        PositionOverlay();
+    }
+
+    /// <summary>
+    /// Anchor the flyout chrome top-RIGHT under the WindowCombo's bottom-
+    /// right corner (combo lives on the right of the chrome row here, vs
+    /// the left on PerAppPage). With HorizontalAlignment="Right",
+    /// Margin.Right is the distance from the overlay's right edge.
+    /// </summary>
+    private void PositionOverlay()
+    {
+        if (CustomRangeOverlay.Visibility != Visibility.Visible) return;
+        if (!WindowCombo.IsLoaded || !CustomRangeOverlay.IsLoaded) return;
+        var bottomRight = WindowCombo.TransformToVisual(CustomRangeOverlay)
+            .Transform(new Point(WindowCombo.ActualWidth, WindowCombo.ActualHeight));
+        var rightMargin = Math.Max(0, CustomRangeOverlay.ActualWidth - bottomRight.X);
+        // Round to whole pixels — see PerAppPage.PositionOverlay for the
+        // sub-pixel-blur rationale.
+        CustomRangeChromeContent.Margin = new Thickness(
+            0, Math.Round(bottomRight.Y + 4), Math.Round(rightMargin), 0);
+    }
+
+    /// <summary>
+    /// Down half of the backdrop dismiss pair. See PerAppPage for the
+    /// down+up pairing rationale.
+    /// </summary>
+    private void OnBackdropMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _clickStartedOnBackdrop = true;
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Up half — dismisses only if the matching MouseDown also landed on
+    /// the backdrop. See PerAppPage for the rationale.
+    /// </summary>
+    private void OnBackdropMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        var startedHere = _clickStartedOnBackdrop;
+        _clickStartedOnBackdrop = false;
+        if (!startedHere) return;
+        e.Handled = true;
+        OnCustomRangeCancelled(sender, EventArgs.Empty);
+    }
+
+    private void OnBackdropMouseLeave(object sender, MouseEventArgs e)
+    {
+        _clickStartedOnBackdrop = false;
+    }
+
+    /// <summary>
+    /// Wrap the flyout UserControl in the canonical card chrome
+    /// (metal/border/radius/shadow) — same recipe as the InfoPopup at
+    /// xaml:1339, built in code for the same reason as the flyout itself.
+    /// </summary>
+    private static Border BuildFlyoutChrome(CustomRangeFlyout content) => new()
+    {
+        BorderThickness = new Thickness(1),
+        Padding = new Thickness(20),
+        Child = content,
+        Background = (System.Windows.Media.Brush)Application.Current.FindResource("surface.card"),
+        BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("border.card"),
+        CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
+        Effect = (System.Windows.Media.Effects.Effect)Application.Current.FindResource("shadow.card"),
+    };
+
+    private async void OnCustomRangeApplied(object? sender, QueryWindow window)
+    {
+        CustomRangeOverlay.Visibility = Visibility.Collapsed;
+        RemoveCustomEntry();
+        var custom = WindowSelection.FromFixedWindow(window);
+        _windowItems.Insert(0, custom);
+        WindowCombo.SelectedItem = custom;
+        if (!IsLoaded) await RefreshAsync();
+    }
+
+    private void OnCustomRangeCancelled(object? sender, EventArgs e)
+    {
+        CustomRangeOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void ApplyCustomWindow(QueryWindow? window)
+    {
+        RemoveCustomEntry();
+        if (window is null) return;
+        var custom = WindowSelection.FromFixedWindow(window);
+        _windowItems.Insert(0, custom);
+        WindowCombo.SelectedItem = custom;
+    }
+
+    private void RemoveCustomEntry()
+    {
+        for (var i = _windowItems.Count - 1; i >= 0; i--)
+        {
+            if (_windowItems[i].IsFixed) _windowItems.RemoveAt(i);
+        }
     }
 
     private void OnBackClick(object sender, RoutedEventArgs e)
@@ -599,7 +786,7 @@ public partial class AppDetailPage : Page
 
     private async Task RefreshAsync()
     {
-        if (AppId is not int id || WindowCombo.SelectedItem is not WindowPreset preset) return;
+        if (AppId is not int id || WindowCombo.SelectedItem is not WindowSelection sel) return;
 
         // Entry — set loading state, recover from any previous error.
         _isLoading = true;
@@ -618,7 +805,7 @@ public partial class AppDetailPage : Page
             // matches their "what happened today" intent.
             var window = _specificDate is { } d
                 ? LocalDayWindow(d)
-                : preset.ToWindow();
+                : sel.ToWindow();
             var detailTask = _client.GetAppDetailAsync(id, window, TrafficGrain.Auto);
             var connectionsTask = _client.GetConnectionsAsync(id, window);
             await Task.WhenAll(detailTask, connectionsTask);
@@ -792,7 +979,12 @@ public partial class AppDetailPage : Page
             (upPoints, downPoints) = ChartSeriesDownsampler.Coalesce(upPoints, downPoints, factor: 2);
         }
 
-        var preset = WindowCombo.SelectedItem as WindowPreset;
+        // Axis tuning lookups (MinStep / UnitWidth / DescribeView) are keyed
+        // off the underlying preset's label. The Custom (Fixed) window
+        // doesn't map to a preset — pass null so ChartBuilder falls through
+        // to its default branches (which still produce sane axis density
+        // for any window span at the chosen grain).
+        var preset = (WindowCombo.SelectedItem as WindowSelection)?.Preset;
         // Mutate axis properties (in-place — see UpdateAxesForGrain doc) BEFORE
         // assigning Series so the new Labeler / MinStep / UnitWidth are in
         // place when LC2 lays out the upcoming redraw triggered by the Series
@@ -1111,10 +1303,16 @@ public sealed record SessionRowViewModel(
 }
 
 /// <summary>
-/// Phase 5e — navigation parameter for opening AppDetailPage with an
-/// optional date pre-populated in the chrome-row date picker. Passed via
-/// <c>NavigationView.Navigate(typeof(AppDetailPage), new AppDetailNavParams(...))</c>.
-/// The legacy bare-int DataContext path (PerAppPage → AppDetail) still
-/// works; only the Reports drill uses this record.
+/// Navigation parameter for opening AppDetailPage with an optional override.
+/// Two override shapes (mutually exclusive — never set both):
+///   * Phase 5e — <c>Date</c> pre-populates the chrome-row date picker and
+///     overrides the WindowCombo on first refresh. Used by the Reports →
+///     AppDetail drill.
+///   * Epic A (1.1.0) — <c>Window</c> inserts a Custom entry on the
+///     WindowCombo and selects it, becoming the active query window. Used
+///     by the History popover's talker drill so the user lands on the
+///     app's detail for the exact window they clicked.
+/// The legacy bare-int / long DataContext path (PerAppPage → AppDetail with
+/// no overrides) still works.
 /// </summary>
-public sealed record AppDetailNavParams(int AppId, DateOnly? Date);
+public sealed record AppDetailNavParams(int AppId, DateOnly? Date, QueryWindow? Window = null);

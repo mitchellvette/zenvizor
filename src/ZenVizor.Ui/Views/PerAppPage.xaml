@@ -2,6 +2,7 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:controls="clr-namespace:ZenVizor.Ui.Views.Controls"
       Background="{DynamicResource ApplicationBackgroundBrush}"
       Foreground="{DynamicResource TextFillColorPrimaryBrush}">
 
@@ -271,7 +272,7 @@
                        Margin="0,0,12,0" />
             <ComboBox Grid.Column="1"
                       x:Name="WindowCombo"
-                      Width="120"
+                      Width="140"
                       VerticalAlignment="Center"
                       Background="{DynamicResource metal.control}"
                       BorderBrush="{DynamicResource border.card}"
@@ -283,6 +284,7 @@
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>
+
             <ui:Button Grid.Column="2"
                        x:Name="RefreshButton"
                        Margin="12,0,0,0"
@@ -492,5 +494,47 @@
                 </StackPanel>
             </Grid>
         </Border>
+
+        <!--  Epic A — user-driven custom-range overlay. Invisible
+              backdrop + anchored chrome. Replaces the earlier Popup
+              approach (flew outside the window) and the dimmed-backdrop
+              approach (the dim only covered the page's root Grid area
+              and chopped at NavigationView + window chrome — looked like
+              a render bug).
+
+              Backdrop:
+                * Background=Transparent — invisible but still hit-testable
+                  (vs null Background which would let clicks pass through)
+                * Wired to PreviewMouseLeftButtonUp (not MouseDown) so the
+                  dismiss happens AFTER the click event completes — if we
+                  dismissed on MouseDown the overlay would Collapse before
+                  the MouseUp, and MouseUp would then route to whatever is
+                  uncovered (the AppsGrid), firing its drill handler
+                * Handler skips dismissal while a CalendarDatePicker popup
+                  is open so date selection doesn't accidentally cancel
+
+              Chrome:
+                * Built in code-behind (CustomRangeFlyout UserControl
+                  wrapped in a Border with UseLayoutRounding=True for
+                  crisp text — sub-pixel Margin from TransformToVisual
+                  would otherwise blur the 12px eyebrow text)
+                * Anchored top-left under the WindowCombo via Margin set
+                  in code-behind (PositionOverlay) — re-runs on open and
+                  on SizeChanged so it stays anchored as the window resizes  -->
+        <Grid x:Name="CustomRangeOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="3"
+              Panel.ZIndex="100"
+              Visibility="Collapsed">
+            <Border x:Name="CustomRangeBackdrop"
+                    Background="Transparent"
+                    PreviewMouseLeftButtonDown="OnBackdropMouseDown"
+                    PreviewMouseLeftButtonUp="OnBackdropMouseUp"
+                    MouseLeave="OnBackdropMouseLeave" />
+            <ContentControl x:Name="CustomRangeChromeContent"
+                            UseLayoutRounding="True"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top" />
+        </Grid>
     </Grid>
 </Page>

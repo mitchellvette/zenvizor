@@ -124,6 +124,45 @@ public sealed class AppHistoryQueryRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void GetAppList_NarrowSamplesWindow_AggregatesOnlyOverlappingBuckets()
+    {
+        // Epic A (1.1.0) — the History popover deep-link maps a chart click
+        // to a rendered-bucket window, which for the 24 h Samples view is
+        // ~6 minutes wide post-DownsampleAverage. Confirms GetAppList over a
+        // narrow Samples window returns ONLY the apps whose 60 s buckets
+        // overlap that window, with byte counts summed over exactly the
+        // overlapping buckets. (The bucket-overlap predicate already covers
+        // the 1 h / 24 h / multi-day cases above; this nails down the
+        // narrow-window contract the popover depends on.)
+        SeedApp(1, "spike.exe");
+        SeedApp(2, "lurker.exe");
+        SeedSession(11, 1);
+        SeedSession(12, 2);
+
+        // Popover-style window: a 6-minute slice centered on a moment 30 m
+        // before Now. [Now - 33 m, Now - 27 m).
+        var center = Now - 30 * 60_000;
+        var window = new QueryWindow(center - 3 * 60_000, center + 3 * 60_000);
+
+        // Inside the window — three 60 s buckets at -32 m, -30 m, -28 m.
+        InsertSample(11, center - 2 * 60_000, 100, 200, "Wan");
+        InsertSample(11, center,              300, 400, "Wan");
+        InsertSample(11, center + 2 * 60_000, 500, 600, "Wan");
+
+        // The lurker has activity 10 m before AND 10 m after the popover
+        // window — both outside [center-3m, center+3m). It must NOT appear.
+        InsertSample(12, center - 10 * 60_000, 9_999, 9_999, "Wan");
+        InsertSample(12, center + 10 * 60_000, 9_999, 9_999, "Wan");
+
+        var result = _repo.GetAppList(window);
+
+        result.Apps.Should().ContainSingle();
+        result.Apps[0].ImageName.Should().Be("spike.exe");
+        result.Apps[0].BytesUp.Should().Be(100 + 300 + 500);
+        result.Apps[0].BytesDown.Should().Be(200 + 400 + 600);
+    }
+
+    [Fact]
     public void GetAppList_DailyTier_IncludesTodaysInProgressBucket_OnShortWindow()
     {
         // REGRESSION: with strict bucket_start >= $from semantics, a daily bucket
