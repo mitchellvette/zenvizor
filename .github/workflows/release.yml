@@ -177,6 +177,14 @@ jobs:
 
       # Publish — body is notes-file verbatim + an appended Verify table so
       # the hashes appear inline (not just as a sidecar download).
+      #
+      # Note: verify table is built as an array-of-strings joined with `n`
+      # rather than a PowerShell here-string. A here-string's closing `"@`
+      # must sit at column 0 in the script, but a YAML `run: |` block
+      # requires every line to be indented at the block's baseline — the
+      # two constraints conflict and a here-string here breaks the YAML
+      # parse (real bug; this workflow shipped with that bug and had to be
+      # rewritten). See CLAUDE.md "Terminal / PowerShell gotchas".
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -184,20 +192,25 @@ jobs:
         run: |
           $tag = '${{ github.ref_name }}'
           $version = $tag.TrimStart('v')
+          $bundleSha = '${{ steps.stage.outputs.bundle_sha }}'
+          $msiSha    = '${{ steps.stage.outputs.msi_sha }}'
           $notes = "docs/release-notes/$tag.md"
 
-          $body = (Get-Content $notes -Raw).TrimEnd() + @"
+          $verify = @(
+            ''
+            ''
+            '## Verify downloads'
+            ''
+            'SHA256 hashes (also available in the attached `SHA256SUMS.txt`):'
+            ''
+            '| File | SHA256 |'
+            '|------|--------|'
+            "| ``ZenVizorSetup.exe`` | ``$bundleSha`` |"
+            "| ``ZenVizor.msi`` | ``$msiSha`` |"
+          ) -join "`n"
 
+          $body = (Get-Content $notes -Raw).TrimEnd() + $verify
 
-## Verify downloads
-
-SHA256 hashes (also available in the attached ``SHA256SUMS.txt``):
-
-| File | SHA256 |
-|------|--------|
-| ``ZenVizorSetup.exe`` | ``${{ steps.stage.outputs.bundle_sha }}`` |
-| ``ZenVizor.msi`` | ``${{ steps.stage.outputs.msi_sha }}`` |
-"@
           $bodyFile = "artifacts/release/release-body.md"
           $body | Out-File $bodyFile -Encoding UTF8 -NoNewline
 
