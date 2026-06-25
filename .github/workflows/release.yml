@@ -1,0 +1,209 @@
+name: Release
+
+# Tag-triggered release publication. Per PRD §10.1 — pushing a vX.Y.Z tag
+# rebuilds the MSI + bundle, computes their SHA256s, and publishes a GitHub
+# Release with both artifacts and the SHA256SUMS sidecar attached. Body is
+# read verbatim from docs/release-notes/<tag>.md (e.g. docs/release-notes/
+# v1.1.0.md) with a "Verify downloads" table appended that inlines the
+# computed hashes.
+#
+# Trigger is exclusively tag push (`v*`); ci.yml triggers only on branch
+# pushes and PRs, so this workflow and CI don't double-fire on the same
+# commit. Tagging is the sole release-publishing action — keep it that way
+# so the artifact story stays in lockstep with version intent.
+#
+# Hard preconditions (workflow fails fast if either is missing):
+#   1. <Version> in Directory.Build.props matches the pushed tag (after
+#      stripping the leading 'v'). Versioning docs/versioning.md keeps that
+#      file as the single source of truth.
+#   2. docs/release-notes/<tag>.md exists. Notes are hand-curated — auto-
+#      generation produces low-signal output for a slow-cadence product
+#      like this one.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  CONFIGURATION: Release
+
+permissions:
+  contents: write  # `gh release create` needs write access to repo contents
+
+jobs:
+  release:
+    name: Build, test, publish ${{ github.ref_name }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (pinned by global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Show .NET info
+        run: dotnet --info
+
+      # Preconditions — fail fast if version or release-notes file are off.
+      - name: Verify tag matches <Version> in Directory.Build.props
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $expected = $tag.TrimStart('v')
+          $xml = [xml](Get-Content Directory.Build.props -Raw)
+          $version = ($xml.Project.PropertyGroup | Where-Object { $_.Version }).Version | Select-Object -First 1
+          if ($version -ne $expected) {
+            Write-Error "Tag '$tag' implies <Version> '$expected' but Directory.Build.props has '$version'. Bump the version (or fix the tag) before pushing."
+            exit 1
+          }
+          Write-Host "Version pin OK — tag $tag, <Version> $version"
+
+      - name: Verify release notes file exists
+        shell: pwsh
+        run: |
+          $notes = "docs/release-notes/${{ github.ref_name }}.md"
+          if (-not (Test-Path $notes)) {
+            Write-Error "Release notes file not found: $notes. Add it before tagging."
+            exit 1
+          }
+          Write-Host "Release notes file present: $notes"
+
+      # Build + test parity with ci.yml. Tag publication should re-run the
+      # same gates so a stale-CI tag can't ship a regression — ci.yml on the
+      # tagged commit is not guaranteed to have run, and even if it did the
+      # tag commit could differ from main if the tag was created from a
+      # branch.
+      - name: Restore
+        run: dotnet restore ZenVizor.slnx
+
+      - name: Build
+        run: dotnet build ZenVizor.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
+
+      - name: Guard against non-win-x64 RID asset bloat
+        shell: pwsh
+        run: |
+          $projects = @('ZenVizor.Service', 'ZenVizor.Ui', 'ZenVizor.Cli')
+          $bad = @()
+          foreach ($p in $projects) {
+            $runtimes = "src/$p/bin/${{ env.CONFIGURATION }}/net10.0-windows/runtimes"
+            if (Test-Path $runtimes) {
+              Get-ChildItem -Path $runtimes -Directory |
+                Where-Object { $_.Name -ne 'win-x64' } |
+                ForEach-Object { $bad += "$p :: runtimes/$($_.Name)" }
+            }
+          }
+          if ($bad.Count -gt 0) {
+            Write-Error ("Phase 9.1 RID guard failed — non-win-x64 RID folder(s) detected:`n" + ($bad -join "`n"))
+            exit 1
+          }
+          Write-Host "Phase 9.1 RID guard passed."
+
+      - name: Test
+        run: >
+          dotnet test ZenVizor.slnx
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory artifacts/test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.ref_name }}
+          path: artifacts/test-results/**/*.trx
+
+      # Installer — same WiX 6.0.1 toolchain as ci.yml.
+      - name: Install WiX 6.0.1 toolset
+        run: |
+          dotnet tool install --global wix --version 6.0.1
+          wix extension add --global WixToolset.Util.wixext/6.0.1
+          wix extension add --global WixToolset.Bal.wixext/6.0.1
+          wix extension add --global WixToolset.NetFx.wixext/6.0.1
+
+      - name: Build installer (MSI)
+        run: >
+          dotnet build installer/ZenVizor.wixproj
+          --configuration ${{ env.CONFIGURATION }}
+
+      - name: Build installer bundle (ZenVizorSetup.exe)
+        run: >
+          dotnet build installer/Bundle/ZenVizor.Bundle.wixproj
+          --configuration ${{ env.CONFIGURATION }}
+
+      # Stage both artifacts in one place + emit SHA256SUMS sidecar. Hashes
+      # are also surfaced as step outputs so the release body can inline
+      # them in a verify table.
+      - name: Stage release artifacts + compute SHA256
+        id: stage
+        shell: pwsh
+        run: |
+          $stage = "artifacts/release"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          $msi = "installer/bin/x64/${{ env.CONFIGURATION }}/ZenVizor.msi"
+          $bundle = "installer/Bundle/bin/x64/${{ env.CONFIGURATION }}/ZenVizorSetup.exe"
+          if (-not (Test-Path $msi))    { Write-Error "MSI not at $msi";       exit 1 }
+          if (-not (Test-Path $bundle)) { Write-Error "Bundle not at $bundle"; exit 1 }
+          Copy-Item $msi $stage
+          Copy-Item $bundle $stage
+
+          $msiSha    = (Get-FileHash $msi    -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bundleSha = (Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          # Plain-text sidecar — sha256sum-compatible format, attached to the
+          # Release so users with shasum / Get-FileHash can verify offline.
+          @(
+            "$bundleSha  ZenVizorSetup.exe"
+            "$msiSha  ZenVizor.msi"
+          ) | Out-File "$stage/SHA256SUMS.txt" -Encoding ASCII
+
+          Write-Host "Bundle SHA256: $bundleSha"
+          Write-Host "MSI    SHA256: $msiSha"
+
+          "msi_sha=$msiSha"       | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "bundle_sha=$bundleSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload release artifacts (workflow run, 90-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ github.ref_name }}
+          path: artifacts/release
+
+      # Publish — body is notes-file verbatim + an appended Verify table so
+      # the hashes appear inline (not just as a sidecar download).
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          $notes = "docs/release-notes/$tag.md"
+
+          $body = (Get-Content $notes -Raw).TrimEnd() + @"
+
+
+## Verify downloads
+
+SHA256 hashes (also available in the attached ``SHA256SUMS.txt``):
+
+| File | SHA256 |
+|------|--------|
+| ``ZenVizorSetup.exe`` | ``${{ steps.stage.outputs.bundle_sha }}`` |
+| ``ZenVizor.msi`` | ``${{ steps.stage.outputs.msi_sha }}`` |
+"@
+          $bodyFile = "artifacts/release/release-body.md"
+          $body | Out-File $bodyFile -Encoding UTF8 -NoNewline
+
+          gh release create $tag `
+            "artifacts/release/ZenVizorSetup.exe" `
+            "artifacts/release/ZenVizor.msi" `
+            "artifacts/release/SHA256SUMS.txt" `
+            --title "ZenVizor $version" `
+            --notes-file $bodyFile
