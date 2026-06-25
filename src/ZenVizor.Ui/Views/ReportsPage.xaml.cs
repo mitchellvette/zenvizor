@@ -795,20 +795,28 @@ public sealed partial class ReportsPage : Page
         var plotH = h - dm.Top - dm.Bottom;
         if (plotW <= 0 || plotH <= 0) return;
 
-        var peakX = dm.Left + (_peakHour / 24.0) * plotW;
-        var peakY = dm.Top + (1.0 - _peakValue / _maxYValue) * plotH;
+        // Round to whole pixels at the source — peakX / peakY are derived
+        // from chart fractions and would otherwise place the overlay
+        // primitives at sub-pixel positions: blurry text on PeakLabel,
+        // softened dash alignment on PeakLine. Same canonical fix as
+        // PerAppPage.PositionOverlay / MainWindow.xaml:252-263 (rounded
+        // Canvas position + UseLayoutRounding on the receiving text element).
+        var peakX = Math.Round(dm.Left + (_peakHour / 24.0) * plotW);
+        var peakY = Math.Round(dm.Top + (1.0 - _peakValue / _maxYValue) * plotH);
+        var lineTop = Math.Round(dm.Top);
+        var lineBottom = Math.Round(h - dm.Bottom);
 
         PeakLine.X1 = peakX;
         PeakLine.X2 = peakX;
-        PeakLine.Y1 = dm.Top;
-        PeakLine.Y2 = h - dm.Bottom;
+        PeakLine.Y1 = lineTop;
+        PeakLine.Y2 = lineBottom;
 
         Canvas.SetLeft(PeakDot, peakX - PeakDot.Width / 2);
         Canvas.SetTop(PeakDot, peakY - PeakDot.Height / 2);
 
         PeakLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         var labelW = PeakLabel.DesiredSize.Width;
-        Canvas.SetLeft(PeakLabel, Math.Max(0, peakX - labelW + 4));
+        Canvas.SetLeft(PeakLabel, Math.Round(Math.Max(0, peakX - labelW + 4)));
         Canvas.SetTop(PeakLabel, 0);
     }
 

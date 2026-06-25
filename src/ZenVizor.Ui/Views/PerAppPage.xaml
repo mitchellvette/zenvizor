@@ -4,7 +4,8 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:controls="clr-namespace:ZenVizor.Ui.Views.Controls"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <Page.Resources>
         <!--  BooleanToVisibilityConverter — used by the hover-chevron column
@@ -297,6 +298,20 @@
                     <TextBlock Text="Refresh" Margin="4,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
             </ui:Button>
+            <!--  WindowRangeCaption — visible when a Custom window is
+                  selected; collapsed for rolling presets. Lives in the * filler
+                  column (3) AFTER the Refresh button so toggling its visibility
+                  is non-disruptive — the * column always occupies that gap
+                  whether or not the caption is rendering.  -->
+            <TextBlock Grid.Column="3"
+                       x:Name="WindowRangeCaption"
+                       Style="{StaticResource text.caption}"
+                       Foreground="{DynamicResource text.secondary}"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"
+                       Visibility="Collapsed" />
+
             <ui:TextBox Grid.Column="4"
                         x:Name="FilterInput"
                         Width="240"

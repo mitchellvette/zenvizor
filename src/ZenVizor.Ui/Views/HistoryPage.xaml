@@ -4,7 +4,8 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <!--  Phase 1 chrome — page skeleton, picker + refresh, status banner.
           Summary card carries 5 placeholder cells (RESOLUTION · UPLOADED ·
@@ -299,6 +300,25 @@
                                    Margin="0,12,0,0"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
+
+                    <!--  Phase 2 (Epic A) — click-to-attribute popover. In-page
+                          overlay pattern (NOT <Popup>) per Phase 1's lesson +
+                          docs/design-system.md §9. Background=Transparent so
+                          backdrop is hit-testable (null would let clicks fall
+                          through). Visibility flipped from code-behind on
+                          chart-click resolution (see HistoryPage.xaml.cs
+                          HandleChartClickAsync). Chrome is built in code-behind
+                          and assigned to PopoverChrome.Content — same pattern
+                          as PerAppPage / AppDetailPage's flyout chrome (memory:
+                          project_wpf_usercontrol_same_assembly).  -->
+                    <Grid x:Name="PopoverOverlay"
+                          Visibility="Collapsed"
+                          Background="Transparent">
+                        <ContentControl x:Name="PopoverChrome"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Top"
+                                        UseLayoutRounding="True" />
+                    </Grid>
                 </Grid>
             </Grid>
         </Border>

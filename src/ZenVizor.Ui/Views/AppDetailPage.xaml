@@ -5,7 +5,8 @@
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       xmlns:controls="clr-namespace:ZenVizor.Ui.Views.Controls"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <!-- DataGrid row virtualization is engaged programmatically — see
          AppDetailPage.EnforceDataGridBounds in the code-behind. Wpf.Ui's
@@ -89,6 +90,17 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+            <!--  Two-row chrome: Row 0 carries the BackButton + right cluster
+                  (DatePicker + ClearButton + WindowCombo); Row 1 reserves
+                  always-on space (MinHeight=17 = text.caption LineHeight) for
+                  the WindowRangeCaption that sits beneath the picker cluster.
+                  Reserved space rather than Collapsed↔Visible toggle so the
+                  combo and date picker don't shift left/up/down when the
+                  caption appears or disappears.  -->
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" MinHeight="17" />
+            </Grid.RowDefinitions>
 
             <ui:Button Grid.Column="0"
                        x:Name="BackButton"
@@ -181,8 +193,24 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-
             </StackPanel>
+
+            <!--  WindowRangeCaption — sits in the reserved Row 1, under
+                  the right-cluster column, right-aligned so it tracks the
+                  cluster's right edge. Visibility="Hidden" rather than
+                  Collapsed so the row's MinHeight is the load-bearing
+                  reservation; toggling text/visibility doesn't shift the
+                  date picker or combo. Code-behind keeps using Hidden ↔
+                  Visible (see UpdateWindowRangeCaption).  -->
+            <TextBlock x:Name="WindowRangeCaption"
+                       Grid.Row="1"
+                       Grid.Column="1"
+                       Style="{StaticResource text.caption}"
+                       Foreground="{DynamicResource text.secondary}"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Top"
+                       Margin="0,2,0,0"
+                       Visibility="Hidden" />
         </Grid>
 
         <!--  Row 1 — page title (image name) + labeled AppId chip with copy.

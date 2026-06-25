@@ -82,6 +82,26 @@ internal sealed record WindowSelection(
             FormatSpan(w.SpanMs));
     }
 
+    /// <summary>
+    /// Compact, prefix-free, span-suffix-free rendering of a fixed window —
+    /// for chrome captions sitting next to a window picker that's already
+    /// labeled "Custom" (so the prefix would be redundant). Always shows
+    /// date AND time so multi-day custom ranges (e.g. "Jun 23 14:00 – Jun
+    /// 24 16:00") aren't ambiguous. Distinct from HistoryPage's popover
+    /// header time-range, which is anchored to a chart and can elide the
+    /// date for sub-day windows.
+    /// </summary>
+    public static string FormatRangeShort(QueryWindow w)
+    {
+        var fromLocal = DateTimeOffset.FromUnixTimeMilliseconds(w.FromUnixMs).LocalDateTime;
+        var toLocal   = DateTimeOffset.FromUnixTimeMilliseconds(w.ToUnixMs).LocalDateTime;
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0} – {1}",
+            FormatPoint(fromLocal),
+            FormatPoint(toLocal));
+    }
+
     private static string FormatPoint(DateTime t) =>
         t.ToString("MMM d, HH:mm", CultureInfo.InvariantCulture);
 

@@ -350,9 +350,29 @@ public partial class SettingsPage : Page
     // The settings cache on the service side refreshes atomically when
     // the apply lands so per-flush rules pick up the new thresholds on
     // the next flush.
+    //
+    // Epic A 1.1.0 tweak — commit-time clamp. NumberBox uses
+    // ValidationMode=Disabled (XAML) so out-of-range typed values reach this
+    // handler instead of being silently reverted. We clamp against the
+    // NumberBox's own Maximum/Minimum and re-set Value if needed. The
+    // existing _suppressApply flag breaks recursion. Result: typing 4444
+    // into LargeDownload (Max=1024) → field snaps to 1024 + debounced
+    // apply sends 1024 to the service.
     private void OnAlertThresholdValueChanged(object sender, NumberBoxValueChangedEventArgs args)
     {
         if (_suppressApply) return;
+
+        if (sender is NumberBox box && box.Value is { } v)
+        {
+            var clamped = Math.Clamp(v, box.Minimum, box.Maximum);
+            if (clamped != v)
+            {
+                _suppressApply = true;
+                try { box.Value = clamped; }
+                finally { _suppressApply = false; }
+            }
+        }
+
         _alertThresholdDebounce.Stop();
         _alertThresholdDebounce.Start();
     }

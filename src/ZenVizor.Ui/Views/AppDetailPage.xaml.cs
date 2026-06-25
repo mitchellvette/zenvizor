@@ -388,6 +388,11 @@ public partial class AppDetailPage : Page
         ClearDateButton.Visibility   = hasDate ? Visibility.Visible : Visibility.Collapsed;
         DatePickerOverlay.Visibility = hasDate ? Visibility.Collapsed : Visibility.Visible;
         DatePickerLabel.Visibility   = hasDate ? Visibility.Visible : Visibility.Collapsed;
+        // When a specific day is set, the date-picker IS the disclosure
+        // for what's being queried — hide the window-range caption so it
+        // doesn't compete. Cleared specific day restores the caption per
+        // combo state.
+        UpdateWindowRangeCaption(WindowCombo.SelectedItem as WindowSelection);
         if (IsLoaded && AppId is int) await RefreshAsync();
     }
 
@@ -427,8 +432,38 @@ public partial class AppDetailPage : Page
             CustomRangeOverlay.Visibility = Visibility.Collapsed;
         }
 
+        UpdateWindowRangeCaption(selected);
+
         if (!IsLoaded) return;
         await RefreshAsync();
+    }
+
+    /// <summary>
+    /// Surface the active custom window's range as small caption text in the
+    /// always-reserved Row 1 beneath the WindowCombo (see chrome row XAML).
+    /// Visible only when (a) a Fixed window is selected AND (b) no
+    /// specific-day override is active — when a specific day is set, the
+    /// date-picker IS the disclosure for what's being queried, so the
+    /// caption would compete. Uses Hidden ↔ Visible (NOT Collapsed) so the
+    /// reserved-space row keeps its MinHeight — the whole point of the
+    /// reserved row is that toggling the caption doesn't shift layout.
+    /// See PerAppPage.UpdateWindowRangeCaption for the equivalent on that
+    /// page (different layout strategy — caption sits in an existing *
+    /// filler column, so Collapsed is fine there).
+    /// </summary>
+    private void UpdateWindowRangeCaption(WindowSelection? sel)
+    {
+        var showFixedCaption = sel is { IsFixed: true, FixedWindow: not null }
+                            && _specificDate is null;
+        if (showFixedCaption)
+        {
+            WindowRangeCaption.Text = WindowSelection.FormatRangeShort(sel!.FixedWindow!);
+            WindowRangeCaption.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            WindowRangeCaption.Visibility = Visibility.Hidden;
+        }
     }
 
     private void OpenCustomRangeFlyout(WindowSelection? previous)
@@ -499,17 +534,23 @@ public partial class AppDetailPage : Page
     /// Wrap the flyout UserControl in the canonical card chrome
     /// (metal/border/radius/shadow) — same recipe as the InfoPopup at
     /// xaml:1339, built in code for the same reason as the flyout itself.
+    /// See PerAppPage.BuildFlyoutChrome for the SetResourceReference
+    /// rationale (theme-flip staleness fix).
     /// </summary>
-    private static Border BuildFlyoutChrome(CustomRangeFlyout content) => new()
+    private static Border BuildFlyoutChrome(CustomRangeFlyout content)
     {
-        BorderThickness = new Thickness(1),
-        Padding = new Thickness(20),
-        Child = content,
-        Background = (System.Windows.Media.Brush)Application.Current.FindResource("surface.card"),
-        BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("border.card"),
-        CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
-        Effect = (System.Windows.Media.Effects.Effect)Application.Current.FindResource("shadow.card"),
-    };
+        var b = new Border
+        {
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(20),
+            Child = content,
+            CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
+        };
+        b.SetResourceReference(Border.BackgroundProperty, "surface.card");
+        b.SetResourceReference(Border.BorderBrushProperty, "border.card");
+        b.SetResourceReference(System.Windows.UIElement.EffectProperty, "shadow.card");
+        return b;
+    }
 
     private async void OnCustomRangeApplied(object? sender, QueryWindow window)
     {

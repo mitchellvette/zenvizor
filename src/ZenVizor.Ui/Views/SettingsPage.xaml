@@ -4,7 +4,8 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:views="clr-namespace:ZenVizor.Ui.Views"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <!--  Phase 6.2 Settings. The whole page IS the scrollable surface
           (scroll: page, not scroll: pane) — the inner section cards do not
@@ -525,13 +526,26 @@
                                 <StackPanel Grid.Column="1"
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center">
+                                    <!--  Width 140 + matching MinWidth fits the 4-digit
+                                          Max (1024) alongside the spin chrome.
+                                          ClearButtonEnabled=False kills the X clear
+                                          affordance: NumberBox with Minimum=1 cannot
+                                          legitimately be empty, so an X that wipes
+                                          the field to invalid-empty is a footgun.
+                                          ValidationMode=Disabled lets typed-but-
+                                          out-of-range values through to the handler
+                                          so we can clamp commit-time rather than
+                                          the default behaviour of silently reverting.  -->
                                     <ui:NumberBox x:Name="AlertLargeDownloadMbBox"
-                                                  Width="100"
+                                                  Width="140"
+                                                  MinWidth="140"
                                                   VerticalAlignment="Center"
                                                   Minimum="1"
                                                   Maximum="1024"
                                                   SmallChange="5"
                                                   LargeChange="50"
+                                                  ClearButtonEnabled="False"
+                                                  ValidationMode="Disabled"
                                                   Value="{Binding AlertLargeDownloadMb, Mode=TwoWay}"
                                                   ValueChanged="OnAlertThresholdValueChanged" />
                                     <TextBlock Text="MB"
@@ -559,12 +573,15 @@
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center">
                                     <ui:NumberBox x:Name="AlertOutboundHeavyFloorMbBox"
-                                                  Width="100"
+                                                  Width="140"
+                                                  MinWidth="140"
                                                   VerticalAlignment="Center"
                                                   Minimum="1"
                                                   Maximum="1024"
                                                   SmallChange="1"
                                                   LargeChange="10"
+                                                  ClearButtonEnabled="False"
+                                                  ValidationMode="Disabled"
                                                   Value="{Binding AlertOutboundHeavyFloorMb, Mode=TwoWay}"
                                                   ValueChanged="OnAlertThresholdValueChanged" />
                                     <TextBlock Text="MB"
@@ -594,12 +611,15 @@
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center">
                                     <ui:NumberBox x:Name="AlertUnusualDailyVolumeKBox"
-                                                  Width="100"
+                                                  Width="120"
+                                                  MinWidth="120"
                                                   VerticalAlignment="Center"
                                                   Minimum="1.0"
                                                   Maximum="10.0"
                                                   SmallChange="0.1"
                                                   LargeChange="0.5"
+                                                  ClearButtonEnabled="False"
+                                                  ValidationMode="Disabled"
                                                   Value="{Binding AlertUnusualDailyVolumeK, Mode=TwoWay}"
                                                   ValueChanged="OnAlertThresholdValueChanged" />
                                     <TextBlock Text="x typical"

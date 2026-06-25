@@ -4,7 +4,8 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <!--
         Dashboard layout:
@@ -82,8 +83,17 @@
 
             <!--  Status cards (4-up). 12px gap between cards via per-card
                   Margin; outer card has 0 outer Margin so the row aligns to
-                  the page outer margin.  -->
-            <Grid Grid.Row="0">
+                  the page outer margin.
+
+                  UseLayoutRounding="True" — first identified necessary here
+                  during the app-wide rendering-discipline sweep (cards 2/3/4
+                  rendered with blurry text via shadow.card's DropShadowEffect
+                  rasterizing at fractional column-boundary X origins). The
+                  setting is now also inherited from the DashboardPage root;
+                  kept here as belt-and-suspenders + local documentation. See
+                  MainWindow.xaml's rendering-discipline comment for the full
+                  rationale (UseLayoutRounding + TextOptions trio).  -->
+            <Grid Grid.Row="0" UseLayoutRounding="True">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />

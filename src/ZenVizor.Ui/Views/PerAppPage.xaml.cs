@@ -209,8 +209,29 @@ public partial class PerAppPage : Page
             CustomRangeOverlay.Visibility = Visibility.Collapsed;
         }
 
+        UpdateWindowRangeCaption(selected);
+
         if (!IsLoaded) return;
         await RefreshAsync();
+    }
+
+    /// <summary>
+    /// Surface the active custom window's range as small caption text next
+    /// to the WindowCombo. Visible only for Fixed selections (Custom from
+    /// the flyout / popover deep-link); rolling presets are self-describing
+    /// via the combo label itself, so the caption stays collapsed.
+    /// </summary>
+    private void UpdateWindowRangeCaption(WindowSelection? sel)
+    {
+        if (sel is { IsFixed: true, FixedWindow: { } fixedWin })
+        {
+            WindowRangeCaption.Text = WindowSelection.FormatRangeShort(fixedWin);
+            WindowRangeCaption.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            WindowRangeCaption.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void OpenCustomRangeFlyout(WindowSelection? previous)
@@ -298,17 +319,30 @@ public partial class PerAppPage : Page
     /// AppDetailPage.xaml:1339. Built in code (not XAML) for the same
     /// reason as the flyout itself: avoid the same-assembly UserControl
     /// metadata gap.
+    ///
+    /// Theme-flippable properties (Background / BorderBrush / Effect) use
+    /// SetResourceReference rather than static FindResource so the chrome
+    /// updates on runtime Light↔Dark switches. The chrome is built ONCE in
+    /// the page ctor and reused across flyout opens; a static FindResource
+    /// snapshot would freeze the chrome at construction-time theme, which
+    /// produced a stale dark-mode rendering for pages constructed in light
+    /// mode and viewed in dark (or vice versa). CornerRadius is a value
+    /// type and theme-invariant, so it stays static.
     /// </summary>
-    private static System.Windows.Controls.Border BuildFlyoutChrome(CustomRangeFlyout content) => new()
+    private static System.Windows.Controls.Border BuildFlyoutChrome(CustomRangeFlyout content)
     {
-        BorderThickness = new Thickness(1),
-        Padding = new Thickness(20),
-        Child = content,
-        Background = (System.Windows.Media.Brush)Application.Current.FindResource("surface.card"),
-        BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("border.card"),
-        CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
-        Effect = (System.Windows.Media.Effects.Effect)Application.Current.FindResource("shadow.card"),
-    };
+        var b = new System.Windows.Controls.Border
+        {
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(20),
+            Child = content,
+            CornerRadius = (CornerRadius)Application.Current.FindResource("radius.card"),
+        };
+        b.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "surface.card");
+        b.SetResourceReference(System.Windows.Controls.Border.BorderBrushProperty, "border.card");
+        b.SetResourceReference(System.Windows.UIElement.EffectProperty, "shadow.card");
+        return b;
+    }
 
     private async void OnCustomRangeApplied(object? sender, QueryWindow window)
     {

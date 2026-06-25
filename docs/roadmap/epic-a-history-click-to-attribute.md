@@ -133,14 +133,21 @@ already accepts arbitrary windows.
 talkers for the rendered bucket under the cursor + "+N more" deep-link.
 
 **Tasks:**
-1. **Spike (blocking):** confirm LiveCharts2 pixel→data (or nearest-rendered-point)
-   API on the pinned version. Fallbacks: hover-API nearest point, or a
-   transparent overlay mapping pixels manually from axis min/max +
-   `DrawMargin`.
+1. **Spike (blocking):** ✅ **complete.** See
+   [`../epic-a-phase-2-gate-0.md`](../epic-a-phase-2-gate-0.md). On
+   LiveChartsCore.SkiaSharpView.WPF 2.0.4,
+   `CartesianChart.ScalePixelsToData(LvcPointD)` returns data-X in
+   `DateTime.Ticks` and works on both line and stacked-column shapes;
+   fallbacks (hover API, transparent overlay) not needed.
 2. **Click → window mapping:** map click-X to the rendered bucket under the
-   cursor. `renderedSpan = storageBucketWidth × downsampleFactor × secondaryCoalesceFactor`.
-   HistoryPage already knows these (computed during `ApplyResult`); surface
-   them to the click handler.
+   cursor. Resolved via `ScalePixelsToData` → snap to nearest
+   `DateTimePoint` in `HistoryChart.Series[0].Values` → window =
+   `[bucketStart, bucketStart + _xAxis.UnitWidth)`. `Axis.UnitWidth` is
+   the rendered-bucket span in ticks (already set by
+   `ChartBuilder.UnitWidthFor(grain, preset)`), so no separate
+   downsample/coalesce surfacing is required. Reject clicks farther than
+   `UnitWidth/2` from every series point (axis-label bands, inter-bar
+   gaps, legend strip).
 3. **Popover UI:** reuse the InfoPopup `Popup` + `Border` pattern
    (`AppDetailPage.xaml:1339`): `AllowsTransparency`, `shadow.card`,
    `StaysOpen="False"`, scroll-dismiss. Anchored at the pointer.
@@ -181,8 +188,10 @@ and `GetConnectionsAsync(int, QueryWindow)` are the shared query path.
 
 ## Risks & mitigations
 
-1. **LiveCharts2 pixel→data API availability (HIGH).** No existing usage in
-   the repo. → Spike first; fallbacks listed above.
+1. **LiveCharts2 pixel→data API availability (HIGH).** ✅ **resolved at
+   Gate 0** — `CartesianChart.ScalePixelsToData(LvcPointD)` returns ticks
+   on 2.0.4, works on both shapes, never throws on edge clicks. See
+   [`../epic-a-phase-2-gate-0.md`](../epic-a-phase-2-gate-0.md).
 2. **Rate reconciliation N× bug (MED).** Averaged-rate-per-grain is subtle.
    → Reconciliation unit test + manual visual tie-out at the gate.
 3. **AppDetailNavParams refactor regressing the Reports drill (MED).** The
@@ -206,29 +215,38 @@ Verification record: [`../epic-a-phase-1-verification.md`](../epic-a-phase-1-ver
 
 ## Follow-ups (in scope for this release)
 
-- **App-wide sub-pixel text positioning sweep — ACTIVE.** Promoted from
-  contingent now that the local fix verified at the Phase 1 manual gate.
-  Symptom: small text (12 px `text.eyebrow` in particular) renders
-  blurry when its container is positioned by a fractional `Margin`
-  (typically `TransformToVisual` output) — glyphs straddle pixel
-  boundaries. Local fix in Phase 1 used `UseLayoutRounding="True"` on
-  the chrome `ContentControl` + `Math.Round` on the `Margin` in
-  `PositionOverlay`. Precedent + rationale already documented at
-  `MainWindow.xaml:252-263`.
+- **App-wide rendering-discipline sweep — DONE.** Originally scoped as
+  a "sub-pixel text positioning sweep" extrapolating the Phase 1
+  `UseLayoutRounding + Math.Round(Margin)` fix. Investigation during
+  the sweep surfaced that the broader symptom (every small text on
+  every page rendering blurry, regardless of `TransformToVisual`) was
+  caused by WPF's defaults for `TextOptions.TextFormattingMode` (Ideal,
+  not Display) and the absence of `UseLayoutRounding` on Page roots.
+  Fix: rendering-discipline trio (`UseLayoutRounding=True` +
+  `TextOptions.TextFormattingMode=Display` + `TextRenderingMode=ClearType`
+  + `TextHintingMode=Fixed`) set on MainWindow root AND on every Page
+  / UserControl root (NavigationView's Frame chain breaks inheritance).
+  Phase 1 `Math.Round(Margin)` pattern still load-bearing for
+  TransformToVisual-derived overlay positioning — kept. ReportsPage
+  peak overlay got the same rounding treatment in the same pass.
+  Memory: `project_wpf_text_options_root.md`.
 
-  Sweep checklist:
-  1. Grep for `TransformToVisual` and any code-behind that assigns
-     `Margin` / `Padding` from computed `double`s — wrap with
-     `Math.Round` and/or set `UseLayoutRounding="True"` on the receiving
-     element.
-  2. Grep for `RenderTransform` translating by non-integer amounts.
-  3. Visual audit small text (`text.eyebrow`, `text.caption`,
-     `text.mono` at 12-14 px) on every page in both Light and Dark
-     themes, looking for blur.
+- **Chart axis label rendering (SkiaSharp) — PASSIVE.** LiveCharts2
+  renders axis labels via SkiaSharp's own glyph rasterizer, not WPF,
+  so they don't inherit the rendering-discipline trio. Symptom: chart
+  X/Y axis labels on History + AppDetail charts remain soft after the
+  WPF sweep. Fix path: `ChartTheming.cs` / `SKPaint` tuning
+  (subpixel text, hinting level, typeface choice) — distinct from any
+  WPF-side change. Not blocking 1.1.0.
 
-  Recommended sequencing: do the sweep BEFORE Phase 2 starts so the
-  positioning code Phase 2 introduces (popover anchor math) inherits the
-  established discipline.
+- **HWND-owning popup text rendering — PASSIVE.** WPF `Tooltip`,
+  `ContextMenu`, and `ComboBox` dropdowns live in their own HWND and
+  do NOT inherit from MainWindow or the hosting Page, so the
+  rendering-discipline trio doesn't reach them. If their text is
+  visibly blurry after the sweep, fix is implicit App-level styles
+  (e.g. `<Style TargetType="ToolTip">` with the same setters). The
+  custom-range flyout was already built as an in-page overlay (not
+  `<Popup>`) to sidestep this — see Phase 1 verification doc.
 
 - **App-wide Wpf.Ui v4.0.2 ComboBox chrome styling pass — passive.**
   Phase 1 surfaced that Wpf.Ui's default ComboBox template reserves
@@ -238,6 +256,18 @@ Verification record: [`../epic-a-phase-1-verification.md`](../epic-a-phase-1-ver
   inputs, settings dropdowns, etc.) would benefit from a keyed
   `Style x:Key="combobox.compact"` overriding the template padding once.
   Not blocking 1.1.0; tracked here so it doesn't get lost.
+
+- **Wpf.Ui v4.0.2 NumberBox chrome + clamp pass — PASSIVE.** Phase 2's
+  Settings Alert threshold fix (ClearButtonEnabled=False + widen +
+  ValidationMode=Disabled + commit-time `Math.Clamp` in the handler)
+  addressed the three Alert threshold NumberBoxes on the Settings page.
+  The five Retention NumberBoxes share the same chrome (X clear button
+  inherited from `Wpf.Ui.Controls.TextBox`) and the same revert-instead-
+  of-clamp behaviour from the default `ValidationMode=InvalidInputOverwritten`,
+  but weren't user-flagged because typical Retention values (days /
+  months / years) fit cleanly in 3 digits + chrome. Same three-line fix
+  pattern applies; consider a keyed `Style x:Key="numberbox.compact"` if
+  the pattern repeats elsewhere.
 
 ## Version classification
 

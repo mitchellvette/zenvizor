@@ -13,7 +13,53 @@
                  ExtendsContentIntoTitleBar="True"
                  WindowStartupLocation="CenterScreen"
                  Icon="pack://application:,,,/Assets/favicon.ico"
-                 Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                 Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                 UseLayoutRounding="True"
+                 TextOptions.TextFormattingMode="Display"
+                 TextOptions.TextRenderingMode="ClearType"
+                 TextOptions.TextHintingMode="Fixed">
+    <!-- Rendering-discipline declarations on the FluentWindow root.
+         All four are inheritable: in a fresh tree they propagate to every
+         descendant. In practice Wpf.Ui's NavigationView content host
+         interposes a ContentPresenter chain that breaks WPF property
+         inheritance on Frame-hosted pages — so UseLayoutRounding is ALSO
+         set on every Page root in Views/ and every UserControl root in
+         Views/Controls/. Belt-and-suspenders, but verified necessary by
+         the Dashboard KPI cards (cards 2/3/4 blurry until the row Grid
+         got its own UseLayoutRounding=True).
+
+         WHY each property:
+
+         UseLayoutRounding=True — snaps layout coords (Margin, RenderSize,
+         Grid * column boundaries, etc.) to whole pixels. Without it, a
+         Border at a fractional X origin combined with shadow.card's
+         DropShadowEffect causes the Effect's bitmap rasterization pass to
+         render text at a sub-pixel offset and blur the composite. The
+         TextOptions below DO snap glyphs in the text layer but cannot
+         touch the Effect-compositor pass; layout rounding is orthogonal.
+
+         TextFormattingMode=Display — WPF defaults to Ideal (sub-pixel
+         glyph positions tuned for clean text scaling), which renders
+         blurry at the small font sizes this design system relies on
+         (font.size.caption=12, font.size.body=14 — eyebrows, KPI line
+         descriptions, app/path rows). Display snaps glyphs to whole
+         pixels; canonical fix for small-text blur in WPF Fluent apps.
+
+         TextRenderingMode=ClearType + TextHintingMode=Fixed — prevent
+         WPF's Auto modes from silently degrading to Grayscale / Animated
+         rendering inside ancestors that have Opacity<1, DropShadowEffect,
+         or RenderTransform — all of which this app uses pervasively
+         (dim-on-disconnect Opacity=0.6 across every page, shadow.card on
+         every metal-recipe card, the badge-pulse ScaleTransform).
+
+         Note: LiveCharts2 chart axis labels render via SkiaSharp, NOT
+         WPF, so they do NOT inherit any of these settings. If chart-
+         label crispness is a problem, fix lives in ChartTheming.cs /
+         SKPaint tuning, not here. Same caveat for any HWND-owning popup
+         (WPF Tooltip, ContextMenu, ComboBox dropdown): they don't
+         inherit from MainWindow either; if their text is visibly blurry,
+         per-style setters are the route. -->
+
 
     <!-- Outer Grid carries the brand tint via surface.background (50% alpha
          brand cool / dark slate). Every chrome layer above (TitleBar,

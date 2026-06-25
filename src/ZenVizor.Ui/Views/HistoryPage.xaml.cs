@@ -4,9 +4,13 @@ using System.Globalization;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using LiveChartsCore;
 using LiveChartsCore.Defaults;
+using LiveChartsCore.Drawing;
 using LiveChartsCore.Measure;
 using LiveChartsCore.SkiaSharpView;
 using Wpf.Ui.Controls;
@@ -42,6 +46,26 @@ public partial class HistoryPage : Page
     // flag is needed; App Detail's _inErrorState gates per-grid overlays.)
     private bool _isLoading;
     private readonly DispatcherTimer _loadingDelayTimer;
+
+    // Phase 2 (Epic A 1.1.0) — popover state.
+    //
+    // _lastChartWindow / _lastChartGrain are stashed from each successful
+    // ApplyResult; ChartClickResolver needs both to clamp the popover query
+    // window to what the user can actually see + label rates in the chart's
+    // per-grain unit (/min / /hr / /day).
+    //
+    // _popoverRequestSeq dedupes superseded in-flight queries — fast double
+    // clicks should display the latest, not whichever GetAppListAsync
+    // happened to come back last.
+    //
+    // _popoverBackdropDown is the MouseDown half of the paired MouseDown +
+    // MouseUp backdrop-dismiss handshake (memory: Phase 1's flyout backdrop
+    // pattern; dismiss-on-MouseDown leaked dismissals from the calendar
+    // popup close).
+    private QueryWindow? _lastChartWindow;
+    private TrafficGrain _lastChartGrain = TrafficGrain.Samples;
+    private int _popoverRequestSeq;
+    private bool _popoverBackdropDown;
 
     public HistoryPage()
     {
@@ -100,6 +124,13 @@ public partial class HistoryPage : Page
 
         Loaded += OnPageLoaded;
         Unloaded += OnPageUnloaded;
+
+        // Phase 2 (Epic A 1.1.0) — click-to-attribute popover wiring.
+        // Preview phase so LC2's own pointer machinery can't swallow it.
+        HistoryChart.PreviewMouseLeftButtonDown += OnChartPreviewMouseLeftButtonDown;
+        PopoverOverlay.PreviewMouseLeftButtonDown += OnPopoverBackdropMouseDown;
+        PopoverOverlay.PreviewMouseLeftButtonUp += OnPopoverBackdropMouseUp;
+        PopoverOverlay.MouseLeave += (_, _) => _popoverBackdropDown = false;
     }
 
     private async void OnPageLoaded(object sender, RoutedEventArgs e)
@@ -127,6 +158,8 @@ public partial class HistoryPage : Page
             mw.HistoryWiped -= OnHistoryWiped;
             mw.ServiceReconnected -= OnServiceReconnected;
         }
+        // Page leaving — popover can't outlive the chart it was anchored to.
+        DismissPopover();
     }
 
     private async void OnHistoryWiped(object? sender, EventArgs e) => await RefreshAsync();
@@ -161,6 +194,9 @@ public partial class HistoryPage : Page
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
+        // Window changed — the popover was anchored to a bucket that's
+        // about to be replaced. Dismiss before the refresh tears the chart.
+        DismissPopover();
         await RefreshAsync();
     }
 
@@ -303,6 +339,12 @@ public partial class HistoryPage : Page
         NoDataOverlay.Visibility = upPoints.Count == 0 && downPoints.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        // Phase 2 — stash visible chart window + grain for ChartClickResolver.
+        // The resolver needs both to clamp the popover query window to what
+        // the user can see and to label rates in the chart's per-grain unit.
+        _lastChartWindow = preset.ToWindow();
+        _lastChartGrain = result.GrainUsed;
 
         FillSummary(result, preset);
     }
@@ -499,4 +541,400 @@ public partial class HistoryPage : Page
         TrafficGrain.Daily => "Daily",
         _ => "Per-minute",
     };
+
+    // =====================================================================
+    // Phase 2 (Epic A 1.1.0) — click-to-attribute popover.
+    //
+    // See docs/roadmap/epic-a-history-click-to-attribute.md §Phase 2 for
+    // the design and docs/epic-a-phase-2-gate-0.md for the LiveCharts2
+    // pixel→data API the resolver depends on.
+    //
+    // Flow:
+    //   1. PreviewMouseLeftButtonDown on HistoryChart →
+    //      HandleChartClickAsync.
+    //   2. ChartClickResolver maps click pixel → (popover window, visual
+    //      bucket anchor, grain). Misses (axis-label band, gaps) silently
+    //      no-op (open question #6).
+    //   3. GetAppListAsync over the popover window → top-5 + remainder.
+    //   4. Build chrome in code-behind (avoid same-assembly UserControl
+    //      XAML cross-ref issue per memory project_wpf_usercontrol_same_
+    //      assembly), measure + position at the visual bucket center pixel,
+    //      reveal overlay.
+    //   5. Backdrop click dismisses; if the dismiss click landed on the
+    //      chart pixels too, immediately resolve a new popover at that
+    //      position (open question #7 — confirmed).
+    // =====================================================================
+
+    private void OnChartPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Popover open? Backdrop handler owns this click — don't double-fire.
+        if (PopoverOverlay.Visibility == Visibility.Visible) return;
+        _ = HandleChartClickAsync(e.GetPosition(HistoryChart));
+    }
+
+    private async Task HandleChartClickAsync(Point clickPx)
+    {
+        if (_lastChartWindow is not { } chartWindow) return;
+
+        if (!ChartClickResolver.TryResolveClick(
+                clickPx, HistoryChart, chartWindow, _lastChartGrain, out var resolved)
+            || resolved is null)
+        {
+            return; // miss: axis-label band, gap, no series — silent no-op
+        }
+
+        var seq = ++_popoverRequestSeq;
+        AppListResult result;
+        try
+        {
+            result = await _client.GetAppListAsync(resolved.PopoverWindow);
+        }
+        catch
+        {
+            // IPC failure: silent dismiss. RefreshAsync's banner handles
+            // chronic disconnection; a popover-specific error UI would be
+            // over-engineered for a click-driven, retry-able interaction.
+            return;
+        }
+
+        // Superseded by a later click — drop this result.
+        if (seq != _popoverRequestSeq) return;
+
+        if (result.Apps.Count == 0)
+        {
+            // Open question #6: silent no-op on empty buckets. Chart
+            // already shows zero traffic visually; a "no traffic" popover
+            // would be redundant.
+            return;
+        }
+
+        ShowPopover(resolved, result);
+    }
+
+    private void ShowPopover(ResolvedClick resolved, AppListResult result)
+    {
+        PopoverChrome.Content = BuildPopoverChromeContent(resolved, result);
+        PopoverOverlay.Visibility = Visibility.Visible;
+        PositionPopover(resolved);
+    }
+
+    private void DismissPopover()
+    {
+        PopoverOverlay.Visibility = Visibility.Collapsed;
+        PopoverChrome.Content = null;
+        _popoverBackdropDown = false;
+        // Bump seq so any in-flight IPC reply is dropped.
+        _popoverRequestSeq++;
+    }
+
+    private void OnPopoverBackdropMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // Only the backdrop itself — clicks on the chrome subtree should
+        // not arm dismiss. e.Source is the chrome root when click hits any
+        // chrome descendant; only e.OriginalSource is the actual hit.
+        // Comparing to PopoverChrome: chrome subtree clicks have Source =
+        // PopoverChrome (or a descendant); backdrop clicks have Source =
+        // PopoverOverlay.
+        if (ReferenceEquals(e.Source, PopoverOverlay))
+        {
+            _popoverBackdropDown = true;
+        }
+    }
+
+    private void OnPopoverBackdropMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_popoverBackdropDown) return;
+        _popoverBackdropDown = false;
+
+        if (!ReferenceEquals(e.Source, PopoverOverlay))
+        {
+            // MouseDown on backdrop, MouseUp on chrome — drag-into-chrome.
+            // Phase 1 lesson: the pair didn't match, don't dismiss.
+            return;
+        }
+
+        // Resolve the dismiss-click against the chart. If it lands on a
+        // chart bucket, kick off a fresh popover at that location (open
+        // question #7 — clicks on the chart while a popover is open
+        // should spawn a new associated popover, not just dismiss).
+        var px = e.GetPosition(HistoryChart);
+        DismissPopover();
+        _ = HandleChartClickAsync(px);
+    }
+
+    private FrameworkElement BuildPopoverChromeContent(ResolvedClick resolved, AppListResult result)
+    {
+        const int TopN = 5;
+
+        // Canonical metal-recipe card surface (memory:
+        // project_canonical_card_treatment). Theme-flippable properties
+        // (Background / BorderBrush / Effect) use SetResourceReference, not
+        // static FindResource, so the chrome tracks runtime theme switches
+        // even if a popover is open across the flip. Same fix as the
+        // flyout chrome builders on PerAppPage / AppDetailPage.
+        var chrome = new Border
+        {
+            BorderThickness = new Thickness(1),
+            CornerRadius = (CornerRadius)FindResource("radius.card"),
+            Padding = new Thickness(16),
+            MinWidth = 240,
+            MaxWidth = 360,
+            UseLayoutRounding = true,
+        };
+        chrome.SetResourceReference(Border.BackgroundProperty, "metal.card");
+        chrome.SetResourceReference(Border.BorderBrushProperty, "border.card");
+        chrome.SetResourceReference(UIElement.EffectProperty, "shadow.card");
+
+        var stack = new StackPanel { Orientation = Orientation.Vertical };
+        chrome.Child = stack;
+
+        // Header: time range disclosing the popover window (open question
+        // #1 confirmed — bucket-center anchor + window-range header copy).
+        var header = new System.Windows.Controls.TextBlock
+        {
+            Text = FormatPopoverHeaderTimeRange(resolved.PopoverWindow),
+            Style = (Style)FindResource("text.eyebrow"),
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+        stack.Children.Add(header);
+
+        var top = result.Apps.Take(TopN).ToList();
+        foreach (var app in top)
+        {
+            stack.Children.Add(BuildPopoverAppRow(app, resolved));
+        }
+
+        var remainder = result.Apps.Count - TopN;
+        if (remainder > 0)
+        {
+            stack.Children.Add(BuildPopoverMoreRow(remainder, resolved));
+        }
+
+        return chrome;
+    }
+
+    /// <summary>
+    /// Build one talker row with the canonical drill affordance: hover
+    /// chevron + hand cursor + single click (memory:
+    /// feedback_drill_grid_pattern). Hover state uses the project's
+    /// canonical row-hover token (<c>surface.subtle</c>, same as the
+    /// DataGrid RowStyle's IsMouseOver overlay in
+    /// <c>DesignTokens.xaml:713</c>) so the popover's hover affordance
+    /// matches every other clickable-row surface in the app.
+    /// </summary>
+    private FrameworkElement BuildPopoverAppRow(AppListEntry app, ResolvedClick resolved)
+    {
+        var row = new Grid
+        {
+            Cursor = Cursors.Hand,
+            Margin = new Thickness(0, 2, 0, 0),
+            Background = Brushes.Transparent, // make whole row hit-testable
+        };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var name = new System.Windows.Controls.TextBlock
+        {
+            Text = app.ImageName,
+            Style = (Style)FindResource("text.body"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 4, 0, 4),
+        };
+        Grid.SetColumn(name, 0);
+        row.Children.Add(name);
+
+        var rate = new System.Windows.Controls.TextBlock
+        {
+            Text = FormatRateForPopover(app.BytesUp + app.BytesDown, resolved),
+            Style = (Style)FindResource("text.mono"),
+            Margin = new Thickness(16, 4, 0, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(rate, 1);
+        row.Children.Add(rate);
+
+        // Hover-only drill chevron — telegraphs single-click drill semantics
+        // (talker row → AppDetailPage). Opacity, not Visibility, so the
+        // row's measured width doesn't jitter on hover.
+        var chevron = new SymbolIcon
+        {
+            Symbol = SymbolRegular.ChevronRight20,
+            FontSize = 14,
+            Opacity = 0,
+            Margin = new Thickness(8, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        chevron.SetResourceReference(Control.ForegroundProperty, "text.tertiary");
+        Grid.SetColumn(chevron, 2);
+        row.Children.Add(chevron);
+
+        WireRowHover(row, chevron);
+        row.MouseLeftButtonUp += (_, _) => OnPopoverAppRowClicked(app, resolved);
+        return row;
+    }
+
+    /// <summary>
+    /// "+N more" row — same hover pattern as the app rows but with
+    /// <see cref="SymbolRegular.ArrowRight20"/> rather than the chevron,
+    /// hinting at "navigate to another surface" rather than "expand record."
+    /// </summary>
+    private FrameworkElement BuildPopoverMoreRow(int remainder, ResolvedClick resolved)
+    {
+        var row = new Grid
+        {
+            Cursor = Cursors.Hand,
+            Margin = new Thickness(0, 8, 0, 0),
+            Background = Brushes.Transparent,
+        };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var text = new System.Windows.Controls.TextBlock
+        {
+            Text = string.Create(CultureInfo.InvariantCulture, $"+{remainder} more"),
+            Style = (Style)FindResource("text.caption"),
+            Margin = new Thickness(6, 4, 0, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "accent.text");
+        Grid.SetColumn(text, 0);
+        row.Children.Add(text);
+
+        var arrow = new SymbolIcon
+        {
+            Symbol = SymbolRegular.ArrowRight20,
+            FontSize = 14,
+            Opacity = 0,
+            Margin = new Thickness(8, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        arrow.SetResourceReference(Control.ForegroundProperty, "accent.text");
+        Grid.SetColumn(arrow, 1);
+        row.Children.Add(arrow);
+
+        WireRowHover(row, arrow);
+        row.MouseLeftButtonUp += (_, _) => OnPopoverMoreClicked(resolved);
+        return row;
+    }
+
+    /// <summary>
+    /// Apply the canonical hover treatment to a popover row: subtle
+    /// background tint (<c>surface.subtle</c>, matching the DataGrid
+    /// RowStyle hover overlay) + chevron/arrow opacity fade. Uses
+    /// SetResourceReference so the tint tracks live theme switches.
+    /// </summary>
+    private static void WireRowHover(Grid row, UIElement chevron)
+    {
+        row.MouseEnter += (_, _) =>
+        {
+            row.SetResourceReference(Panel.BackgroundProperty, "surface.subtle");
+            chevron.Opacity = 1;
+        };
+        row.MouseLeave += (_, _) =>
+        {
+            row.Background = Brushes.Transparent;
+            chevron.Opacity = 0;
+        };
+    }
+
+    private void OnPopoverAppRowClicked(AppListEntry app, ResolvedClick resolved)
+    {
+        // Talker row → AppDetailPage with the popover's fixed window. Phase 1
+        // added Window?: QueryWindow to AppDetailNavParams as an additive,
+        // trailing-optional positional so the legacy Reports→AppDetail
+        // (AppId, Date) drill keeps working. Date stays null on this path —
+        // AppDetail's chrome-row date override would otherwise stomp Window.
+        var nav = PerAppPage.FindNavigationView(this);
+        var window = resolved.PopoverWindow;
+        DismissPopover();
+        nav?.Navigate(typeof(AppDetailPage), new AppDetailNavParams(app.AppId, Date: null, Window: window));
+    }
+
+    private void OnPopoverMoreClicked(ResolvedClick resolved)
+    {
+        // "+N more" → PerAppPage with the popover's fixed window so the
+        // user sees the FULL ranked list, not a top-N. Preserves the
+        // discovery-over-ranking invariant: top-5 is a surfacing convenience;
+        // the deep-link is the unfiltered source of truth (memory:
+        // project_discovery_principle).
+        var nav = PerAppPage.FindNavigationView(this);
+        var window = resolved.PopoverWindow;
+        DismissPopover();
+        nav?.Navigate(typeof(PerAppPage), new PerAppNavParams(window));
+    }
+
+    /// <summary>
+    /// Position PopoverChrome at the visual bucket-center pixel, clamped to
+    /// the chart card bounds. Per open question #1 (confirmed), anchor is
+    /// the bucket center, not the click position — popover represents the
+    /// BUCKET and the click position is incidental.
+    /// </summary>
+    private void PositionPopover(ResolvedClick resolved)
+    {
+        // Bucket center in chart data coords → chart pixel coords.
+        var centerTicks = resolved.VisualBucketStartTicks + resolved.VisualBucketSpanTicks / 2;
+        var centerPx = HistoryChart.ScaleDataToPixels(new LvcPointD((double)centerTicks, 0));
+
+        // PopoverChrome must be measured before its DesiredSize is meaningful.
+        PopoverChrome.Measure(new Size(
+            double.IsFinite(PopoverOverlay.ActualWidth) ? PopoverOverlay.ActualWidth : 360,
+            double.IsFinite(PopoverOverlay.ActualHeight) ? PopoverOverlay.ActualHeight : double.PositiveInfinity));
+        var chromeW = PopoverChrome.DesiredSize.Width;
+        var chromeH = PopoverChrome.DesiredSize.Height;
+        var overlayW = PopoverOverlay.ActualWidth;
+        var overlayH = PopoverOverlay.ActualHeight;
+
+        // X: center horizontally on bucket-center pixel, clamp to overlay bounds.
+        var x = centerPx.X - chromeW / 2;
+        x = Math.Max(0, Math.Min(overlayW - chromeW, x));
+
+        // Y: top-anchored inside the chart card (below the legend strip).
+        // Refinement for click-relative Y / flip-up below if not enough
+        // room is deferred to Slice 3 polish if the manual gate demands it.
+        var y = 12.0;
+        if (y + chromeH > overlayH) y = Math.Max(0, overlayH - chromeH);
+
+        // Math.Round per Phase 1 sub-pixel positioning discipline.
+        PopoverChrome.Margin = new Thickness(Math.Round(x), Math.Round(y), 0, 0);
+    }
+
+    // -- popover formatting helpers ---------------------------------------
+
+    /// <summary>
+    /// Format a popover row's rate. Divisor math lives on
+    /// <see cref="ResolvedClick.BytesPerGrainUnit"/> (single source of
+    /// truth; pure-tested in <c>ChartClickResolverTests</c>); this method
+    /// only handles formatting + unit suffix.
+    /// </summary>
+    private static string FormatRateForPopover(long bytes, ResolvedClick resolved)
+    {
+        return PerAppPage.FormatBytes(resolved.BytesPerGrainUnit(bytes)) + PerGrainSuffix(resolved.Grain);
+    }
+
+    private static string PerGrainSuffix(TrafficGrain grain) => grain switch
+    {
+        TrafficGrain.Hourly => "/hr",
+        TrafficGrain.Daily => "/day",
+        _ => "/min",
+    };
+
+    /// <summary>
+    /// Confirmed format (open question, "your defaults"): time-range
+    /// disclosing the popover window. Sub-day windows render time-only
+    /// (<c>"16:42 – 16:48"</c>); day-grain windows render date-only
+    /// (<c>"Jun 23 – Jun 24"</c>). Plain range copy — duration is implicit
+    /// and the range is self-documenting.
+    /// </summary>
+    private static string FormatPopoverHeaderTimeRange(QueryWindow window)
+    {
+        var fromLocal = DateTimeOffset.FromUnixTimeMilliseconds(window.FromUnixMs).LocalDateTime;
+        var toLocal = DateTimeOffset.FromUnixTimeMilliseconds(window.ToUnixMs).LocalDateTime;
+        var isDayGrain = window.SpanMs >= 86_400_000L; // ≥ 1 day
+        var fmt = isDayGrain ? "MMM d" : "HH:mm";
+        var from = fromLocal.ToString(fmt, CultureInfo.InvariantCulture);
+        var to = toLocal.ToString(fmt, CultureInfo.InvariantCulture);
+        return $"{from} – {to}";
+    }
 }

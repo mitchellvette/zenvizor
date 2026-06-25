@@ -4,7 +4,8 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
       Background="{DynamicResource ApplicationBackgroundBrush}"
-      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+      UseLayoutRounding="True">
 
     <!--  Phase 2 — chrome row (title + date control + anchor combo + Export
           menu + status banner shell) + hero card (totals + WAN/Local bar +
@@ -1135,6 +1136,7 @@
                                        FontFamily="{StaticResource font.mono}"
                                        FontSize="{StaticResource font.size.caption}"
                                        Foreground="{DynamicResource text.tertiary}"
+                                       UseLayoutRounding="True"
                                        Text="peak 19:00" />
                         </Canvas>
                     </Grid>
