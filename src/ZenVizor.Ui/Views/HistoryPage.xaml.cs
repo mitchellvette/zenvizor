@@ -546,8 +546,7 @@ public partial class HistoryPage : Page
     // Phase 2 (Epic A 1.1.0) — click-to-attribute popover.
     //
     // See docs/roadmap/epic-a-history-click-to-attribute.md §Phase 2 for
-    // the design and docs/epic-a-phase-2-gate-0.md for the LiveCharts2
-    // pixel→data API the resolver depends on.
+    // the design.
     //
     // Flow:
     //   1. PreviewMouseLeftButtonDown on HistoryChart →

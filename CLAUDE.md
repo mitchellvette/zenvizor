@@ -25,31 +25,16 @@ If a requested change appears to conflict with any of these, surface the conflic
 
 ### Intentional design tension — DB ACL vs IPC INTERACTIVE access
 
-The `zenvizor.db` file is ACL'd to **SYSTEM + Administrators only**
-(`ProgramDataAcl.EnsureDirectoryWithAcl`). The IPC named pipe is ACL'd
-to **SYSTEM + Administrators full + INTERACTIVE read/write**
-(`ZenVizorPipeServer.BuildPipeSecurity`) so the non-elevated desktop UI
-and `zvctl` can connect. **That means any logged-in interactive user
-can read every byte of report data through IPC, while the underlying
-`.db` is unreadable to them.** This is intentional, not a leak:
-
-- **The ACL protects the raw file**, not the data. We don't want a
-  standard user able to point sqlite3 at the DB and corrupt the schema,
-  exhaust disk on the page cache, or trigger a WAL replay race against
-  the service. A read-side leak via IPC is not on the same threat
-  surface.
-- **Invariant 3 ("UI has NO database access") is the gate that lets
-  this work.** All data flows through `IZenVizorIpc`; the surface
-  validates arguments, sanitizes errors, and bounds query cost. We
-  audit ONE surface for data exposure, not two.
-- **Without the IPC ACL grant the UI can't run as a standard user.**
-  Requiring elevation for the dashboard would push users toward Run As
-  Administrator, which is materially worse for everything else.
-
-If a future feature adds data the user shouldn't see (a hypothetical
-multi-tenant build, secrets-in-DB), the right move is to gate at the
-IPC handler — not to tighten the pipe ACL and break the non-elevated
-UI contract.
+The `.db` is ACL'd to SYSTEM + Administrators; the IPC pipe is ACL'd
+to SYSTEM + Administrators full + INTERACTIVE read/write so the
+non-elevated UI and `zvctl` can connect. Any interactive user can
+therefore read report data through IPC even though the file is
+unreadable to them — intentional, not a leak. The ACL protects the
+raw file (schema corruption, page-cache exhaustion, WAL replay races),
+not the data; the data is gated at the IPC surface (invariant 3), so
+we audit ONE surface for exposure, not two. If a future feature adds
+data the user shouldn't see, gate it at the IPC handler — do NOT
+tighten the pipe ACL and break the non-elevated UI contract.
 
 ---
 
@@ -72,7 +57,7 @@ Pin dependency versions in the project files. Do not introduce a dependency that
 ## Repository layout
 
 ```
-ZenVizor.sln
+ZenVizor.slnx
   src/
     ZenVizor.Service/        # Windows Service host (LocalSystem)
     ZenVizor.Capture/        # ICaptureSource: ETW source + synthetic source
@@ -90,7 +75,7 @@ ZenVizor.sln
     ZenVizor.Storage.Tests/
     ZenVizor.Ipc.Tests/            # contract tests, no real pipe
     ZenVizor.Integration.Tests/    # pipe round-trips, synthetic end-to-end
-  installer/                # NOT YET CREATED — Phase 6 (WiX project lands then)
+  installer/                # WiX MSI (ZenVizor.wixproj) + burn Bundle (Bundle/ZenVizor.Bundle.wixproj → ZenVizorSetup.exe)
   .github/workflows/        # CI
 ```
 
@@ -122,8 +107,9 @@ dotnet build ZenVizor.slnx -c Release
 # Headless tests (these run in CI — must pass before advancing a phase)
 dotnet test ZenVizor.slnx -c Release
 
-# Installer (must be CLI-drivable when it exists — Phase 6)
-wix build ...   # produces the .msi artifact
+# Installer (CLI-driven; see .github/workflows/release.yml for the canonical flow)
+dotnet build installer/ZenVizor.wixproj -c Release            # ZenVizor.msi
+dotnet build installer/Bundle/ZenVizor.Bundle.wixproj -c Release  # ZenVizorSetup.exe (burn bundle)
 
 # Service control (dev)
 sc.exe create / start / stop / delete   # or the provided install scripts
@@ -196,7 +182,7 @@ ZenVizor is licensed **GPL-3.0-or-later** (see `LICENSE` at repo root). The LICE
 
 Reproducible paste-into-PowerShell failures we've hit on this project. Don't hand the user a command that triggers one of these.
 
-- **Never propose multi-line PowerShell here-strings (`@'…'@`) for the user to copy-paste into an interactive terminal.** The closing `'@` must land at column 0 on its own fresh input line. Real-world paste behavior (Windows Terminal, rendered markdown vs. raw `.md`, IDE selection sources) routinely drops or indents that token, leaving PowerShell stuck in a `>>` continuation prompt the user can't escape without Ctrl+C. This has bitten us at least twice (Phase 2 gate walkthrough, 2026-06-01).
+- **Never propose multi-line PowerShell here-strings (`@'…'@`) for the user to copy-paste into an interactive terminal.** The closing `'@` must land at column 0 on its own fresh input line. Real-world paste behavior (Windows Terminal, rendered markdown vs. raw `.md`, IDE selection sources) routinely drops or indents that token, leaving PowerShell stuck in a `>>` continuation prompt the user can't escape without Ctrl+C.
   - **Prefer:** single-line invocations with the SQL or payload as a double-quoted argument. For `sqlite3.exe`, use CLI flags (`-readonly -header -column`) instead of the dot-commands you'd type at the `sqlite>` prompt — e.g. `sqlite3.exe -readonly -header -column $db "SELECT ..."` covers `.headers on` + `.mode column` + the query in one line.
   - **If multi-line input is genuinely required**, stage it via a one-line `Set-Content` from an array of single-line strings (e.g. `'line1','line2' | Set-Content path.sql`), then point the tool at the file (`sqlite3.exe ... ".read path.sql"`).
 - **Markdown ` ```sql ` blocks paste differently than ` ```powershell ` blocks** depending on whether the source is the rendered IDE preview or the raw `.md` source. When the user is going to copy from the doc, the doc should already wrap the SQL in a PowerShell-callable form. Don't rely on the user knowing which surface to copy from.

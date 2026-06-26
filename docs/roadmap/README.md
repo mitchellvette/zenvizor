@@ -134,6 +134,15 @@ release (see the sequence above).
 
 ---
 
+## Tracked follow-ups
+
+Passive deferred items surfaced during epic work but out-of-scope for
+their release: [`tracked-followups.md`](tracked-followups.md). Skim
+this when starting a new release — items here may be cheap to absorb
+into adjacent epic work.
+
+---
+
 ## Pending decisions
 
 - **H** — green-lit for a feasibility spike (does the existing ETW

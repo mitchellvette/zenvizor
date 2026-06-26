@@ -133,8 +133,7 @@ already accepts arbitrary windows.
 talkers for the rendered bucket under the cursor + "+N more" deep-link.
 
 **Tasks:**
-1. **Spike (blocking):** ✅ **complete.** See
-   [`../epic-a-phase-2-gate-0.md`](../epic-a-phase-2-gate-0.md). On
+1. **Spike (blocking):** ✅ **complete.** On
    LiveChartsCore.SkiaSharpView.WPF 2.0.4,
    `CartesianChart.ScalePixelsToData(LvcPointD)` returns data-X in
    `DateTime.Ticks` and works on both line and stacked-column shapes;
@@ -189,9 +188,9 @@ and `GetConnectionsAsync(int, QueryWindow)` are the shared query path.
 ## Risks & mitigations
 
 1. **LiveCharts2 pixel→data API availability (HIGH).** ✅ **resolved at
-   Gate 0** — `CartesianChart.ScalePixelsToData(LvcPointD)` returns ticks
-   on 2.0.4, works on both shapes, never throws on edge clicks. See
-   [`../epic-a-phase-2-gate-0.md`](../epic-a-phase-2-gate-0.md).
+   the Phase 2 spike** — `CartesianChart.ScalePixelsToData(LvcPointD)`
+   returns ticks on 2.0.4, works on both shapes, never throws on edge
+   clicks.
 2. **Rate reconciliation N× bug (MED).** Averaged-rate-per-grain is subtle.
    → Reconciliation unit test + manual visual tie-out at the gate.
 3. **AppDetailNavParams refactor regressing the Reports drill (MED).** The
@@ -208,12 +207,11 @@ and `GetConnectionsAsync(int, QueryWindow)` are the shared query path.
    applies this pattern in `EnforceAppsGridBound`; verify it still holds for
    the Custom-window path.
 
-## Phase 1 status
+## Status
 
-**Shipped + verified** (Phase 1 only — popover phase still pending).
-Verification record: [`../epic-a-phase-1-verification.md`](../epic-a-phase-1-verification.md).
+**Shipped in 1.1.0** — both phases complete.
 
-## Follow-ups (in scope for this release)
+## In-release follow-up that landed with 1.1.0
 
 - **App-wide rendering-discipline sweep — DONE.** Originally scoped as
   a "sub-pixel text positioning sweep" extrapolating the Phase 1
@@ -231,43 +229,13 @@ Verification record: [`../epic-a-phase-1-verification.md`](../epic-a-phase-1-ver
   peak overlay got the same rounding treatment in the same pass.
   Memory: `project_wpf_text_options_root.md`.
 
-- **Chart axis label rendering (SkiaSharp) — PASSIVE.** LiveCharts2
-  renders axis labels via SkiaSharp's own glyph rasterizer, not WPF,
-  so they don't inherit the rendering-discipline trio. Symptom: chart
-  X/Y axis labels on History + AppDetail charts remain soft after the
-  WPF sweep. Fix path: `ChartTheming.cs` / `SKPaint` tuning
-  (subpixel text, hinting level, typeface choice) — distinct from any
-  WPF-side change. Not blocking 1.1.0.
+## Passive follow-ups (surfaced here, tracked elsewhere)
 
-- **HWND-owning popup text rendering — PASSIVE.** WPF `Tooltip`,
-  `ContextMenu`, and `ComboBox` dropdowns live in their own HWND and
-  do NOT inherit from MainWindow or the hosting Page, so the
-  rendering-discipline trio doesn't reach them. If their text is
-  visibly blurry after the sweep, fix is implicit App-level styles
-  (e.g. `<Style TargetType="ToolTip">` with the same setters). The
-  custom-range flyout was already built as an in-page overlay (not
-  `<Popup>`) to sidestep this — see Phase 1 verification doc.
-
-- **App-wide Wpf.Ui v4.0.2 ComboBox chrome styling pass — passive.**
-  Phase 1 surfaced that Wpf.Ui's default ComboBox template reserves
-  substantial internal padding for the chevron, clipping narrow content.
-  Fixed locally for the custom-range time pickers via
-  `Padding="6,2,2,2"` + wider widths. Other pages' combos (filter
-  inputs, settings dropdowns, etc.) would benefit from a keyed
-  `Style x:Key="combobox.compact"` overriding the template padding once.
-  Not blocking 1.1.0; tracked here so it doesn't get lost.
-
-- **Wpf.Ui v4.0.2 NumberBox chrome + clamp pass — PASSIVE.** Phase 2's
-  Settings Alert threshold fix (ClearButtonEnabled=False + widen +
-  ValidationMode=Disabled + commit-time `Math.Clamp` in the handler)
-  addressed the three Alert threshold NumberBoxes on the Settings page.
-  The five Retention NumberBoxes share the same chrome (X clear button
-  inherited from `Wpf.Ui.Controls.TextBox`) and the same revert-instead-
-  of-clamp behaviour from the default `ValidationMode=InvalidInputOverwritten`,
-  but weren't user-flagged because typical Retention values (days /
-  months / years) fit cleanly in 3 digits + chrome. Same three-line fix
-  pattern applies; consider a keyed `Style x:Key="numberbox.compact"` if
-  the pattern repeats elsewhere.
+Four app-wide UI items surfaced during this work but didn't block
+1.1.0: SkiaSharp axis label rendering, HWND popup text rendering,
+ComboBox compact style, NumberBox compact + clamp pass. They've been
+moved to [`tracked-followups.md`](tracked-followups.md) so they don't
+live inside a closed epic's spec.
 
 ## Version classification
 

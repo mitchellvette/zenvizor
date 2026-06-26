@@ -15,8 +15,7 @@ namespace ZenVizor.Ui.Services;
 /// tuple consumed by the History page's click-to-attribute popover.
 ///
 /// See <c>docs/roadmap/epic-a-history-click-to-attribute.md</c> §Phase 2
-/// for the design and <c>docs/epic-a-phase-2-gate-0.md</c> for the
-/// LiveCharts2 API surface this depends on (pixel→data confirmed on
+/// for the design (pixel→data via <c>ScalePixelsToData</c> confirmed on
 /// LiveChartsCore.SkiaSharpView.WPF 2.0.4).
 ///
 /// Split into:
