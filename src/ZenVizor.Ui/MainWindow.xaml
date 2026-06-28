@@ -116,7 +116,23 @@
                            VerticalAlignment="Center"
                            Margin="0,-8,0,0"
                            RenderOptions.BitmapScalingMode="HighQuality" />
-                    <Viewbox Stretch="Uniform" Height="20" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <!-- Wordmark opts OUT of the FluentWindow's rendering-discipline trio
+                         (Display / ClearType / Fixed) because this subtree renders TextBlocks
+                         at FontSize=102.21–130 inside a Canvas (353.84 × 116.89) wrapped in a
+                         Viewbox that downscales by ~0.171×. Display snaps glyph metrics to
+                         whole pixels at the pre-transform size, then the Viewbox resamples
+                         those integer-pixel bitmaps to ~17 px — heavy aliasing on the
+                         wordmark. Fixed hinting compounds it by disabling the Animated
+                         hinting WPF would otherwise pick for transformed text. The Ideal /
+                         Auto / Animated combo here is the classical "transformed text"
+                         setup and is what the wordmark ran on in v1.0.0 (before the v1.1.0
+                         Epic A sweep added the trio at the FluentWindow root). Scope is
+                         intentionally bounded to this Viewbox subtree — the rest of the
+                         chrome and every Page keeps the sweep settings. -->
+                    <Viewbox Stretch="Uniform" Height="20" VerticalAlignment="Center" Margin="8,0,0,0"
+                             TextOptions.TextFormattingMode="Ideal"
+                             TextOptions.TextRenderingMode="Auto"
+                             TextOptions.TextHintingMode="Animated">
                         <Canvas Width="353.84" Height="116.89" Background="Transparent">
                         <TextBlock Canvas.Left="0" Canvas.Top="0"
                                    FontFamily="{StaticResource font.brand}"

@@ -66,3 +66,7 @@ secrets.json
 
 # Design mockup PDFs — kept locally for reference, not versioned in origin
 docs/design/mockups/
+
+# Portable website copy draft — lives in this repo only as a scratch
+# surface; the canonical home is the website repo. Never commit it here.
+/website-copy-draft.md
