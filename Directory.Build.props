@@ -21,7 +21,7 @@
     <Product>ZenVizor</Product>
     <Company>ZenVizor</Company>
     <Copyright>Copyright (c) 2026 Mitchell Gray</Copyright>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
   </PropertyGroup>
 
   <!-- .NET 10 Desktop Runtime pin for the Phase 7 Burn bootstrapper bundle.

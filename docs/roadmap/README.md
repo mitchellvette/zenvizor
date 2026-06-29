@@ -35,9 +35,11 @@ Per `../versioning.md`:
 - **`1.0.x` (patch) — corrections with no new surface.** Reserved for
   true bug-fix releases (a regression, a corrected attribution edge
   case) once there is a real user base to ship fast, low-risk relief
-  to. **This roadmap does not use the patch lane** — nothing here is
-  *broken*; the work is capability expansion, so it all lands as
-  minors.
+  to. **The roadmap itself does not use the patch lane** — every entry
+  in the table below is capability expansion and lands as a minor. The
+  patch lane stays available for off-roadmap corrections to shipped
+  releases (used first for 1.1.1, which corrected service-startup and
+  start-minimized-to-tray behaviour observed against 1.1.0).
 - **`2.0.0` — breaks a user-visible contract** (IPC/DB/config/CLI).
   None of the items below are expected to require this.
 
