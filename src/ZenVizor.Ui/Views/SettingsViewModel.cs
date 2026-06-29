@@ -36,8 +36,27 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
     public PageContent Content
     {
         get => _content;
-        set => SetField(ref _content, value);
+        set
+        {
+            if (SetField(ref _content, value))
+            {
+                // IsServiceConnected is a derived view of Content; raise
+                // its PropertyChanged so the service-control button label
+                // re-evaluates when the page flips between Disconnected
+                // and Populated.
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceConnected)));
+            }
+        }
     }
+
+    /// <summary>
+    /// True when the service-IPC pipe is up. Drives the service-control
+    /// button's label ("Restart service" when true, "Start service" when
+    /// false). Derived from <see cref="Content"/> so a single state
+    /// change at the page level updates both the form-disable cascade
+    /// and the button label.
+    /// </summary>
+    public bool IsServiceConnected => _content != PageContent.Disconnected;
 
     private string? _bannerText;
     public string? BannerText
@@ -55,6 +74,18 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
     {
         get => _resetHistoryStatus;
         set => SetField(ref _resetHistoryStatus, value);
+    }
+
+    private string? _serviceControlStatus;
+    /// <summary>
+    /// One-line confirmation after a Service control button click — e.g.
+    /// "Service started.", "Action canceled at admin prompt.", or
+    /// "Couldn't start service (code N)." Cleared on next page load.
+    /// </summary>
+    public string? ServiceControlStatus
+    {
+        get => _serviceControlStatus;
+        set => SetField(ref _serviceControlStatus, value);
     }
 
     // ── Service ─────────────────────────────────────────────────────────

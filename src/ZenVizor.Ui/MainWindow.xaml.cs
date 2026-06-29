@@ -181,39 +181,46 @@ public partial class MainWindow : FluentWindow
         Closing += OnClosing;
         Closed += OnClosed;
 
-        // Phase 6.3 — silent-launch path. SourceInitialized fires after
-        // the HWND is created but BEFORE the first frame paints, so
-        // Hide() here prevents the window from ever appearing on screen
-        // (no flash). Loaded still fires afterward, so pollers /
-        // AlertsClient subscription / nav routing all run normally — the
-        // user just doesn't see a window until they click the tray icon.
-        //
-        // Reading StartMinimizedStore here (not in App.OnStartup) because
-        // WPF's StartupUri processing constructs MainWindow AFTER
-        // App.OnStartup returns; at that earlier point Application.MainWindow
-        // is null and any Hide() call no-ops.
-        if (StartMinimizedStore.Load())
-        {
-            SourceInitialized += OnSourceInitializedHideForSilentLaunch;
-        }
+        // Silent-launch (StartMinimizedStore) is honoured by App.OnStartup
+        // by simply NOT calling Show() on this window. The old approach
+        // of toggling WindowState/Visibility from inside OnSourceInitialized
+        // was a no-op — WPF's Window.Show() always re-asserts WS_VISIBLE
+        // in its post-OSI continuation, so the window flashed onscreen
+        // regardless. Lifting the show decision up to App level is the
+        // architecturally sound fix; the tray icon lives at Application
+        // scope (App.xaml) so it still works when MainWindow is never shown.
     }
 
-    private void OnSourceInitializedHideForSilentLaunch(object? sender, EventArgs e)
-    {
-        // One-shot — never re-fires for the lifetime of the window. The
-        // user explicitly summons via tray, which ShowAndActivate handles.
-        SourceInitialized -= OnSourceInitializedHideForSilentLaunch;
-        WindowState = WindowState.Minimized;
-        ShowInTaskbar = false;
-        Hide();
-    }
+    // Tracks whether the always-on background work (pollers, alerts
+    // subscription, toast hydration) has been started. App.OnStartup
+    // calls BeginBackgroundWork unconditionally after construction so
+    // the work runs even in the silent-launch path where Show() (and
+    // therefore OnLoaded) is never called. OnLoaded also calls it as a
+    // belt-and-suspenders for any hypothetical code path that
+    // constructs MainWindow without going through App.OnStartup —
+    // idempotent via this flag.
+    private bool _backgroundWorkStarted;
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Starts the "always-on" work that used to live in
+    /// <see cref="OnLoaded"/>: service-status polling, activity-snapshot
+    /// polling, the AlertsClient push subscription, and toast-preference
+    /// hydration. Called by <c>App.OnStartup</c> right after MainWindow
+    /// construction — BEFORE the conditional <c>Show()</c> — so the work
+    /// runs identically in the visible-launch and silent-launch paths.
+    /// In silent-launch (start-minimized to tray) the user expects
+    /// alert toasts to fire from the tray without ever opening the
+    /// window; that requires the AlertsClient subscription to be live
+    /// before any AlertRaised could land. Idempotent — repeated calls
+    /// are no-ops.
+    /// </summary>
+    public void BeginBackgroundWork()
     {
+        if (_backgroundWorkStarted) return;
+        _backgroundWorkStarted = true;
+
         _poller.Start();
         _activityPoller.Start();
-
-        BuildAlertsBadgePulseStoryboard();
 
         // Establish the alerts-push subscription eagerly so the nav-rail
         // badge fires immediately on AlertRaised even if the user has not
@@ -254,6 +261,20 @@ public partial class MainWindow : FluentWindow
                 // Best-effort hydrate; default of true is the safe fallback.
             }
         });
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        // Belt-and-suspenders: App.OnStartup already kicked these off so
+        // they're live in the silent-launch path too. The flag in
+        // BeginBackgroundWork makes the call idempotent here.
+        BeginBackgroundWork();
+
+        // Visual-only init below — must run on the Loaded path because
+        // it touches named XAML elements (RootNavigation) that need the
+        // visual tree to be live, and the pulse storyboard that's
+        // resolved against tree-level resources.
+        BuildAlertsBadgePulseStoryboard();
 
         // Gallery's canonical initial-selection pattern: Navigate(Type)
         // from the window's Loaded handler. With TargetPageType set per
@@ -298,18 +319,11 @@ public partial class MainWindow : FluentWindow
     /// </summary>
     internal void ShowTestToast()
     {
-        try
-        {
-            Tray.ShowNotification(
-                title: "ZenVizor: Test notification",
-                message: "If you can see this, desktop notifications are working.",
-                icon: NotificationIcon.Info,
-                sound: true);
-        }
-        catch
-        {
-            // Best-effort — same posture as OnAlertRaised's toast path.
-        }
+        ((App)Application.Current).ShowTrayNotification(
+            title: "ZenVizor: Test notification",
+            message: "If you can see this, desktop notifications are working.",
+            icon: NotificationIcon.Info,
+            sound: true);
     }
 
     /// <summary>
@@ -419,35 +433,35 @@ public partial class MainWindow : FluentWindow
             // broken toast must not corrupt the badge update above.
             if (_toastEnabled)
             {
-                try
-                {
-                    Tray.ShowNotification(
-                        title: $"ZenVizor: {AlertCatalogLookups.SeverityDisplayName(alert.Severity)}",
-                        message: alert.Title,
-                        icon: SeverityToToastIcon(alert.Severity),
-                        sound: true);
-                }
-                catch
-                {
-                    // Swallow — toast is a notification, not a feature.
-                }
+                ((App)Application.Current).ShowTrayNotification(
+                    title: $"ZenVizor: {AlertCatalogLookups.SeverityDisplayName(alert.Severity)}",
+                    message: alert.Title,
+                    icon: SeverityToToastIcon(alert.Severity),
+                    sound: true);
             }
         });
     }
 
     /// <summary>
-    /// Tray balloon click handler — wired in MainWindow.xaml. Restores the
-    /// window if hidden and navigates to the Alerts page. The Alerts page
-    /// is NavigationCacheMode.Enabled so this lands on its existing
-    /// instance.
+    /// Called by App's tray balloon-click handler after it restores +
+    /// activates this window. AlertsPage is NavigationCacheMode.Enabled
+    /// so this lands on its existing instance; an already-on-Alerts
+    /// navigation is a no-op.
     /// </summary>
-    private void OnTrayBalloonTipClicked(object sender, RoutedEventArgs e)
+    public void NavigateToAlerts()
     {
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Show();
-        Activate();
-        try { RootNavigation.Navigate(typeof(AlertsPage)); }
-        catch { /* navigation is best-effort — already on Alerts is fine */ }
+        RootNavigation.Navigate(typeof(AlertsPage));
+    }
+
+    /// <summary>
+    /// Called by App's tray "Exit" menu handler. Sets the
+    /// <c>_exiting</c> flag BEFORE Close() so OnClosing lets the close
+    /// through to real shutdown instead of intercepting + hiding.
+    /// </summary>
+    public void RequestExit()
+    {
+        _exiting = true;
+        Close();
     }
 
     private static NotificationIcon SeverityToToastIcon(NotableSeverity severity) =>
@@ -649,20 +663,11 @@ public partial class MainWindow : FluentWindow
         // marker file so we never re-prompt on subsequent closes.
         if (!FirstCloseShownStore.HasBeenShown())
         {
-            try
-            {
-                Tray.ShowNotification(
-                    title: "ZenVizor is still running",
-                    message: "Right-click the tray icon to show the window or exit.",
-                    icon: NotificationIcon.Info,
-                    sound: false);
-            }
-            catch
-            {
-                // Notification is courtesy, not load-bearing. Swallowing
-                // failures keeps close-to-tray reliable even when the OS
-                // refuses the toast (focus-assist, group policy, etc.).
-            }
+            ((App)Application.Current).ShowTrayNotification(
+                title: "ZenVizor is still running",
+                message: "Right-click the tray icon to show the window or exit.",
+                icon: NotificationIcon.Info,
+                sound: false);
             FirstCloseShownStore.MarkShown();
         }
     }
@@ -678,12 +683,11 @@ public partial class MainWindow : FluentWindow
         try { _ = _alertsClient.DisposeAsync().AsTask(); } catch { }
         // A2: same fire-and-forget posture for the shared query client.
         try { _ = _historyClient.DisposeAsync().AsTask(); } catch { }
-        // Tray.Dispose() intentionally NOT called here. H.NotifyIcon.Wpf
-        // auto-hooks Application.Exit (TaskbarIcon.DisposeAfterExit) and
-        // disposes the tray AFTER the dispatcher fully drains. Calling
-        // Dispose here destroys the message-window HWND that the
-        // ContextMenu uses for activation tracking — if the popup is
-        // still mid-dismiss, it gets stranded on screen.
+        // Tray disposal is owned by H.NotifyIcon.Wpf's
+        // TaskbarIcon.DisposeAfterExit hook on Application.Exit, which
+        // fires AFTER the dispatcher fully drains. Same lifecycle as
+        // when the tray lived on this window — moving it to App scope
+        // (App.xaml) didn't change the disposal contract.
         Application.Current.Shutdown();
     }
 
@@ -694,44 +698,13 @@ public partial class MainWindow : FluentWindow
         // any future telemetry/log of the close intent has a hook.
     }
 
-    private void OnTrayLeftClick(object sender, RoutedEventArgs e) => ShowAndActivate();
+    // Tray event handlers (OnTrayLeftClick, OnTrayContextMenuOpened,
+    // OnTrayShowHideClicked, OnTrayExitClicked, OnTrayBalloonTipClicked)
+    // are owned by App.xaml.cs now that the tray icon lives at
+    // Application scope. They delegate back here via ShowAndActivate /
+    // RequestExit / NavigateToAlerts / IsVisible / WindowState reads.
 
-    /// <summary>
-    /// Rewrites the first context-menu item's header just before the popup
-    /// shows so it reads "Show ZenVizor" when the window is hidden and
-    /// "Hide to tray" when it's visible. WPF binds the header at template
-    /// build time; without this re-read the menu would lag the actual
-    /// window state across hide/show cycles.
-    /// </summary>
-    private void OnTrayContextMenuOpened(object sender, RoutedEventArgs e)
-    {
-        TrayShowHideItem.Header = IsVisible && WindowState != WindowState.Minimized
-            ? "Hide to tray"
-            : "Show ZenVizor";
-    }
-
-    private void OnTrayShowHideClicked(object sender, RoutedEventArgs e)
-    {
-        if (IsVisible && WindowState != WindowState.Minimized)
-        {
-            // Mirrors the X-button path: cancel-and-hide is owned by
-            // OnClosing; calling Hide() directly is the right verb when
-            // the user explicitly asks "hide to tray" from the menu.
-            Hide();
-        }
-        else
-        {
-            ShowAndActivate();
-        }
-    }
-
-    private void OnTrayExitClicked(object sender, RoutedEventArgs e)
-    {
-        _exiting = true;
-        Close();
-    }
-
-    private void ShowAndActivate()
+    internal void ShowAndActivate()
     {
         if (!IsVisible)
         {
@@ -742,9 +715,9 @@ public partial class MainWindow : FluentWindow
             WindowState = WindowState.Normal;
         }
         // Re-show in the taskbar — App.OnStartup may have hidden the
-        // taskbar entry under the silent-launch path (Phase 6.3
-        // start_minimized). Once the user has summoned the window we want
-        // it visible everywhere the OS shows running apps.
+        // taskbar entry under the silent-launch path. Once the user has
+        // summoned the window we want it visible everywhere the OS
+        // shows running apps.
         ShowInTaskbar = true;
         Activate();
     }
@@ -792,6 +765,16 @@ public partial class MainWindow : FluentWindow
                         // per-page ForceReconnectAsync calls from A1
                         // are removed in the same diff.
                         await _historyClient.ForceReconnectAsync().ConfigureAwait(false);
+                        // Settings client too — without this, the
+                        // Settings page's OnServiceReconnected →
+                        // RefreshAsync call lands on the stale pipe
+                        // handle from before the service stop, fails
+                        // with connection-lost, and the page is stuck
+                        // on the Disconnected banner until the user
+                        // navigates away and back (which lazily creates
+                        // a fresh client). Symmetric with the two
+                        // reconnects above.
+                        await _settingsClient.ForceReconnectAsync().ConfigureAwait(false);
                     }
                     catch
                     {

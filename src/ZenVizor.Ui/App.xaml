@@ -2,8 +2,16 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             ShutdownMode="OnExplicitShutdown"
-             StartupUri="MainWindow.xaml">
+             xmlns:tb="http://www.hardcodet.net/taskbar"
+             ShutdownMode="OnExplicitShutdown">
+    <!-- StartupUri intentionally absent. WPF's StartupUri auto-Shows the
+         target window, which makes the "Start minimized to tray"
+         preference impossible to honour cleanly: Hide() inside
+         OnSourceInitialized is overridden by Window.Show()'s post-OSI
+         continuation (UpdateVisibilityProperty + ShowSourceWindow), so
+         the window always flashes onscreen for at least one frame.
+         MainWindow is now constructed and conditionally shown by
+         App.OnStartup (see App.xaml.cs). -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -36,6 +44,31 @@
                      refs flow through the brand-accent layer. -->
                 <ResourceDictionary Source="pack://application:,,,/Resources/NavigationViewBrand.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- System-tray icon. Hosted at Application scope (not in
+                 MainWindow.xaml) so the icon registers with the shell
+                 notification area regardless of whether MainWindow is
+                 shown — required for the "Start minimized to tray"
+                 path where the window never shows on cold launch. The
+                 resource is force-materialised in App.OnStartup so the
+                 icon appears at boot, not lazily on first reference.
+                 Event handlers route to App.xaml.cs; the context menu's
+                 first item header is rewritten dynamically in
+                 OnTrayContextMenuOpened based on MainWindow visibility. -->
+            <tb:TaskbarIcon x:Key="AppTray"
+                            IconSource="pack://application:,,,/Assets/favicon.ico"
+                            ToolTipText="ZenVizor"
+                            TrayLeftMouseDown="OnTrayLeftClick"
+                            TrayBalloonTipClicked="OnTrayBalloonTipClicked">
+                <tb:TaskbarIcon.ContextMenu>
+                    <ContextMenu Opened="OnTrayContextMenuOpened">
+                        <MenuItem Header="Show ZenVizor"
+                                  Click="OnTrayShowHideClicked" />
+                        <Separator />
+                        <MenuItem Header="Exit" Click="OnTrayExitClicked" />
+                    </ContextMenu>
+                </tb:TaskbarIcon.ContextMenu>
+            </tb:TaskbarIcon>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -607,8 +607,157 @@ public partial class SettingsPage : Page
         if (e.PropertyName != nameof(SettingsViewModel.Content)) return;
         // Disconnected state disables every input. Done via IsEnabled on
         // the form's outer ScrollViewer since per-control bindings would
-        // proliferate without buying anything.
+        // proliferate without buying anything. The Service control row
+        // is intentionally a peer of FormScroll (Row 2 vs Row 3) so it
+        // stays clickable even when the form is disabled.
         FormScroll.IsEnabled = _vm.Content != SettingsViewModel.PageContent.Disconnected;
+        RefreshServiceControlButton();
+    }
+
+    /// <summary>
+    /// Updates the Service control button's label + icon based on
+    /// <see cref="SettingsViewModel.IsServiceConnected"/>. Called from
+    /// <see cref="OnVmContentChanged"/> on every Content transition so
+    /// the button stays in sync with the live service state.
+    /// </summary>
+    private void RefreshServiceControlButton()
+    {
+        if (_vm.IsServiceConnected)
+        {
+            ServiceControlButtonText.Text = "Restart service";
+            ServiceControlButtonIcon.Symbol = SymbolRegular.ArrowSync24;
+        }
+        else
+        {
+            ServiceControlButtonText.Text = "Start service";
+            ServiceControlButtonIcon.Symbol = SymbolRegular.Play24;
+        }
+    }
+
+    /// <summary>
+    /// Shells out to <c>net.exe</c> (not sc.exe) with <c>Verb="runas"</c>
+    /// so Windows shows a single UAC prompt. <c>net stop</c> and
+    /// <c>net start</c> are SYNCHRONOUS — they wait for the service to
+    /// actually reach STOPPED / RUNNING before returning. <c>sc stop</c>
+    /// just initiates the stop and returns, which means a chained
+    /// <c>sc start</c> would race the service's stop transition and
+    /// fail with ERROR_SERVICE_ALREADY_RUNNING (1056). The restart path
+    /// chains via <c>cmd /c "net stop ... &amp; net start ..."</c>;
+    /// <c>&amp;</c> (not <c>&amp;&amp;</c>) so a stop that fails
+    /// because the service was already stopped doesn't short-circuit
+    /// the subsequent start. Works without the IPC pipe — which is the
+    /// whole point: a stopped service has no pipe to call an IPC-based
+    /// restart through.
+    /// </summary>
+    private async void OnServiceControlClick(object sender, RoutedEventArgs e)
+    {
+        var wasConnected = _vm.IsServiceConnected;
+
+        ServiceControlButton.IsEnabled = false;
+        ServiceControlStatusText.Foreground =
+            (System.Windows.Media.Brush)FindResource("text.secondary");
+        ServiceControlStatusText.Text = wasConnected
+            ? "Restarting service…"
+            : "Starting service…";
+        ServiceControlStatusText.Visibility = Visibility.Visible;
+
+        var psi = wasConnected
+            ? new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c \"net stop ZenVizor & net start ZenVizor\"",
+                Verb = "runas",
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            }
+            : new ProcessStartInfo
+            {
+                FileName = "net.exe",
+                Arguments = "start ZenVizor",
+                Verb = "runas",
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            };
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                ShowServiceControlError("Couldn't launch the service-control command.");
+                return;
+            }
+
+            // net stop + net start each wait for the service to reach
+            // the target state. Windows' default ServicesPipeTimeout is
+            // 30s, so a single net stop can take that long if the
+            // service is slow to shut down cleanly. 60s covers a
+            // worst-case stop+start without spuriously tripping the
+            // cancellation on a healthy round-trip.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                ShowServiceControlError("Timed out waiting for the service-control command (60s).");
+                return;
+            }
+
+            if (process.ExitCode == 0)
+            {
+                // Final state — no "Reconnecting…" tail. The
+                // ServiceStatusPoller picks the reconnection up within
+                // ~1–5s and MainWindow raises ServiceReconnected, which
+                // OnServiceReconnected here turns into a fresh
+                // RefreshAsync that re-hydrates the form (the
+                // SettingsClient.ForceReconnectAsync wired into
+                // MainWindow.OnStatusChanged ensures that refresh hits
+                // a fresh pipe and doesn't fail on the stale pre-stop
+                // handle). The user shouldn't see this transient
+                // "reconnecting" intermediate — the final confirmation
+                // is what matters and what they should be left with.
+                ShowServiceControlSuccess(wasConnected
+                    ? "Service restarted."
+                    : "Service started.");
+            }
+            else
+            {
+                ShowServiceControlError($"Couldn't {(wasConnected ? "restart" : "start")} service (code {process.ExitCode}).");
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // ERROR_CANCELLED — user clicked No on the UAC prompt.
+            ShowServiceControlError("Action canceled at admin prompt.");
+        }
+        catch (Exception ex)
+        {
+            ShowServiceControlError($"Couldn't run service-control command ({ex.GetType().Name}).");
+        }
+        finally
+        {
+            ServiceControlButton.IsEnabled = true;
+        }
+    }
+
+    private void ShowServiceControlSuccess(string text)
+    {
+        _vm.ServiceControlStatus = text;
+        ServiceControlStatusText.Foreground =
+            (System.Windows.Media.Brush)FindResource("status.success");
+        ServiceControlStatusText.Text = text;
+        ServiceControlStatusText.Visibility = Visibility.Visible;
+    }
+
+    private void ShowServiceControlError(string text)
+    {
+        _vm.ServiceControlStatus = text;
+        ServiceControlStatusText.Foreground =
+            (System.Windows.Media.Brush)FindResource("status.caution.text");
+        ServiceControlStatusText.Text = text;
+        ServiceControlStatusText.Visibility = Visibility.Visible;
     }
 
     /// <summary>

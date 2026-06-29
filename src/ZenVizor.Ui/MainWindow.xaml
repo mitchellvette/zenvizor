@@ -4,7 +4,6 @@
                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-                 xmlns:tb="http://www.hardcodet.net/taskbar"
                  mc:Ignorable="d"
                  Title="ZenVizor"
                  Height="720" Width="1200"
@@ -414,25 +413,12 @@
             </Grid>
         </Border>
 
-        <tb:TaskbarIcon x:Name="Tray"
-                        IconSource="pack://application:,,,/Assets/favicon.ico"
-                        ToolTipText="ZenVizor"
-                        TrayLeftMouseDown="OnTrayLeftClick"
-                        TrayBalloonTipClicked="OnTrayBalloonTipClicked">
-            <tb:TaskbarIcon.ContextMenu>
-                <!--  Dynamic label on the first item: "Show ZenVizor" when
-                      the window is hidden, "Hide to tray" when it's visible.
-                      Header is rewritten in OnTrayContextMenuOpened so it
-                      reflects state at popup time.  -->
-                <ContextMenu Opened="OnTrayContextMenuOpened">
-                    <MenuItem x:Name="TrayShowHideItem"
-                              Header="Show ZenVizor"
-                              Click="OnTrayShowHideClicked" />
-                    <Separator />
-                    <MenuItem Header="Exit" Click="OnTrayExitClicked" />
-                </ContextMenu>
-            </tb:TaskbarIcon.ContextMenu>
-        </tb:TaskbarIcon>
+        <!--  System-tray icon lives in App.xaml at Application scope so
+              it works on the silent-launch path where MainWindow is
+              never shown. Tray event handlers are in App.xaml.cs and
+              delegate back to MainWindow via Application.MainWindow +
+              the public RequestExit / NavigateToAlerts / ShowAndActivate
+              methods on this class.  -->
 
         <!--  Phase 6.2: ContentDialog host. Wpf.Ui's ContentDialog requires
               a ContentPresenter as its DialogHost; the dialog renders

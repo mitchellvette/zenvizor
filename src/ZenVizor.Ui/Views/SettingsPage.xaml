@@ -66,6 +66,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -101,11 +102,64 @@
             </StackPanel>
         </Border>
 
-        <!--  Row 2 — scrollable form. Whole page scrolls (annotated
+        <!--  Row 2 — service control. Lives OUTSIDE FormScroll so it
+              stays clickable in the Disconnected state, which is when
+              it matters most: the user has no other in-app path to
+              start a stopped service (sc.exe from an elevated terminal
+              is beyond a casual user). Label flips between
+              "Start service" (disconnected) and "Restart service"
+              (connected) via RefreshServiceControlButton. The action
+              shells out to sc.exe with Verb="runas" so Windows shows a
+              single UAC prompt — appropriate friction for changing
+              service state, and works regardless of whether the IPC
+              pipe is up.  -->
+        <Border Grid.Row="2"
+                Style="{StaticResource section.card}"
+                Margin="0,0,0,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource setting.label}"
+                               Text="Service control" />
+                    <TextBlock Style="{StaticResource setting.description}"
+                               Text="Start the ZenVizor service or restart a running instance. Requires admin approval." />
+                    <TextBlock x:Name="ServiceControlStatusText"
+                               Style="{StaticResource text.caption}"
+                               Foreground="{DynamicResource status.success}"
+                               Margin="0,8,0,0"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
+                <ui:Button Grid.Column="1"
+                           x:Name="ServiceControlButton"
+                           VerticalAlignment="Center"
+                           Background="{DynamicResource metal.control}"
+                           BorderBrush="{DynamicResource border.card}"
+                           BorderThickness="1"
+                           Padding="14,6"
+                           Click="OnServiceControlClick">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon x:Name="ServiceControlButtonIcon"
+                                       Symbol="ArrowSync24"
+                                       FontSize="14"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                        <TextBlock x:Name="ServiceControlButtonText"
+                                   Text="Restart service"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ui:Button>
+            </Grid>
+        </Border>
+
+        <!--  Row 3 — scrollable form. Whole page scrolls (annotated
               scroll: page in the brief); the ScrollViewer is the parent
               of every section card. MaxWidth=720 keeps line lengths
               readable on wide monitors.  -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
             <!--  Populated state — section stack.  -->
             <ScrollViewer x:Name="FormScroll"
                           VerticalScrollBarVisibility="Auto"

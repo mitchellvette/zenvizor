@@ -31,6 +31,24 @@ internal sealed class SettingsClient : IAsyncDisposable
         => CallAsync(p => p.WipeHistoryAsync(),
                      nameof(WipeHistoryResult), IpcSchemaVersion.Settings, cancellationToken);
 
+    /// <summary>
+    /// Drop the current pipe (if any) and re-establish a fresh one.
+    /// Mirrors <c>AlertsClient.ForceReconnectAsync</c> and
+    /// <c>HistoryQueryClient.ForceReconnectAsync</c>. Called by
+    /// <c>MainWindow.OnStatusChanged</c> on the disconnected→connected
+    /// transition so the Settings page's next <c>RefreshAsync</c> after
+    /// <c>ServiceReconnected</c> hits a fresh pipe rather than the
+    /// stale one from before the service stop — without this, the
+    /// reactive refresh fails with connection-lost and the page is
+    /// stuck on the Disconnected banner until the user manually
+    /// navigates away and back.
+    /// </summary>
+    public async Task ForceReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await ResetAsync().ConfigureAwait(false);
+        await EnsureProxyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<T> CallAsync<T>(
         Func<IZenVizorIpc, Task<IpcEnvelope<T>>> work,
         string payloadName,

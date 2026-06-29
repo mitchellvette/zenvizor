@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using Wpf.Ui.Appearance;
 using ZenVizor.Ipc.Contracts.Dto;
 using ZenVizor.Ui.Services;
@@ -137,12 +140,144 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        // Phase 6.3 silent-launch is handled inside MainWindow's
-        // SourceInitialized hook (see MainWindow.xaml.cs). MainWindow is
-        // NOT yet constructed at this point — WPF processes StartupUri
-        // AFTER OnStartup returns and Application.Run begins the message
-        // pump, so Application.MainWindow is still null here. Hiding the
-        // window has to happen from inside the window's own lifecycle.
+        // Register the tray icon with the shell notification area NOW.
+        // H.NotifyIcon.Wpf's TaskbarIcon does the actual Shell_NotifyIcon
+        // call in its Loaded handler, which only fires when the icon is
+        // attached to a live visual tree. Hosting it as an App.Resources
+        // entry — necessary so the icon works on the silent-launch path
+        // where MainWindow is never shown — means Loaded never fires
+        // and the icon would stay invisible without this explicit
+        // ForceCreate. Documented in H.NotifyIcon's own README as the
+        // App-Resources hosting pattern.
+        if (Resources["AppTray"] is TaskbarIcon tray)
+        {
+            tray.ForceCreate();
+        }
+
+        // MainWindow construction is owned by App.OnStartup (not by
+        // WPF's StartupUri) so we can conditionally Show or NOT-Show
+        // based on the silent-launch preference. The old SourceInitialized
+        // Hide() hook was a no-op — Window.Show()'s post-OSI
+        // continuation always re-asserts WS_VISIBLE — so the only
+        // architecturally sound way to honour "Start minimized to tray"
+        // is to never call Show() in the first place. The tray icon
+        // above lives at App scope precisely so it works in the
+        // never-Show path.
+        var mainWindow = new MainWindow();
+        MainWindow = mainWindow;
+
+        // Background work (status polling, alert-push subscription,
+        // toast-preference hydration) MUST start regardless of whether
+        // we Show() the window. OnLoaded only fires after Show(); in
+        // the silent-launch path Show() is never called, so anything
+        // that lives in OnLoaded would be dead in the tray-only mode —
+        // and a passive monitor that doesn't observe alerts while
+        // minimized defeats the whole point. See MainWindow.BeginBackgroundWork.
+        mainWindow.BeginBackgroundWork();
+
+        if (!StartMinimizedStore.Load())
+        {
+            mainWindow.Show();
+        }
+    }
+
+    // ── Tray handlers (hoisted from MainWindow.xaml.cs) ─────────────────
+    //
+    // The tray icon now lives in App.xaml resources rather than the
+    // MainWindow visual tree. Handlers delegate to MainWindow via
+    // Application.MainWindow, null-checking because (a) startup may not
+    // have constructed it yet on the very first event tick and (b) the
+    // user can have closed-to-tray and reopened by the time a balloon
+    // click lands.
+
+    private void OnTrayLeftClick(object sender, RoutedEventArgs e)
+    {
+        (MainWindow as MainWindow)?.ShowAndActivate();
+    }
+
+    /// <summary>
+    /// Rewrites the first context-menu item's header just before the popup
+    /// shows so it reads "Show ZenVizor" when the window is hidden and
+    /// "Hide to tray" when it's visible. Reaches the MenuItem via the
+    /// ContextMenu's Items collection because x:Name on resources doesn't
+    /// generate a code-behind field (resources have no associated
+    /// compile-time accessor — only visual-tree elements do).
+    /// </summary>
+    private void OnTrayContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu) return;
+        if (menu.Items.Count == 0 || menu.Items[0] is not MenuItem showHideItem) return;
+
+        var mw = MainWindow as MainWindow;
+        var showing = mw is not null
+            && mw.IsVisible
+            && mw.WindowState != WindowState.Minimized;
+        showHideItem.Header = showing ? "Hide to tray" : "Show ZenVizor";
+    }
+
+    private void OnTrayShowHideClicked(object sender, RoutedEventArgs e)
+    {
+        var mw = MainWindow as MainWindow;
+        if (mw is null) return;
+
+        if (mw.IsVisible && mw.WindowState != WindowState.Minimized)
+        {
+            // Mirrors the X-button path: cancel-and-hide is owned by
+            // MainWindow.OnClosing; Hide() directly is the right verb
+            // when the user explicitly asks "hide to tray" from the menu.
+            mw.Hide();
+        }
+        else
+        {
+            mw.ShowAndActivate();
+        }
+    }
+
+    private void OnTrayExitClicked(object sender, RoutedEventArgs e)
+    {
+        // Routes through MainWindow's RequestExit so the _exiting flag
+        // is set BEFORE Close() — without it, OnClosing intercepts and
+        // hides instead of shutting down.
+        (MainWindow as MainWindow)?.RequestExit();
+    }
+
+    /// <summary>
+    /// Tray balloon click — restores the window if hidden and navigates
+    /// to the Alerts page. AlertsPage is NavigationCacheMode.Enabled so
+    /// this lands on its existing instance.
+    /// </summary>
+    private void OnTrayBalloonTipClicked(object sender, RoutedEventArgs e)
+    {
+        var mw = MainWindow as MainWindow;
+        if (mw is null) return;
+
+        if (mw.WindowState == WindowState.Minimized) mw.WindowState = WindowState.Normal;
+        mw.Show();
+        mw.Activate();
+        try { mw.NavigateToAlerts(); }
+        catch { /* navigation is best-effort — already on Alerts is fine */ }
+    }
+
+    /// <summary>
+    /// Best-effort wrapper around the shell-tray notification API.
+    /// Resolves the AppTray resource lazily — by the time any caller
+    /// invokes this, OnStartup has already force-materialised it, so
+    /// the lookup is a dictionary hit, not a fresh construction.
+    /// Swallows all exceptions: a broken toast must not crash the UI.
+    /// </summary>
+    internal void ShowTrayNotification(string title, string message, NotificationIcon icon, bool sound)
+    {
+        try
+        {
+            if (Resources["AppTray"] is TaskbarIcon tray)
+            {
+                tray.ShowNotification(title: title, message: message, icon: icon, sound: sound);
+            }
+        }
+        catch
+        {
+            // Same posture as the original Tray.ShowNotification call sites.
+        }
     }
 
     /// <summary>

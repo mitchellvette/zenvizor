@@ -12,13 +12,13 @@
     Skip the dotnet build step. Use when you've already built.
 
 .PARAMETER StartMode
-    auto | demand | disabled  (default: demand -- start on user request)
+    auto | demand | disabled  (default: auto -- start on boot, mirrors MSI install)
 #>
 [CmdletBinding()]
 param(
     [switch]$NoBuild,
     [ValidateSet('auto','demand','disabled')]
-    [string]$StartMode = 'demand'
+    [string]$StartMode = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'

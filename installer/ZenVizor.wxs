@@ -69,7 +69,7 @@
                         DisplayName="ZenVizor"
                         Description="ZenVizor passive network monitor."
                         Type="ownProcess"
-                        Start="demand"
+                        Start="auto"
                         ErrorControl="normal"
                         Account="LocalSystem"
                         Vital="yes" />

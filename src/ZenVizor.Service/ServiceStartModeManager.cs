@@ -43,27 +43,31 @@ internal sealed class ServiceStartModeManager
 
     /// <summary>
     /// Returns the live SCM start-mode. On failure (service not installed,
-    /// SCM unreachable) logs and returns <see cref="ServiceStartMode.Automatic"/>
-    /// as the documented fallback — keeps the Settings page rendering rather
-    /// than blocking on a transient error.
+    /// SCM unreachable, query failed) logs at Error and returns
+    /// <see cref="ServiceStartMode.Manual"/> as the conservative fallback —
+    /// the Settings UI displays "Start with Windows: OFF" which is honest
+    /// about the uncertainty. A subsequent toggle-on by the user routes
+    /// through <see cref="Set"/>, which surfaces the underlying SCM
+    /// failure as a Win32Exception → caution banner, instead of the
+    /// silent Automatic-fallback lying about the actual state.
     /// </summary>
     public ServiceStartMode Get()
     {
         var scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
         if (scm == IntPtr.Zero)
         {
-            _logger.LogWarning("OpenSCManager failed: {Error}", Marshal.GetLastWin32Error());
-            return ServiceStartMode.Automatic;
+            _logger.LogError("OpenSCManager failed: {Error}", Marshal.GetLastWin32Error());
+            return ServiceStartMode.Manual;
         }
         try
         {
             var svc = OpenService(scm, _serviceName, SERVICE_QUERY_CONFIG);
             if (svc == IntPtr.Zero)
             {
-                _logger.LogWarning(
+                _logger.LogError(
                     "OpenService('{ServiceName}') failed: {Error}",
                     _serviceName, Marshal.GetLastWin32Error());
-                return ServiceStartMode.Automatic;
+                return ServiceStartMode.Manual;
             }
             try
             {
@@ -75,10 +79,10 @@ internal sealed class ServiceStartModeManager
                 {
                     if (!QueryServiceConfig(svc, buffer, needed, out _))
                     {
-                        _logger.LogWarning(
+                        _logger.LogError(
                             "QueryServiceConfig failed: {Error}",
                             Marshal.GetLastWin32Error());
-                        return ServiceStartMode.Automatic;
+                        return ServiceStartMode.Manual;
                     }
                     var config = Marshal.PtrToStructure<QUERY_SERVICE_CONFIG>(buffer);
                     return config.dwStartType switch
@@ -86,7 +90,7 @@ internal sealed class ServiceStartModeManager
                         SERVICE_AUTO_START   => ServiceStartMode.Automatic,
                         SERVICE_DEMAND_START => ServiceStartMode.Manual,
                         SERVICE_DISABLED     => ServiceStartMode.Disabled,
-                        _                    => ServiceStartMode.Automatic,
+                        _                    => ServiceStartMode.Manual,
                     };
                 }
                 finally
