@@ -427,6 +427,40 @@ public partial class App : Application
         });
     }
 
+    /// <summary>
+    /// Yield promptly to OS logoff/shutdown and — the case that motivated
+    /// this — the Windows Restart Manager during an in-place installer
+    /// upgrade. All three surface here via WM_QUERYENDSESSION.
+    /// </summary>
+    /// <remarks>
+    /// Without this, WPF's shutdown attempt closes <see cref="MainWindow"/>,
+    /// <c>MainWindow.OnClosing</c> vetoes the close (hide-to-tray) and the
+    /// process lingers in the tray. Restart Manager then waits out its full
+    /// grace window (~17 s, observed on the 1.0.0→1.1.1 upgrade) before
+    /// force-killing us, which is what made the upgrade look hung. Routing
+    /// through <c>RequestExit</c> sets the real-exit flag so the window
+    /// closes for real and the process exits before RM's timer elapses.
+    /// </remarks>
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+
+        // A subscriber may have vetoed (none today) — respect that and
+        // leave the session-ending decision to them.
+        if (e.Cancel) return;
+
+        if (MainWindow is MainWindow mw)
+        {
+            mw.RequestExit();
+        }
+        else
+        {
+            // No window yet (very early launch). Nothing holds the dispatcher
+            // open but OnExplicitShutdown, so exit explicitly.
+            Shutdown();
+        }
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         try { _singleInstance?.Dispose(); }
