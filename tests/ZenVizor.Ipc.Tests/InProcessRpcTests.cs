@@ -306,9 +306,15 @@ public sealed class InProcessRpcTests
 
         await broadcaster.BroadcastAlertRaisedAsync(alert);
 
-        // StreamJsonRpc dispatches notifications asynchronously; wait briefly
-        // for the inbound NotifyAsync to land on the client-side target.
-        var received = await notificationTarget.WaitForAlertAsync(TimeSpan.FromSeconds(2));
+        // StreamJsonRpc dispatches notifications asynchronously; wait for the
+        // inbound NotifyAsync to land on the client-side target. The budget is
+        // generous on purpose: the happy path returns the instant the TCS
+        // completes (~150 ms locally), so a long timeout costs nothing on
+        // success — it only bounds how long a genuinely dropped push takes to
+        // report. 2 s flaked on cold CI runners where first-call JIT +
+        // serializer warmup exceeded the budget; 10 s absorbs that without
+        // weakening the dropped-push regression guard below.
+        var received = await notificationTarget.WaitForAlertAsync(TimeSpan.FromSeconds(10));
 
         received.Should().NotBeNull();
         received!.AlertId.Should().Be(1);
