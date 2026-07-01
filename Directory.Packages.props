@@ -2,7 +2,7 @@
 
   <ItemGroup Label="IPC">
     <PackageVersion Include="StreamJsonRpc" Version="2.21.10" />
-    <PackageVersion Include="Nerdbank.Streams" Version="2.11.79" />
+    <PackageVersion Include="Nerdbank.Streams" Version="2.13.16" />
   </ItemGroup>
 
   <ItemGroup Label="IPC transitive vulnerability pins">
