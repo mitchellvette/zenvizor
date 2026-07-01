@@ -11,6 +11,14 @@ updates:
       # we deliberately move to Shouldly / AwesomeAssertions / plain xUnit.
       - dependency-name: "FluentAssertions"
         update-types: ["version-update:semver-major"]
+      # System.CommandLine moved from beta4 → 2.0 stable with substantial
+      # API changes (SetHandler → SetAction, namespace consolidation,
+      # cancellation model). All ~60 handler sites in src/ZenVizor.Cli/
+      # Program.cs need to be migrated — scheduled as the 1.2.1 patch.
+      # This ignore is TEMPORARY; the migration PR removes this entry
+      # in the same commit that bumps the package.
+      - dependency-name: "System.CommandLine"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
