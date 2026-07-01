@@ -45,6 +45,24 @@ internal sealed class ZenVizorHostedService : IHostedService
     // receive-only SIO_RCVALL raw-socket substrate (IPv4 only).
     private const bool SniCaptureEnabled = true;
 
+    // Dev/QA only — when ZENVIZOR_DISABLE_CAPTURE is set to a truthy value the
+    // service constructs the full pipeline (so IPC still serves the DB) but
+    // starts NO capture: no ETW monitor, no DNS/SNI observers, no retention
+    // purge, no enrichment backfill. Lets the marketing screenshot seed be
+    // served verbatim without live capture polluting the deterministic byte
+    // totals or the enrichment backfill rewriting the hand-seeded signer/path
+    // attribution. Inert unless the env var is set; production never sets it.
+    private const string DisableCaptureEnvVar = "ZENVIZOR_DISABLE_CAPTURE";
+    private static readonly bool CaptureDisabled = IsEnvFlagSet(DisableCaptureEnvVar);
+
+    private static bool IsEnvFlagSet(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return !string.IsNullOrWhiteSpace(value)
+            && !value.Equals("0", StringComparison.Ordinal)
+            && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
+    }
+
     private readonly ILogger<ZenVizorHostedService> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private ZenVizorPipeServer? _pipeServer;
@@ -227,7 +245,19 @@ internal sealed class ZenVizorHostedService : IHostedService
             FlushInterval,
             _loggerFactory.CreateLogger<CaptureMonitor>());
 
-        await _captureMonitor.StartAsync(cancellationToken).ConfigureAwait(false);
+        if (CaptureDisabled)
+        {
+            _logger.LogWarning(
+                "{EnvVar} is set — running in dev capture-disabled mode. No ETW/DNS/SNI " +
+                "capture, no retention purge, no enrichment backfill; the service serves the " +
+                "existing database over IPC unchanged. NEVER use this against the production " +
+                "data directory.",
+                DisableCaptureEnvVar);
+        }
+        else
+        {
+            await _captureMonitor.StartAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         // ---- Phase 8 — passive DNS observer (sibling capture path) ----
         // Sibling TraceEventSession listening to Microsoft-Windows-DNS-Client
@@ -244,14 +274,17 @@ internal sealed class ZenVizorHostedService : IHostedService
         _dnsSource = new DnsCaptureSource(
             _dnsStore,
             logger: _loggerFactory.CreateLogger<DnsCaptureSource>());
-        try
+        if (!CaptureDisabled)
         {
-            _dnsSource.Start();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "DNS capture source failed to start; resolved_host will be null until next service start.");
+            try
+            {
+                _dnsSource.Start();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "DNS capture source failed to start; resolved_host will be null until next service start.");
+            }
         }
 
         // ---- Phase 8.6 — passive SNI / QUIC-SNI / HTTP-Host observer ----
@@ -266,7 +299,7 @@ internal sealed class ZenVizorHostedService : IHostedService
         // Like DNS, this is enrichment, not load-bearing: a failed start logs
         // and continues. ECH (TLS 1.3 Encrypted ClientHello) keeps its SNI
         // encrypted and stays unrecoverable — the documented residual gap.
-        if (SniCaptureEnabled)
+        if (SniCaptureEnabled && !CaptureDisabled)
         {
             _sniSource = TryStartSniCapture(_dnsStore);
         }
@@ -336,15 +369,23 @@ internal sealed class ZenVizorHostedService : IHostedService
             alertBroadcaster: _alertBroadcaster);
         _pipeServer.Start();
 
-        // ---- Retention purge: one immediate run + once per 24 h thereafter. ----
-        var retention = new RetentionRepository(
-            connections, _loggerFactory.CreateLogger<RetentionRepository>());
-        _retentionCts = new CancellationTokenSource();
-        _retentionLoop = Task.Run(() => RunRetentionLoopAsync(retention, _retentionCts.Token));
+        // ---- Retention purge + enrichment backfill. Both mutate the DB, so
+        //      they stay off in capture-disabled mode to keep a seeded store
+        //      byte-for-byte deterministic: retention would purge anything past
+        //      its window and the backfill would re-verify signatures and
+        //      overwrite the hand-seeded signer/path attribution. ----
+        if (!CaptureDisabled)
+        {
+            // Retention purge: one immediate run + once per 24 h thereafter.
+            var retention = new RetentionRepository(
+                connections, _loggerFactory.CreateLogger<RetentionRepository>());
+            _retentionCts = new CancellationTokenSource();
+            _retentionLoop = Task.Run(() => RunRetentionLoopAsync(retention, _retentionCts.Token));
 
-        // ---- Enrichment backfill: fire-and-forget after capture is up. ----
-        _backfillCts = new CancellationTokenSource();
-        _backfillTask = Task.Run(() => RunBackfillSafelyAsync(backfill, _backfillCts.Token));
+            // Enrichment backfill: fire-and-forget after capture is up.
+            _backfillCts = new CancellationTokenSource();
+            _backfillTask = Task.Run(() => RunBackfillSafelyAsync(backfill, _backfillCts.Token));
+        }
 
         _logger.LogInformation(
             "ZenVizor service started. DbPath={DbPath} Pipe=\\\\.\\pipe\\ZenVizor.Ipc.v1 CaptureActive={Active}",
