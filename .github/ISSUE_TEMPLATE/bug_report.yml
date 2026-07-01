@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a defect in ZenVizor so it can be triaged for a future release.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        **This project does not accept pull requests or outside code contributions.**
+        Bug reports are read by the maintainer and used to guide the roadmap — please
+        do not open a PR for the fix. If you want to discuss the design, open a
+        Discussion instead.
+
+  - type: markdown
+    attributes:
+      value: |
+        **ZenVizor is a local-only Windows application.** It has no account system,
+        no login, no cloud sync, and (by design) makes no network connections of its
+        own. Please do NOT include account details, connection information, IP
+        addresses, or network captures — none of that is relevant to reproducing the
+        issue.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: ZenVizor version
+      description: Shown in the app under Settings / About, or via `zvctl version`.
+      placeholder: e.g. 1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: Run `winver` and copy the version + build (e.g. Windows 11 Pro 24H2, build 26100.2894).
+      placeholder: e.g. Windows 11 Pro 24H2, build 26100.2894
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Exact reproduction steps
+      description: Numbered steps that reliably reproduce the issue on a fresh install.
+      placeholder: |
+        1. Install ZenVizor 1.2.0 via the MSI bundle
+        2. Open the dashboard
+        3. Click ...
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Screenshots and log excerpts are welcome.
+    validations:
+      required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and "how do I..." posts
+    url: https://github.com/mitchellvette/zenvizor/discussions
+    about: General questions, usage help, and open-ended ideas belong in Discussions, not Issues.
+  - name: Note on contributions
+    url: https://github.com/mitchellvette/zenvizor/discussions
+    about: This project does NOT accept pull requests or outside code contributions. Bug reports and feature requests are welcome and are used to guide the maintainer's roadmap.

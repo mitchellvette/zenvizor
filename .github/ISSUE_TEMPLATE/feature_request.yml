@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a new capability or improvement for ZenVizor.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to share an idea.
+
+        **This project does not accept pull requests or outside code contributions.**
+        Feature requests are read by the maintainer and used to prioritize the
+        roadmap — please do not open a PR to implement the change. If you want to
+        discuss the shape of the idea before filing, open a Discussion instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem being solved
+      description: What are you trying to accomplish that ZenVizor doesn't help with today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work? UI sketches, sample output, and concrete examples are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope / size estimate
+      description: Your best guess at how large this change is. Just a rough gauge — the maintainer will re-estimate.
+      options:
+        - Small
+        - Medium
+        - Large
+        - Unsure
+    validations:
+      required: true
