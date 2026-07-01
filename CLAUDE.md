@@ -166,6 +166,20 @@ ZenVizor has two design-token surfaces — the app and Claude Design mocks — a
 
 ---
 
+## Git workflow
+
+Direct pushes to `main` are blocked by a branch ruleset. All changes — including from Claude — go through a PR.
+
+- Branch names: `feat/*`, `fix/*`, `chore/*`, `docs/*`. Short and topical.
+- Merge method: **squash-only**. Merge commits and rebase merges are disabled at the repo level; the ruleset also enforces this. `main` history stays 1 commit = 1 change.
+- The PR title becomes the squash-commit subject; the PR body becomes the commit body. Write both like commit messages, not like ephemeral chat.
+- CI (`Build & Test (windows-latest)`) is a **required status check**. The ruleset also requires PRs to be up-to-date with `main` before merge, so CI re-runs on the merge commit content.
+- Branches auto-delete on merge — don't re-use a branch name after its PR merges.
+- Bypass: the repo admin (owner) can bypass the ruleset for emergencies. Prefer opening a normal PR even for hotfixes; only bypass when CI itself is broken and blocking a real release.
+- Two-command shorthand: `gh pr create --fill` and `gh pr merge --auto --squash --delete-branch`. The `--auto` merges as soon as CI is green.
+
+---
+
 ## Versioning
 
 Product SemVer policy and the orthogonal IPC schema version rules are in `docs/versioning.md`. The single source of truth for the product version is `<Version>` in `Directory.Build.props`; both WiX projects pick it up through `$(var.Version)`.
