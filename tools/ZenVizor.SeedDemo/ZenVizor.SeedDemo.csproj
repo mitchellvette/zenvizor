@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- DEV-ONLY marketing-screenshot seeder. Deliberately NOT listed in
+       ZenVizor.slnx so it never enters `dotnet build ZenVizor.slnx`, the CI
+       matrix, or the installer. Build it explicitly in Debug and run its
+       `seed` command against a throwaway data dir (see README.md in this
+       folder for the exact invocation). The Release guard below hard-fails
+       any attempt to build it in Release, so a stray Release build on the
+       whole tree can't smuggle it into a shippable artifact. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>ZenVizor.SeedDemo</RootNamespace>
+    <AssemblyName>ZenVizor.SeedDemo</AssemblyName>
+    <!-- Match Service/CLI: pin the RID so Microsoft.Data.Sqlite's native
+         e_sqlite3 asset is copied, and keep the output path RID-free. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZenVizor.Storage\ZenVizor.Storage.csproj" />
+    <ProjectReference Include="..\..\src\ZenVizor.Ipc.Contracts\ZenVizor.Ipc.Contracts.csproj" />
+  </ItemGroup>
+
+  <Target Name="BlockReleaseBuild" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Error Text="ZenVizor.SeedDemo is a dev-only screenshot-seeding tool and must never be built in Release. Build it with -c Debug." />
+  </Target>
+
+</Project>
