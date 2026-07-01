@@ -4,6 +4,13 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # FluentAssertions v8 relicensed to a commercial (Xceed) model. Stay on
+      # 7.x (or migrate off entirely — see docs/licensing-*.md track) rather
+      # than let Dependabot re-propose the major bump every week. Revisit if
+      # we deliberately move to Shouldly / AwesomeAssertions / plain xUnit.
+      - dependency-name: "FluentAssertions"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
