@@ -78,7 +78,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Capture / Attribution (Win32)">
-    <PackageVersion Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
+    <PackageVersion Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.4" />
   </ItemGroup>
 
   <ItemGroup Label="Hosting / Logging">
