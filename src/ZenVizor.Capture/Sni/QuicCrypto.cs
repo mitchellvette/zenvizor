@@ -63,6 +63,16 @@ internal static class QuicCrypto
 
     /// <summary>
     /// Header-protection mask = AES-128-ECB(hp_key, sample). RFC 9001 §5.4.3.
+    /// <para>
+    /// ECB is mandated here and is NOT used for confidentiality — it is a
+    /// pseudo-random function over a single 16-byte <paramref name="sample16"/>
+    /// drawn from the packet's already-encrypted ciphertext body. Only one
+    /// block is ever "encrypted" per call, so ECB's identical-block leak does
+    /// not apply, and this whole path is passive decoding of packets already
+    /// on the wire (invariant #1: ZenVizor emits no traffic). Code scanners
+    /// flag ECB by pattern; do NOT switch modes — the RFC 9001 §A.1 vectors
+    /// are pinned in CI and any other mode breaks QUIC Initial parsing.
+    /// </para>
     /// </summary>
     public static byte[] HeaderProtectionMask(byte[] hpKey, ReadOnlySpan<byte> sample16)
     {
