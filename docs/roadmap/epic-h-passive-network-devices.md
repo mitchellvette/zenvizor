@@ -1,10 +1,12 @@
 # Epic H — Passive network devices
 
-**Release:** standalone 1.x.0 (minor) · **Status:** spike (feasibility spike
+**Release:** 1.8.0 (minor) if the spike succeeds; otherwise deferred and
+the 1.8.0 slot advances to Epic I · **Status:** spike (feasibility spike
 required before planning)
 **Depends on:** the spike result determines whether this is a real feature or
-shelves to ARP-only. Parked behind the rest of the roadmap; ships on its own
-whenever the spike succeeds, not bundled into any other release.
+shelves to ARP-only. Slotted at 1.8.0 to preserve alphabetical
+epic-to-version alignment; ships on its own whenever the spike succeeds,
+not bundled into any other release.
 
 > Stub: this epic is **not plannable** until the spike answers the question
 > below. Capturing the shape + the hard invariant line so it isn't

@@ -1,6 +1,6 @@
 # Epic D — KPI reverse-filter (click-to-include + Clear chip)
 
-**Release:** 1.4.0 (minor) · bundled with Epic B · **Status:** spec
+**Release:** 1.4.0 (minor) · ships alone · **Status:** spec
 **Depends on:** nothing
 
 ---
@@ -84,4 +84,5 @@ filter.
 ## Version classification
 
 **1.4.0 (minor).** New interactive surface on existing tiles + a new chip
-control. No contract change. Bundled with Epic B in 1.4.0.
+control. No contract change. Ships standalone (Epic B moved to 1.2.0 in
+the roadmap realignment).

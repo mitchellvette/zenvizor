@@ -487,23 +487,73 @@
                                           TextWrapping="Wrap"
                                           Margin="0,4,0,16" />
 
-                            <Grid>
+                            <!--  Epic B (1.2.0) — per-severity desktop
+                                  notification toggles. Replaces the single
+                                  "Show desktop notifications" master. Each
+                                  severity is independent; the Send-test
+                                  button below stays visible while any of
+                                  the three is on.  -->
+                            <TextBlock Style="{StaticResource setting.label}"
+                                       Text="Show desktop notifications" />
+                            <TextBlock Style="{StaticResource setting.description}"
+                                       Text="Fire a Windows notification whenever ZenVizor raises an alert. Toggle each severity independently; the Alerts page always lists everything ZenVizor noticed."
+                                       Margin="0,4,0,12" />
+
+                            <Grid Margin="0,4,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                     <TextBlock Style="{StaticResource setting.label}"
-                                               Text="Show desktop notifications" />
+                                               Text="Critical alerts" />
                                     <TextBlock Style="{StaticResource setting.description}"
-                                               Text="When on, every new alert also fires a Windows notification. The Alerts page always lists everything ZenVizor noticed." />
+                                               Text="Security-critical signals like an unsigned program from a user-writable folder reaching the internet." />
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="1"
-                                                 x:Name="ToastToggle"
-                                                 IsChecked="{Binding ToastOnAlert, Mode=TwoWay}"
+                                                 x:Name="ToastCriticalToggle"
+                                                 IsChecked="{Binding ToastOnCritical, Mode=TwoWay}"
                                                  VerticalAlignment="Center"
-                                                 Checked="OnToastChanged"
-                                                 Unchecked="OnToastChanged" />
+                                                 Checked="OnToastCriticalChanged"
+                                                 Unchecked="OnToastCriticalChanged" />
+                            </Grid>
+
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Warning alerts" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Notable-but-not-urgent signals like a large single-connection download or unusual daily volume." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="ToastWarningToggle"
+                                                 IsChecked="{Binding ToastOnWarning, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnToastWarningChanged"
+                                                 Unchecked="OnToastWarningChanged" />
+                            </Grid>
+
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                    <TextBlock Style="{StaticResource setting.label}"
+                                               Text="Info alerts" />
+                                    <TextBlock Style="{StaticResource setting.description}"
+                                               Text="Informational signals like a newly-installed program reaching the internet for the first time." />
+                                </StackPanel>
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 x:Name="ToastInfoToggle"
+                                                 IsChecked="{Binding ToastOnInfo, Mode=TwoWay}"
+                                                 VerticalAlignment="Center"
+                                                 Checked="OnToastInfoChanged"
+                                                 Unchecked="OnToastInfoChanged" />
                             </Grid>
 
                             <!--  Send-test row. Visible only when the toggle is on.
@@ -522,7 +572,7 @@
                                            Style="{StaticResource setting.description}"
                                            VerticalAlignment="Center"
                                            Margin="0,0,16,0"
-                                           Text="Fires a sample notification through the same path real alerts use." />
+                                           Text="Fires one sample notification per enabled severity, through the same path real alerts use. Severities set to off stay silent." />
                                 <ui:Button Grid.Column="1"
                                            x:Name="TestNotificationButton"
                                            VerticalAlignment="Center"

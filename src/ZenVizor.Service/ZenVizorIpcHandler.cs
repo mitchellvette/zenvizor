@@ -140,6 +140,10 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
 
     private static SettingsSnapshot DefaultSettings() => new(
         AutostartMode: ServiceStartMode.Automatic,
+        // Master derived from the per-severity defaults below (Critical
+        // only → true). Matches BuildSettingsSnapshot's OR-derivation
+        // so the disconnected/fallback snapshot doesn't drift from a
+        // real snapshot on a fresh install.
         ToastOnAlert: true,
         Theme: AppTheme.System,
         FlushIntervalMs: 5000,
@@ -153,7 +157,10 @@ internal sealed class ZenVizorIpcHandler : IZenVizorIpc
         AlertLargeDownloadMb: 50,
         AlertOutboundHeavyFloorMb: 10,
         AlertUnusualDailyVolumeKTimesTen: 25,
-        SmoothChartAnimations: false);
+        SmoothChartAnimations: false,
+        ToastOnCritical: true,
+        ToastOnWarning: false,
+        ToastOnInfo: false);
 
     public Task<NegotiateVersionResult> NegotiateVersionAsync(string clientVersion)
     {

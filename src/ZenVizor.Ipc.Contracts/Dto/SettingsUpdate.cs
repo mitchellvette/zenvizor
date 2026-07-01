@@ -10,6 +10,14 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// enum values; partial-success is NOT supported — a rejected field fails
 /// the whole call so the UI never reads a "half-applied" state on the next
 /// <c>GetSettingsAsync</c>.
+/// <para>
+/// Epic B (1.2.0) split <see cref="ToastOnAlert"/> into three per-severity
+/// fields. When both the legacy master and a per-severity field are set on
+/// the same update, the server applies the master first (mass-set) then
+/// the per-severity overrides, so the more-specific value wins. A 1.1.x UI
+/// that only knows the master keeps working: writing
+/// <c>ToastOnAlert = true</c> turns on all three per-severity keys.
+/// </para>
 /// </summary>
 public sealed record SettingsUpdate
 {
@@ -26,4 +34,13 @@ public sealed record SettingsUpdate
     public int? AlertOutboundHeavyFloorMb { get; init; }
     public int? AlertUnusualDailyVolumeKTimesTen { get; init; }
     public bool? SmoothChartAnimations { get; init; }
+
+    /// <summary>Epic B — per-severity toast preference for Critical alerts.</summary>
+    public bool? ToastOnCritical { get; init; }
+
+    /// <summary>Epic B — per-severity toast preference for Warning alerts.</summary>
+    public bool? ToastOnWarning { get; init; }
+
+    /// <summary>Epic B — per-severity toast preference for Info alerts.</summary>
+    public bool? ToastOnInfo { get; init; }
 }

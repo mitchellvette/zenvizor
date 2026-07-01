@@ -1,6 +1,6 @@
 # Epic I — Endpoint-centric lookup
 
-**Release:** 1.5.0 (minor) · bundled with Epics F + G · **Status:** stub
+**Release:** 1.9.0 (minor) · ships alone · **Status:** stub
 **Depends on:** shares the windowed-query machinery with Epic A (the
 arbitrary-window path is built in A's windowing phase and reused here; Epic A
 ships first as 1.1.0, so this dependency is satisfied by the sequence)
@@ -42,5 +42,5 @@ to this IP / host?"** over a window.
 
 ## Version classification
 
-**1.5.0 (minor):** new IPC method + new view. No contract break. Bundled with
-Epics F + G in 1.5.0.
+**1.9.0 (minor):** new IPC method + new view. No contract break. Ships
+standalone (F/G/I bundle dissolved in the roadmap realignment).

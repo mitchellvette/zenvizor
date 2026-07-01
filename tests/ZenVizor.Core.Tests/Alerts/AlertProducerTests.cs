@@ -228,6 +228,125 @@ public sealed class AlertProducerTests
         sink.UpdateDetailCalls.Should().Be(0);
     }
 
+    // ── Epic B fresh-install simulation ─────────────────────────────────
+
+    /// <summary>
+    /// Setup-scan-seeded pre-existing apps hit WAN inside the FirstRun
+    /// window; the baseline gate must reject every raise. This is the
+    /// day-one Chrome/Teams/svchost flood the epic corrects. Compares
+    /// against the same producer wiring the service uses in prod.
+    /// </summary>
+    [Fact]
+    public void FreshInstall_TenPreexistingAppsHitWan_ProducesNoFirstRunRaises()
+    {
+        var installEpoch = T0;
+        var sink = new FakeAlertSink();
+
+        // Simulate the setup-scan seeder having written first_seen =
+        // install_epoch for every pre-existing app id (1..10). The
+        // producer's lookup answers with these values.
+        var firstSeen = new Dictionary<int, long>();
+        for (int i = 1; i <= 10; i++) firstSeen[i] = installEpoch;
+
+        var raised = new List<AlertDto>();
+        var producer = new AlertProducer(
+            new IAlertRule[] { new FirstRunWanTalkerRule(installEpoch) },
+            sink,
+            nowProvider: () => installEpoch + 30_000,
+            appFirstSeenLookup: id => firstSeen.TryGetValue(id, out var v) ? v : 0);
+        producer.AlertRaised += dto => raised.Add(dto);
+
+        // Every pre-existing app opens a WAN connection 30 s after
+        // capture starts — well inside the 60 s first-run window and
+        // inside the 48 h baseline window.
+        for (int appId = 1; appId <= 10; appId++)
+        {
+            producer.OnSessionConnectedWan(SignedEvent(appId, when: installEpoch + 30_000));
+        }
+
+        sink.Rows.Should().BeEmpty(
+            because: "baseline gate must suppress false first-runs for pre-existing apps");
+        raised.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A user installs a genuinely new app 49 h after ZenVizor was
+    /// installed. It reaches out to the network within 60 s of its
+    /// first_seen — the "no permanent disable" acceptance criterion.
+    /// </summary>
+    [Fact]
+    public void PostBaseline_GenuineFirstRun_RaisesNormally()
+    {
+        var installEpoch = T0;
+        var appFirstSeen = installEpoch + FirstRunWanTalkerRule.BaselineWindowMs + Hour; // 49 h after install
+        var flushTime = appFirstSeen + 30_000;
+
+        var sink = new FakeAlertSink();
+        var raised = new List<AlertDto>();
+        var producer = new AlertProducer(
+            new IAlertRule[] { new FirstRunWanTalkerRule(installEpoch) },
+            sink,
+            nowProvider: () => flushTime,
+            appFirstSeenLookup: id => id == 99 ? appFirstSeen : 0);
+        producer.AlertRaised += dto => raised.Add(dto);
+
+        producer.OnSessionConnectedWan(SignedEvent(appId: 99, when: flushTime));
+
+        raised.Should().ContainSingle()
+            .Which.Type.Should().Be(AlertType.FirstRunWanTalker);
+    }
+
+    /// <summary>
+    /// A dropper installs inside the 48 h baseline window and reaches
+    /// out. The Critical UnsignedFromUserPath rule fires regardless of
+    /// the baseline window — the whole point of the gate is that it
+    /// only affects the Info first-run signal. This is the roadmap
+    /// lock at line 94 of the epic doc.
+    /// </summary>
+    [Fact]
+    public void CriticalUnsignedFromUserPath_StillFiresInsideBaselineWindow()
+    {
+        var installEpoch = T0;
+        var flushTime = installEpoch + Hour; // 1 h after install — well inside baseline
+
+        var sink = new FakeAlertSink();
+        var raised = new List<AlertDto>();
+        var producer = new AlertProducer(
+            new IAlertRule[]
+            {
+                new UnsignedFromUserPathRule(),
+                new FirstRunWanTalkerRule(installEpoch),
+            },
+            sink,
+            nowProvider: () => flushTime,
+            appFirstSeenLookup: _ => installEpoch); // "pre-existing" — baseline seeder ran
+
+        producer.AlertRaised += dto => raised.Add(dto);
+
+        // Unsigned + user-writable path — Event() default builds this.
+        producer.OnSessionConnectedWan(Event(appId: 47, when: flushTime));
+
+        raised.Should().ContainSingle()
+            .Which.Type.Should().Be(AlertType.UnsignedFromUserPath);
+    }
+
+    private static NewSessionEvent SignedEvent(int appId, long when) => new(
+        AppId: appId,
+        SessionId: appId * 10,
+        App: new AppIdentity(
+            ImagePath: $@"C:\Program Files\Vendor{appId}\app.exe",
+            ImageName: $"app{appId}.exe",
+            Publisher: $"Vendor {appId}",
+            SignatureStatus: "Signed",
+            IsUserWritablePath: false),
+        WanConnection: new PendingConnection(
+            Pid: appId, Protocol: Protocol.Tcp,
+            RemoteAddress: "1.1.1.1", RemotePort: 443,
+            RemoteClass: RemoteClass.Wan,
+            BytesUpDelta: 0, BytesDownDelta: 0,
+            FirstSeenUnixMs: when, LastSeenUnixMs: when),
+        FlushTimeUnixMs: when);
+
     [Fact]
     public void ForgetActive_AllowsPostCooldownReinsert()
     {

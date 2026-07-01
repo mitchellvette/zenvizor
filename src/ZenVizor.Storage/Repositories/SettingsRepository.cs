@@ -46,6 +46,27 @@ public sealed class SettingsRepository
 
         // Phase 9.a — Dashboard smooth chart animations toggle.
         public const string SmoothChartAnimations = "appearance.smooth_chart_animations";
+
+        // Epic B (1.2.0) — install epoch for the first-run baseline gate.
+        // Written once on first service start after install; never
+        // overwritten. Consumed by FirstRunWanTalkerRule to suppress
+        // day-one false first-runs on apps present at install.
+        public const string BaselineInstallEpochMs = "baseline.install_epoch_ms";
+
+        // Epic B (1.2.0) — one-shot flag guarding the running-process
+        // setup-scan seed. Present ("1") means the seed already ran on
+        // this install; a subsequent service restart is a no-op.
+        public const string BaselineSetupScanDone = "baseline.setup_scan_done";
+
+        // Epic B (1.2.0) — per-severity toast preferences. Split from the
+        // legacy toast.on_alert master. Seeded on first-run + on upgrade
+        // from a 1.1.x install by ZenVizorHostedService (see
+        // MigrateToastPreferencesIfNeeded). Legacy toast.on_alert stays in
+        // the settings table for back-compat with older UIs that only
+        // read that field.
+        public const string ToastOnCritical = "toast.on_alert.critical";
+        public const string ToastOnWarning  = "toast.on_alert.warning";
+        public const string ToastOnInfo     = "toast.on_alert.info";
     }
 
     private readonly ConnectionFactory _connections;

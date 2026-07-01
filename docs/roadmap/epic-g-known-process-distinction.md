@@ -1,14 +1,14 @@
 # Epic G — Known-process distinction
 
-**Release:** 1.5.0 (minor) — shipped **complete** (catalog verification +
-common-items), bundled with Epics F + I
+**Release:** 1.7.0 (minor) — ships **complete** (catalog verification +
+common-items), standalone
 **Status:** stub (catalog-verification phase ready to spec; common-items phase
 needs content + UX planning)
 **Depends on:** nothing (the two phases are independent)
 **Build / QA note:** the catalog-verification phase touches the attribution
 hot path + the per-app signature cache. Build and QA it **in isolation** (its
-own commit, verified alone) even though it ships in the 1.5.0 bundle, so a
-verification regression doesn't entangle with F / I when bisecting.
+own commit, verified alone) so a verification regression stays localized
+when bisecting.
 
 ---
 
@@ -45,7 +45,7 @@ reassurance.
 - **Invariant 6 preserved:** offline only — `WTD_REVOKE_NONE`, no network.
 - **Caution:** touches the attribution hot path + the per-app signature cache.
   Keep verification cached per app (never per event). Build and QA this phase
-  **in isolation** (its own commit) even though it ships in the 1.5.0 bundle.
+  **in isolation** (its own commit) so a regression stays localized.
 - **Correction in nature:** on its own this is a corrected attribution edge
   case (catalog-signed → `Unsigned`) with no new surface; it ships bundled
   with the annotation phase, which is what makes the release a minor.
@@ -67,7 +67,7 @@ reassurance.
 
 ## Version classification
 
-**1.5.0 (minor).** The verification phase is a corrected attribution edge case
+**1.7.0 (minor).** The verification phase is a corrected attribution edge case
 (no new surface) on its own, but it ships bundled with the annotation phase —
 a new visual cue + a shipped lookup table — so the release adds surface and is
-a minor. Shipped complete, with Epics F + I, in 1.5.0.
+a minor. Ships standalone (F/G/I bundle dissolved in the roadmap realignment).

@@ -28,12 +28,16 @@ public partial class MainWindow : FluentWindow
     private readonly HistoryQueryClient _historyClient;
     private bool _exiting;
 
-    // Phase 6.2: cached "show desktop toast on AlertRaised" preference.
-    // Hit by OnAlertRaised on every push so we keep it local instead of
-    // round-tripping IPC per alert. Hydrated on Loaded from the service
-    // and refreshed by SettingsPage via SetToastEnabled when the user
-    // toggles the switch. Default true matches the seeded setting row.
-    private bool _toastEnabled = true;
+    // Phase 6.2 → Epic B (1.2.0). Per-severity toast preferences,
+    // cached locally so OnAlertRaised doesn't hit IPC on every push.
+    // Hydrated from the service snapshot on Loaded; SettingsPage reseeds
+    // them via SetToastPreferences when the user flips a toggle. The
+    // three fields replaced a single _toastEnabled bool + hard-coded
+    // severity defaults in the gating phase. Defaults match the
+    // fresh-install seed in MigrateToastPreferencesIfNeeded.
+    private bool _toastCritical = true;
+    private bool _toastWarning;
+    private bool _toastInfo;
 
     // Per-severity active counts tracked LOCALLY in MainWindow so the
     // nav-rail badge updates on AlertRaised push regardless of whether
@@ -245,20 +249,26 @@ public partial class MainWindow : FluentWindow
             }
         });
 
-        // Hydrate the toast preference from the service so the very first
-        // AlertRaised after launch honours the saved choice. Failure
-        // leaves the field at its default (true); SettingsPage will
-        // reconcile on its first GetSettingsAsync.
+        // Hydrate the three per-severity toast preferences from the
+        // service so the very first AlertRaised after launch honours
+        // the saved choices. Failure leaves the fields at their
+        // fresh-install defaults (Critical=true, Warning/Info=false);
+        // SettingsPage will reconcile on its first GetSettingsAsync.
         _ = Task.Run(async () =>
         {
             try
             {
                 var snapshot = await _settingsClient.GetSettingsAsync().ConfigureAwait(false);
-                Dispatcher.Invoke(() => _toastEnabled = snapshot.ToastOnAlert);
+                Dispatcher.Invoke(() =>
+                {
+                    _toastCritical = snapshot.ToastOnCritical;
+                    _toastWarning  = snapshot.ToastOnWarning;
+                    _toastInfo     = snapshot.ToastOnInfo;
+                });
             }
             catch
             {
-                // Best-effort hydrate; default of true is the safe fallback.
+                // Best-effort hydrate; the gating-phase defaults are safe.
             }
         });
     }
@@ -304,26 +314,43 @@ public partial class MainWindow : FluentWindow
     public System.Windows.Controls.ContentPresenter DialogHost => RootContentDialog;
 
     /// <summary>
-    /// SettingsPage hands the updated preference here after a successful
-    /// UpdateSettings round-trip so subsequent <c>OnAlertRaised</c>
-    /// invocations honour the new value without re-fetching from IPC.
+    /// Epic B — SettingsPage hands the updated per-severity preferences
+    /// here after a successful UpdateSettings round-trip so subsequent
+    /// <c>OnAlertRaised</c> invocations honour the new values without
+    /// re-fetching from IPC. Nullable per parameter so a page that only
+    /// changed one severity can send just that update.
     /// </summary>
-    internal void SetToastEnabled(bool enabled) => _toastEnabled = enabled;
+    internal void SetToastPreferences(bool? critical = null, bool? warning = null, bool? info = null)
+    {
+        if (critical is { } c) _toastCritical = c;
+        if (warning  is { } w) _toastWarning  = w;
+        if (info     is { } i) _toastInfo     = i;
+    }
 
     /// <summary>
-    /// Fires a one-off test desktop notification through the same
-    /// <c>Tray.ShowNotification</c> path real alerts use. Driven by the
-    /// SettingsPage "Send test notification" button so users can verify the
-    /// OS-level toast plumbing without waiting for a real alert to land.
-    /// Swallows exceptions silently — a broken toast must not crash the UI.
+    /// Fires a test desktop notification through the same
+    /// <c>Tray.ShowNotification</c> path real alerts use — including
+    /// the per-severity gate. Epic B (1.2.0) made this severity-aware:
+    /// callers pass the severity they want to test, and if that
+    /// severity's toast toggle is off, the call is a silent no-op.
+    /// The result is that a single click on Settings' "Send test
+    /// notification" button visibly reproduces the exact set of
+    /// toasts the current config would fire for real alerts — one
+    /// toast per enabled severity, none per disabled severity. That
+    /// makes the button positive verification of BOTH Windows-level
+    /// delivery plumbing AND ZenVizor's per-severity gate.
+    /// Swallows exceptions silently — a broken toast must not crash
+    /// the UI.
     /// </summary>
-    internal void ShowTestToast()
+    internal void ShowTestToast(NotableSeverity severity)
     {
+        if (!SeverityToastEnabled(severity)) return;
+
         ((App)Application.Current).ShowTrayNotification(
-            title: "ZenVizor: Test notification",
-            message: "If you can see this, desktop notifications are working.",
-            icon: NotificationIcon.Info,
-            sound: true);
+            title:   $"ZenVizor: {AlertCatalogLookups.SeverityDisplayName(severity)} test",
+            message: "If you can see this, desktop notifications for this severity are working.",
+            icon:    SeverityToToastIcon(severity),
+            sound:   true);
     }
 
     /// <summary>
@@ -425,13 +452,18 @@ public partial class MainWindow : FluentWindow
             RenderBadgeFromLocalCounts();
             PulseAlertsBadge();
 
-            // Phase 6.2: optional desktop toast. Off by default-not, on
-            // by default-yes (matches the seeded toast.on_alert = '1'
-            // setting). Severity drives the system-icon glyph; the
-            // tray-balloon-click handler brings the window back and
-            // navigates to Alerts. We swallow exceptions because a
-            // broken toast must not corrupt the badge update above.
-            if (_toastEnabled)
+            // Optional desktop toast. Epic B (1.2.0) toggles phase —
+            // each severity has an independent settings-backed
+            // preference (the gating phase's hard-coded switch was
+            // deleted here). Fresh-install default is Critical=on,
+            // Warning/Info=off; the Settings page's three toggles
+            // reseed the local cache via SetToastPreferences.
+            //
+            // Severity drives the system-icon glyph; the tray-balloon-
+            // click handler brings the window back and navigates to
+            // Alerts. Exceptions are swallowed because a broken toast
+            // must not corrupt the badge update above.
+            if (SeverityToastEnabled(alert.Severity))
             {
                 ((App)Application.Current).ShowTrayNotification(
                     title: $"ZenVizor: {AlertCatalogLookups.SeverityDisplayName(alert.Severity)}",
@@ -441,6 +473,14 @@ public partial class MainWindow : FluentWindow
             }
         });
     }
+
+    private bool SeverityToastEnabled(NotableSeverity severity) => severity switch
+    {
+        NotableSeverity.Critical => _toastCritical,
+        NotableSeverity.Warning  => _toastWarning,
+        NotableSeverity.Info     => _toastInfo,
+        _                        => false,
+    };
 
     /// <summary>
     /// Called by App's tray balloon-click handler after it restores +

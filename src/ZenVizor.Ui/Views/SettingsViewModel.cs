@@ -282,11 +282,68 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
     // ── Alerts ──────────────────────────────────────────────────────────
 
     private bool _toastOnAlert = true;
+    /// <summary>
+    /// Master any-severity flag. Read from the snapshot as the OR of
+    /// <see cref="ToastOnCritical"/> / <see cref="ToastOnWarning"/> /
+    /// <see cref="ToastOnInfo"/>; used by
+    /// <see cref="SettingsPage"/>'s Send-test-notification visibility
+    /// binding. Not directly bound to a control post-Epic-B; the three
+    /// per-severity properties are what the user toggles.
+    /// </summary>
     public bool ToastOnAlert
     {
         get => _toastOnAlert;
         set => SetField(ref _toastOnAlert, value);
     }
+
+    private bool _toastOnCritical = true;
+    /// <summary>Epic B — Critical severity toast preference.</summary>
+    public bool ToastOnCritical
+    {
+        get => _toastOnCritical;
+        set
+        {
+            if (SetField(ref _toastOnCritical, value))
+            {
+                RecomputeToastOnAlert();
+            }
+        }
+    }
+
+    private bool _toastOnWarning;
+    /// <summary>Epic B — Warning severity toast preference.</summary>
+    public bool ToastOnWarning
+    {
+        get => _toastOnWarning;
+        set
+        {
+            if (SetField(ref _toastOnWarning, value))
+            {
+                RecomputeToastOnAlert();
+            }
+        }
+    }
+
+    private bool _toastOnInfo;
+    /// <summary>Epic B — Info severity toast preference.</summary>
+    public bool ToastOnInfo
+    {
+        get => _toastOnInfo;
+        set
+        {
+            if (SetField(ref _toastOnInfo, value))
+            {
+                RecomputeToastOnAlert();
+            }
+        }
+    }
+
+    // Keep the master derived from the three per-severity sources of
+    // truth so the Send-test-notification button's Visibility binding
+    // shows the button whenever ANY severity would toast. This mirrors
+    // the server-side derivation in BuildSettingsSnapshot.
+    private void RecomputeToastOnAlert() =>
+        ToastOnAlert = _toastOnCritical || _toastOnWarning || _toastOnInfo;
 
     // ── Appearance ──────────────────────────────────────────────────────
     //
@@ -328,7 +385,18 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged
 
         AutostartEnabled    = s.AutostartMode == ServiceStartMode.Automatic;
         StartMinimized      = s.StartMinimized;
-        ToastOnAlert        = s.ToastOnAlert;
+        // Assign the three per-severity fields first — the master is
+        // recomputed off them via RecomputeToastOnAlert as each setter
+        // fires. Assigning ToastOnAlert directly from the snapshot would
+        // be immediately overwritten by the first per-severity setter.
+        _toastOnCritical = s.ToastOnCritical;
+        _toastOnWarning  = s.ToastOnWarning;
+        _toastOnInfo     = s.ToastOnInfo;
+        _toastOnAlert    = s.ToastOnAlert;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToastOnCritical)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToastOnWarning)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToastOnInfo)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToastOnAlert)));
         Theme               = s.Theme;
         FlushIntervalMs     = s.FlushIntervalMs;
         FlushBucketSeconds  = s.FlushBucketSeconds;

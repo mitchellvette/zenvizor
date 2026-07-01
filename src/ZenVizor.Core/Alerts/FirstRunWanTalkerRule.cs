@@ -32,6 +32,32 @@ public sealed class FirstRunWanTalkerRule : IAlertRule
     public static readonly long FirstRunWindowMs = (long)TimeSpan.FromSeconds(60).TotalMilliseconds;
 
     /// <summary>
+    /// Post-install settling window (Epic B, 1.2.0). Any app whose
+    /// <c>first_seen</c> falls inside <c>install_epoch + BaselineWindowMs</c>
+    /// is treated as pre-existing on this machine and does NOT trip the
+    /// first-run rule. Corrects the day-one false-positive flood
+    /// (Chrome, Teams, svchost, etc. that already lived on the machine
+    /// but get a fresh <c>first_seen</c> the moment ZenVizor first
+    /// observes them). Const — user data would need to show that
+    /// long-tail installers keep unpacking past 48 h before this
+    /// becomes tunable.
+    /// </summary>
+    public static readonly long BaselineWindowMs = (long)TimeSpan.FromHours(48).TotalMilliseconds;
+
+    private readonly long _installEpochUnixMs;
+
+    /// <summary>
+    /// Constructs the rule with an install-epoch anchor. Zero disables
+    /// the baseline gate (test paths, first-boot before the epoch key
+    /// is written); a positive value gates raises inside the
+    /// <see cref="BaselineWindowMs"/> settling window.
+    /// </summary>
+    public FirstRunWanTalkerRule(long installEpochUnixMs = 0)
+    {
+        _installEpochUnixMs = installEpochUnixMs;
+    }
+
+    /// <summary>
     /// Effectively-never cooldown. The rule fires once per app for the
     /// app's lifetime; if dismissed, it stays dismissed.
     /// </summary>
@@ -46,6 +72,15 @@ public sealed class FirstRunWanTalkerRule : IAlertRule
         // AppFirstSeenUnixMs == 0 means the producer's lookup didn't
         // resolve the row. Treat as "no first-seen known" — silent.
         if (ctx.AppFirstSeenUnixMs <= 0)
+            return null;
+
+        // Epic B baseline gate — raise-gate for false-positive first-runs
+        // (apps demonstrably present at install, either setup-scan-seeded
+        // or genuinely first-observed inside the 48 h post-install
+        // settling window). Not-raising here is *correct attribution* —
+        // the app is not actually new — not a suppressed audit trail.
+        if (_installEpochUnixMs > 0 &&
+            ctx.AppFirstSeenUnixMs <= _installEpochUnixMs + BaselineWindowMs)
             return null;
 
         var ageMs = ctx.FlushTimeUnixMs - ctx.AppFirstSeenUnixMs;

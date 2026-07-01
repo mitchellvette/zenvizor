@@ -24,9 +24,12 @@ public sealed class SettingsContractTests
         return session;
     }
 
-    private static SettingsSnapshot SampleSnapshot() => new(
+    private static SettingsSnapshot SampleSnapshot(
+        bool toastOnCritical = true,
+        bool toastOnWarning = false,
+        bool toastOnInfo = false) => new(
         AutostartMode:               ServiceStartMode.Automatic,
-        ToastOnAlert:                true,
+        ToastOnAlert:                toastOnCritical || toastOnWarning || toastOnInfo,
         Theme:                       AppTheme.System,
         FlushIntervalMs:             5000,
         FlushBucketSeconds:          60,
@@ -39,7 +42,10 @@ public sealed class SettingsContractTests
         AlertLargeDownloadMb:        50,
         AlertOutboundHeavyFloorMb:   10,
         AlertUnusualDailyVolumeKTimesTen: 25,
-        SmoothChartAnimations:       false);
+        SmoothChartAnimations:       false,
+        ToastOnCritical:             toastOnCritical,
+        ToastOnWarning:              toastOnWarning,
+        ToastOnInfo:                 toastOnInfo);
 
     [Fact]
     public async Task GetSettings_AfterNegotiation_StampsSchemaVersionAndReturnsProviderPayload()
@@ -72,6 +78,77 @@ public sealed class SettingsContractTests
         applied.Should().NotBeNull();
         applied!.AutostartMode.Should().Be(ServiceStartMode.Manual);
         applied.RetentionDailyDays.Should().Be(730);
+    }
+
+    // ── Epic B (1.2.0) — per-severity toast preferences ─────────────────
+
+    [Fact]
+    public async Task GetSettings_PerSeverityFields_RoundTripAcrossPipe()
+    {
+        // Non-default combo: Critical off, Warning on, Info on. Exercises
+        // that all three trailing SettingsSnapshot fields survive JSON
+        // serialization + the envelope wrap.
+        var snap = SampleSnapshot(
+            toastOnCritical: false,
+            toastOnWarning:  true,
+            toastOnInfo:     true);
+        var handler = ProductionHandlerFactory.CreateDefault(
+            settingsProvider: () => snap);
+        await using var session = await NegotiatedSessionAsync(handler);
+
+        var envelope = await session.Proxy.GetSettingsAsync();
+
+        envelope.Payload.ToastOnCritical.Should().BeFalse();
+        envelope.Payload.ToastOnWarning.Should().BeTrue();
+        envelope.Payload.ToastOnInfo.Should().BeTrue();
+        // Master is the OR of the three — it's how UIs older than 1.2.0
+        // see a coherent answer.
+        envelope.Payload.ToastOnAlert.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateSettings_PerSeverityFieldsOnly_InvokesApplierWithMatchingFields()
+    {
+        // A 1.2.0 UI sends only ToastOnWarning; the master and the other
+        // two severities stay null so the handler doesn't touch them.
+        SettingsUpdate? applied = null;
+        var handler = ProductionHandlerFactory.CreateDefault(
+            settingsApplier: u => applied = u);
+        await using var session = await NegotiatedSessionAsync(handler);
+
+        await session.Proxy.UpdateSettingsAsync(new SettingsUpdate
+        {
+            ToastOnWarning = true,
+        });
+
+        applied.Should().NotBeNull();
+        applied!.ToastOnWarning.Should().BeTrue();
+        applied.ToastOnCritical.Should().BeNull();
+        applied.ToastOnInfo.Should().BeNull();
+        applied.ToastOnAlert.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateSettings_LegacyMasterFromOldUi_RoundTripsIntact()
+    {
+        // A pre-1.2.0 UI sends only ToastOnAlert. The wire-level payload
+        // must land on the applier unchanged so the service can mass-set
+        // the three per-severity keys server-side (that mass-set is not
+        // observable from this test — it happens inside
+        // ApplySettingsUpdate — but the DTO reaching the applier is what
+        // makes the mass-set possible).
+        SettingsUpdate? applied = null;
+        var handler = ProductionHandlerFactory.CreateDefault(
+            settingsApplier: u => applied = u);
+        await using var session = await NegotiatedSessionAsync(handler);
+
+        await session.Proxy.UpdateSettingsAsync(new SettingsUpdate
+        {
+            ToastOnAlert = false,
+        });
+
+        applied.Should().NotBeNull();
+        applied!.ToastOnAlert.Should().BeFalse();
     }
 
     [Fact]

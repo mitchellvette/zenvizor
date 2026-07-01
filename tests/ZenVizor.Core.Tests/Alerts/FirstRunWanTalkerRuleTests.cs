@@ -131,4 +131,61 @@ public sealed class FirstRunWanTalkerRuleTests
         new FirstRunWanTalkerRule().CooldownMs.Should().BeGreaterThan(
             (long)TimeSpan.FromDays(365 * 100).TotalMilliseconds);
     }
+
+    // ── Epic B baseline gate ────────────────────────────────────────────
+
+    [Fact]
+    public void TryEvaluate_AppInsideBaselineWindow_IsSuppressed()
+    {
+        // Install just happened at T0; app is a pre-existing installer
+        // (Chrome, Teams, svchost) whose first_seen is T0 + 5s — it fell
+        // inside the 48 h settling window. WAN connection now → the
+        // baseline gate rejects the raise as a false positive.
+        var installEpoch = T0;
+        var rule = new FirstRunWanTalkerRule(installEpoch);
+        var appFirstSeen = installEpoch + 5_000;
+        var ctx = Ctx(appFirstSeen: appFirstSeen, flushTime: appFirstSeen + 30_000);
+
+        rule.TryEvaluate(ctx).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryEvaluate_AppAtExactBaselineBoundary_IsSuppressed()
+    {
+        // first_seen == install_epoch + baseline_window exactly. The
+        // predicate is <=, so boundary is inclusive to the gate (the app
+        // is still considered pre-existing).
+        var installEpoch = T0;
+        var rule = new FirstRunWanTalkerRule(installEpoch);
+        var boundaryFirstSeen = installEpoch + FirstRunWanTalkerRule.BaselineWindowMs;
+        var ctx = Ctx(appFirstSeen: boundaryFirstSeen, flushTime: boundaryFirstSeen + 30_000);
+
+        rule.TryEvaluate(ctx).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryEvaluate_AppPastBaselineWindow_FiresNormally()
+    {
+        // A genuinely new app installed AFTER the 48 h settling window
+        // still triggers FirstRunWanTalker. This is the "no permanent
+        // disable" acceptance criterion.
+        var installEpoch = T0;
+        var rule = new FirstRunWanTalkerRule(installEpoch);
+        var appFirstSeen = installEpoch + FirstRunWanTalkerRule.BaselineWindowMs + 1;
+        var ctx = Ctx(appFirstSeen: appFirstSeen, flushTime: appFirstSeen + 30_000);
+
+        rule.TryEvaluate(ctx).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void TryEvaluate_ZeroInstallEpoch_DisablesBaselineGate()
+    {
+        // Test/back-compat path: no epoch wired → old behaviour, no
+        // baseline suppression. Fires for any app inside the 60 s
+        // first-run window.
+        var rule = new FirstRunWanTalkerRule(installEpochUnixMs: 0);
+        var ctx = Ctx(appFirstSeen: T0, flushTime: T0 + 30_000);
+
+        rule.TryEvaluate(ctx).Should().NotBeNull();
+    }
 }

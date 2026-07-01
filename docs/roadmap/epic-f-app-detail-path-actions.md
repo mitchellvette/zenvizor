@@ -1,7 +1,6 @@
 # Epic F — App-detail path actions (Reveal in Explorer)
 
-**Release:** 1.5.0 (minor) · bundled with Epics G + I (tiny on its own) ·
-**Status:** spec
+**Release:** 1.6.0 (minor) · ships alone · **Status:** spec
 **Depends on:** nothing
 
 ---
@@ -87,5 +86,5 @@ disk. The binary itself is never executed.
 
 ## Version classification
 
-**1.5.0 (minor).** New user-facing control. No contract change. Bundled with
-Epics G + I in 1.5.0.
+**1.6.0 (minor).** New user-facing control. No contract change. Ships
+standalone (F/G/I bundle dissolved in the roadmap realignment).

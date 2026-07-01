@@ -63,18 +63,24 @@ per release.
 | # | Release | Epic(s) | Content | Status |
 |---|---------|---------|---------|--------|
 | 1 | 1.1.0 | A | **History click-to-attribute** (complete). Per-App windowing (window selector + arbitrary-window display state) **and** the click-anywhere History popover: top-5 talkers (combined up+down, labeled in the chart's per-grain rate unit) + "+N more" remainder that deep-links into the windowed Per-App view. Reuses `GetAppListAsync` — no new IPC method, no schema bump. | shipped |
-| 2 | 1.2.0 | C | **Dismiss All** (visible-only) on the Alerts page: a header action that dismisses the *filtered* set, not the entire active set. Reuses the existing per-id idempotent dismiss IPC. | proposed |
-| 3 | 1.3.0 | E | **Dashboard gap + live window** (complete). Gap-break fix (keep feeding the buffer off-page; draw an explicit break across a real absence instead of a straight line) **and** the live-window dropdown (2 m / 10 m / 1 h) with DB back-fill via `GetTrafficHistoryAsync`. | proposed |
-| 4 | 1.4.0 | B + D | **Alert noise gating** (complete: ~48 h install-baseline window + running-process setup-scan seed + per-severity toast toggles; Critical keeps firing throughout) **and** **KPI reverse-filter** (click a severity tile to isolate it + Clear chip). | proposed |
-| 5 | 1.5.0 | F + G + I | **Reveal in Explorer** (app-detail path action) + **Known-process distinction** (complete: catalog-aware signature verification via `CryptCATAdmin*` + curated common-items annotation) + **Endpoint-centric lookup** ("which apps talked to this IP / host?"). | proposed |
-| — | 1.x.0 | H | **Passive network devices** — populate the reserved `devices` table via passive mDNS / SSDP / NetBIOS observation. **Spike-gated**; ships standalone if/when the feasibility spike succeeds. | spike |
+| 2 | 1.2.0 | B | **Alert noise + gating** (complete: ~48 h install-baseline window + running-process setup-scan seed + per-severity toast toggles; Critical keeps firing throughout). Ships alone. | shipped |
+| 3 | 1.3.0 | C | **Dismiss All** (visible-only) on the Alerts page: a header action that dismisses the *filtered* set, not the entire active set. Reuses the existing per-id idempotent dismiss IPC. | proposed |
+| 4 | 1.4.0 | D | **KPI reverse-filter** on the Alerts page: click a severity tile to isolate it + Clear chip. Ships alone. | proposed |
+| 5 | 1.5.0 | E | **Dashboard gap + live window** (complete). Gap-break fix (keep feeding the buffer off-page; draw an explicit break across a real absence instead of a straight line) **and** the live-window dropdown (2 m / 10 m / 1 h) with DB back-fill via `GetTrafficHistoryAsync`. | proposed |
+| 6 | 1.6.0 | F | **Reveal in Explorer** (app-detail path action). Ships alone. | proposed |
+| 7 | 1.7.0 | G | **Known-process distinction** (complete: catalog-aware signature verification via `CryptCATAdmin*` + curated common-items annotation). | proposed |
+| 8 | 1.8.0 | H | **Passive network devices** — populate the reserved `devices` table via passive mDNS / SSDP / NetBIOS observation. **Spike-gated**; slotted here to preserve alphabetical alignment but only ships if the feasibility spike succeeds. If deferred, 1.8.0 slot advances to Epic I. | spike |
+| 9 | 1.9.0 | I | **Endpoint-centric lookup** — "which apps talked to this IP / host?". Reuses the arbitrary-window query path stood up by Epic A. | proposed |
 
-**Order rationale.** A, C, E are the current user's primary
-quality-of-life pain points (in that order); B and D are the
-quick-follow-up cluster; F / G / I are the remainder; H is parked behind
-a spike. The one real cross-epic dependency — Endpoint lookup (I) reuses
-the arbitrary-window query path that A stands up — is satisfied because
-A ships first.
+**Order rationale.** The sequence is alphabetical — every release
+version maps 1:1 to its epic letter (A→1.1, B→1.2, … , I→1.9). This
+replaces the earlier priority-ordered / bundled sequence, which drifted
+out of sync as epics were reshuffled. The alphabetical rule is a
+tiebreaker for planning, not a claim about relative user value; each
+epic is still spec'd around a concrete user-facing pain and validated
+end-to-end before the next begins. The one real cross-epic dependency —
+Endpoint lookup (I) reuses the arbitrary-window query path that A
+stands up — is satisfied trivially because A ships first.
 
 **Prerequisite for the whole cadence:** finish the tag-triggered CI
 Release pipeline (already tracked in PRD §10.1). Without it every
@@ -89,22 +95,22 @@ release (see the sequence above).
 
 - **A — History click-to-attribute** → 1.1.0:
   [`epic-a-history-click-to-attribute.md`](epic-a-history-click-to-attribute.md)
-- **C — Dismiss All** → 1.2.0:
-  [`epic-c-dismiss-all.md`](epic-c-dismiss-all.md)
-- **E — Dashboard gap + live window** → 1.3.0:
-  [`epic-e-dashboard-gap-live-window.md`](epic-e-dashboard-gap-live-window.md)
-- **B — Alert noise + gating** → 1.4.0 (with D):
+- **B — Alert noise + gating** → 1.2.0:
   [`epic-b-alert-noise-gating.md`](epic-b-alert-noise-gating.md)
-- **D — KPI reverse-filter** → 1.4.0 (with B):
+- **C — Dismiss All** → 1.3.0:
+  [`epic-c-dismiss-all.md`](epic-c-dismiss-all.md)
+- **D — KPI reverse-filter** → 1.4.0:
   [`epic-d-kpi-reverse-filter.md`](epic-d-kpi-reverse-filter.md)
-- **F — App-detail path actions** → 1.5.0 (with G, I):
+- **E — Dashboard gap + live window** → 1.5.0:
+  [`epic-e-dashboard-gap-live-window.md`](epic-e-dashboard-gap-live-window.md)
+- **F — App-detail path actions** → 1.6.0:
   [`epic-f-app-detail-path-actions.md`](epic-f-app-detail-path-actions.md)
-- **G — Known-process distinction** → 1.5.0 (with F, I):
+- **G — Known-process distinction** → 1.7.0:
   [`epic-g-known-process-distinction.md`](epic-g-known-process-distinction.md)
-- **I — Endpoint-centric lookup** → 1.5.0 (with F, G):
-  [`epic-i-endpoint-centric-lookup.md`](epic-i-endpoint-centric-lookup.md)
-- **H — Passive network devices** (spike first) → standalone 1.x.0:
+- **H — Passive network devices** (spike first) → 1.8.0 or deferred:
   [`epic-h-passive-network-devices.md`](epic-h-passive-network-devices.md)
+- **I — Endpoint-centric lookup** → 1.9.0:
+  [`epic-i-endpoint-centric-lookup.md`](epic-i-endpoint-centric-lookup.md)
 
 ---
 
@@ -154,4 +160,11 @@ into adjacent epic work.
 
 _Resolved:_ the earlier "B patch-framing" question — ship gating as a
 bare patch vs. hold for the toggles — is moot now that B ships complete
-as a single minor (1.4.0).
+as a single minor (1.2.0).
+
+_Resolved:_ the version-sequence was realigned to alphabetical
+epic-letter mapping. Previously B+D were bundled at 1.4.0 and F+G+I at
+1.5.0; those bundles are now split so each epic gets its own minor
+(B=1.2, D=1.4, F=1.6, G=1.7, I=1.9), and C+E shift up accordingly
+(C=1.3, E=1.5). H stays spike-gated; if it ships at all, it slots at
+1.8.0.

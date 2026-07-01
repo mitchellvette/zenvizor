@@ -1,6 +1,6 @@
 # Epic C — Dismiss All (visible-only)
 
-**Release:** 1.2.0 (minor) · ships alone · **Status:** spec
+**Release:** 1.3.0 (minor) · ships alone · **Status:** spec
 **Depends on:** nothing (builds on the existing per-alert dismiss path)
 
 ---
@@ -90,4 +90,4 @@ alerts hidden by their filter.
 
 ## Version classification
 
-**1.2.0 (minor).** Adds a new user-facing control. No IPC/DB/contract change.
+**1.3.0 (minor).** Adds a new user-facing control. No IPC/DB/contract change.

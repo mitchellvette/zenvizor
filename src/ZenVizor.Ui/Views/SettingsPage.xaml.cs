@@ -272,16 +272,33 @@ public partial class SettingsPage : Page
         await ApplyAsync(new SettingsUpdate { StartMinimized = _vm.StartMinimized });
     }
 
-    private async void OnToastChanged(object sender, RoutedEventArgs e)
+    private async void OnToastCriticalChanged(object sender, RoutedEventArgs e)
     {
         if (_suppressApply) return;
-        await ApplyAsync(new SettingsUpdate { ToastOnAlert = _vm.ToastOnAlert });
-        // Mirror the new value into MainWindow's cached field so the
-        // very next AlertRaised push honours the toggle without
-        // waiting for an IPC round-trip.
+        await ApplyAsync(new SettingsUpdate { ToastOnCritical = _vm.ToastOnCritical });
         if (Application.Current.MainWindow is MainWindow mw)
         {
-            mw.SetToastEnabled(_vm.ToastOnAlert);
+            mw.SetToastPreferences(critical: _vm.ToastOnCritical);
+        }
+    }
+
+    private async void OnToastWarningChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        await ApplyAsync(new SettingsUpdate { ToastOnWarning = _vm.ToastOnWarning });
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.SetToastPreferences(warning: _vm.ToastOnWarning);
+        }
+    }
+
+    private async void OnToastInfoChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressApply) return;
+        await ApplyAsync(new SettingsUpdate { ToastOnInfo = _vm.ToastOnInfo });
+        if (Application.Current.MainWindow is MainWindow mw)
+        {
+            mw.SetToastPreferences(info: _vm.ToastOnInfo);
         }
     }
 
@@ -505,14 +522,31 @@ public partial class SettingsPage : Page
 
     // ── Test notification — bypass alert pipeline ──────────────────────
 
-    private void OnTestNotificationClick(object sender, RoutedEventArgs e)
+    private async void OnTestNotificationClick(object sender, RoutedEventArgs e)
     {
-        // Direct call into MainWindow.ShowTestToast — the same Tray
-        // notification path real alerts use. Lets the user verify the OS
-        // toast wiring without waiting for an alert to fire.
-        if (Application.Current.MainWindow is MainWindow mw)
+        // Epic B (1.2.0): fire once per enabled severity through
+        // MainWindow.ShowTestToast(severity), which routes through the
+        // same per-severity gate real alerts use. A user sees exactly
+        // the set of toasts their current config would produce (three
+        // if all toggles are on, one if only one is on, zero if
+        // nothing is on — although the button's own visibility hides
+        // that last case). Small delay between fires so back-to-back
+        // Windows notifications don't stack visually.
+        if (Application.Current.MainWindow is not MainWindow mw) return;
+
+        if (_vm.ToastOnCritical)
         {
-            mw.ShowTestToast();
+            mw.ShowTestToast(NotableSeverity.Critical);
+            await Task.Delay(TimeSpan.FromMilliseconds(700));
+        }
+        if (_vm.ToastOnWarning)
+        {
+            mw.ShowTestToast(NotableSeverity.Warning);
+            await Task.Delay(TimeSpan.FromMilliseconds(700));
+        }
+        if (_vm.ToastOnInfo)
+        {
+            mw.ShowTestToast(NotableSeverity.Info);
         }
     }
 

@@ -1,6 +1,6 @@
 # Epic E — Dashboard gap + live window
 
-**Release:** 1.3.0 (minor) — shipped **complete** (gap-fix + live-window dropdown)
+**Release:** 1.5.0 (minor) — ships **complete** (gap-fix + live-window dropdown)
 **Status:** stub (shape agreed; the gap-fix phase is ready to spec in full)
 **Build order (internal to this release):** the live-window phase builds on the
 gap-fix correction, so do the gap-fix first.
@@ -57,7 +57,7 @@ absence (honesty about no-data).
 
 ## Version classification
 
-**1.3.0 (minor).** The gap-fix phase is a correction on its own (a misleading
+**1.5.0 (minor).** The gap-fix phase is a correction on its own (a misleading
 straight line across an absence), but it ships **bundled** with the live-window
 phase — a new window-selector control + back-fill path — so the release as a
 whole adds surface and is a minor. The two phases ship together, not split

@@ -123,6 +123,49 @@ internal sealed class ZenVizorHostedService : IHostedService
         var settingsRepoForAlerts = new SettingsRepository(connections);
         var alertSettingsLookup = new CachedAlertSettingsLookup(settingsRepoForAlerts);
 
+        // Epic B (1.2.0) — install-epoch anchor for the first-run
+        // baseline gate. Written once, on the first service start
+        // after install, and never overwritten thereafter. Guard uses
+        // GetString==null so upgrades from 1.1.x land the epoch at
+        // upgrade-time (there was no key before this release); fresh
+        // installs land it here too. Either way, the epoch is the
+        // moment ZenVizor first ran on this box — the semantic anchor
+        // for "the settling window starts now."
+        long installEpochUnixMs;
+        var epochRaw = settingsRepoForAlerts.GetString(SettingsRepository.Keys.BaselineInstallEpochMs);
+        if (epochRaw is null)
+        {
+            installEpochUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // 64-bit epoch persists as a string (settings.value is TEXT);
+            // SettingsRepository.SetInt would truncate to Int32.
+            settingsRepoForAlerts.Set(
+                SettingsRepository.Keys.BaselineInstallEpochMs,
+                installEpochUnixMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _logger.LogInformation(
+                "Baseline install epoch initialized: {Epoch} ms",
+                installEpochUnixMs);
+        }
+        else if (!long.TryParse(epochRaw, System.Globalization.NumberStyles.Integer,
+                                System.Globalization.CultureInfo.InvariantCulture, out installEpochUnixMs))
+        {
+            _logger.LogWarning(
+                "Baseline install epoch key present but unparseable ({Raw}); " +
+                "disabling baseline gate for this process.", epochRaw);
+            installEpochUnixMs = 0;
+        }
+
+        // Epic B (1.2.0) — per-severity toast preference seeding.
+        // Runs at every service start; skips work when the three keys
+        // are already present. On a truly-fresh install (no keys and no
+        // legacy master), lands the gating-phase default:
+        // Critical=1, Warning=0, Info=0. On an upgrade from 1.1.x, honours
+        // the legacy toast.on_alert value — a user with '1' had opted
+        // into every-severity toasts and keeps them (all three seeded to
+        // 1); a user with '0' had opted out and stays opted out (all
+        // three seeded to 0). Legacy toast.on_alert stays in the table
+        // so older UIs still read a coherent value.
+        MigrateToastPreferencesIfNeeded(settingsRepoForAlerts, _logger);
+
         // ---- Phase 6 alert pipeline (must construct BEFORE the aggregator
         //      so we can hand the producer in as its IAlertEventSink). The
         //      sink → producer dependency chain stays inside the service:
@@ -150,7 +193,7 @@ internal sealed class ZenVizorHostedService : IHostedService
         {
             new UnsignedFromUserPathRule(),
             new InvalidSignatureRule(),
-            new FirstRunWanTalkerRule(),
+            new FirstRunWanTalkerRule(installEpochUnixMs),
         };
         var dailyTrafficLookup = new DailyTrafficLookupRepository(connections);
         var flushAlertRules = new IFlushAlertRule[]
@@ -217,6 +260,39 @@ internal sealed class ZenVizorHostedService : IHostedService
             _loggerFactory.CreateLogger<EnrichmentBackfill>());
 
         var sessionTracker = new SessionTracker(imageResolver, appEnricher, serviceHostResolver);
+
+        // Epic B (1.2.0) — running-process setup-scan seed. Runs
+        // synchronously here, BEFORE capture starts, so that any
+        // pre-existing app that opens a WAN connection in the first 60 s
+        // of capture finds its apps row already stamped with
+        // first_seen = install_epoch and the FirstRunWanTalker baseline
+        // gate correctly rejects the false-positive raise.
+        //
+        // Idempotence: guarded by baseline.setup_scan_done. A second
+        // service start is a no-op (< 1 ms).
+        //
+        // Also runs AFTER the install-epoch key is written above, so
+        // installEpochUnixMs is guaranteed populated on a fresh install.
+        // A parse failure that left installEpochUnixMs = 0 causes the
+        // seeder to skip with a warning (see BaselineAppSeeder logic).
+        var baselineSeeder = new BaselineAppSeeder(
+            connections,
+            appEnricher,
+            _loggerFactory.CreateLogger<BaselineAppSeeder>());
+        try
+        {
+            baselineSeeder.SeedIfNeeded(installEpochUnixMs);
+        }
+        catch (Exception ex)
+        {
+            // Seeder failure is NOT fatal. Worst case: the day-one
+            // FirstRunWanTalker flood recurs for apps we couldn't seed
+            // — a UX regression, not a data-integrity or safety
+            // problem. Log loud and continue.
+            _logger.LogWarning(ex,
+                "BaselineAppSeeder threw ({Kind}: {Message}); day-one first-run gating may be less effective on this run.",
+                ex.GetType().Name, ex.Message);
+        }
 
         // Phase 8 — the DNS resolution store is constructed BEFORE the
         // aggregator so the aggregator can read from it at flush time. The
@@ -442,6 +518,62 @@ internal sealed class ZenVizorHostedService : IHostedService
         Enum.TryParse<T>(value, ignoreCase: false, out var parsed) ? parsed : fallback;
 
     /// <summary>
+    /// Epic B (1.2.0) — one-shot per-severity toast key seeding. Fast
+    /// path: if all three per-severity keys already exist, returns
+    /// immediately. Otherwise seeds any missing keys — the value comes
+    /// from the legacy <c>toast.on_alert</c> row when it's present
+    /// (upgrade from 1.1.x — honour the user's prior all-or-nothing
+    /// intent) and defaults to <c>(Critical=1, Warning=0, Info=0)</c>
+    /// on a truly fresh install (gating-phase default). Individual keys
+    /// are only written when absent, so a partial state (user manually
+    /// set one of the three via zvctl before the others were seeded)
+    /// isn't overwritten.
+    /// </summary>
+    internal static void MigrateToastPreferencesIfNeeded(
+        SettingsRepository settings,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        var hasCritical = settings.GetString(SettingsRepository.Keys.ToastOnCritical) is not null;
+        var hasWarning  = settings.GetString(SettingsRepository.Keys.ToastOnWarning)  is not null;
+        var hasInfo     = settings.GetString(SettingsRepository.Keys.ToastOnInfo)     is not null;
+        if (hasCritical && hasWarning && hasInfo) return;
+
+        var legacyRaw = settings.GetString(SettingsRepository.Keys.ToastOnAlert);
+        bool defaultCritical, defaultWarning, defaultInfo;
+        string reason;
+
+        if (legacyRaw == "1")
+        {
+            // 1.1.x upgrade with master ON. Honour prior intent.
+            defaultCritical = defaultWarning = defaultInfo = true;
+            reason = "legacy toast.on_alert=1 → all severities on (upgrade honour)";
+        }
+        else if (legacyRaw == "0")
+        {
+            // 1.1.x upgrade with master OFF. Honour prior intent.
+            defaultCritical = defaultWarning = defaultInfo = false;
+            reason = "legacy toast.on_alert=0 → all severities off (upgrade honour)";
+        }
+        else
+        {
+            // Fresh install (no legacy row) OR unparseable legacy value.
+            // Land the gating-phase default.
+            defaultCritical = true;
+            defaultWarning  = false;
+            defaultInfo     = false;
+            reason = "fresh-install gating default (Critical only)";
+        }
+
+        if (!hasCritical) settings.SetBool(SettingsRepository.Keys.ToastOnCritical, defaultCritical);
+        if (!hasWarning)  settings.SetBool(SettingsRepository.Keys.ToastOnWarning,  defaultWarning);
+        if (!hasInfo)     settings.SetBool(SettingsRepository.Keys.ToastOnInfo,     defaultInfo);
+
+        logger.LogInformation(
+            "Per-severity toast preferences seeded: Critical={C} Warning={W} Info={I} — {Reason}.",
+            defaultCritical, defaultWarning, defaultInfo, reason);
+    }
+
+    /// <summary>
     /// Builds the Settings snapshot returned by
     /// <c>GetSettingsAsync</c>. SCM start-mode is queried live so the UI sees
     /// reality, not the cached <c>autostart.mode</c> row (which may have
@@ -458,7 +590,14 @@ internal sealed class ZenVizorHostedService : IHostedService
 
         return new SettingsSnapshot(
             AutostartMode:               liveMode,
-            ToastOnAlert:                settings.GetBool(SettingsRepository.Keys.ToastOnAlert, true),
+            // ToastOnAlert is the computed OR of the three per-severity
+            // fields for back-compat with 1.1.x UIs. Snapshots always
+            // build the master from the source-of-truth per-severity
+            // keys; the legacy toast.on_alert row is written on updates
+            // for the same reason (see ApplySettingsUpdate).
+            ToastOnAlert:                settings.GetBool(SettingsRepository.Keys.ToastOnCritical, true)
+                                       || settings.GetBool(SettingsRepository.Keys.ToastOnWarning,  false)
+                                       || settings.GetBool(SettingsRepository.Keys.ToastOnInfo,     false),
             Theme:                       ParseEnum(
                                             settings.GetString(SettingsRepository.Keys.AppearanceTheme) ?? "System",
                                             AppTheme.System),
@@ -473,7 +612,10 @@ internal sealed class ZenVizorHostedService : IHostedService
             AlertLargeDownloadMb:        settings.GetInt(SettingsRepository.Keys.AlertLargeDownloadMb,            50),
             AlertOutboundHeavyFloorMb:   settings.GetInt(SettingsRepository.Keys.AlertOutboundHeavyFloorMb,       10),
             AlertUnusualDailyVolumeKTimesTen: settings.GetInt(SettingsRepository.Keys.AlertUnusualDailyVolumeKTimesTen, 25),
-            SmoothChartAnimations:       settings.GetBool(SettingsRepository.Keys.SmoothChartAnimations,         false));
+            SmoothChartAnimations:       settings.GetBool(SettingsRepository.Keys.SmoothChartAnimations,         false),
+            ToastOnCritical:             settings.GetBool(SettingsRepository.Keys.ToastOnCritical, true),
+            ToastOnWarning:              settings.GetBool(SettingsRepository.Keys.ToastOnWarning,  false),
+            ToastOnInfo:                 settings.GetBool(SettingsRepository.Keys.ToastOnInfo,     false));
     }
 
     /// <summary>
@@ -493,9 +635,43 @@ internal sealed class ZenVizorHostedService : IHostedService
             startModeManager.Set(mode);
             settings.Set(SettingsRepository.Keys.AutostartMode, mode.ToString());
         }
+        // Apply the legacy master FIRST so any per-severity fields on
+        // the same update take precedence. Writing the master mass-sets
+        // the three per-severity keys — this is the 1.1.x back-compat
+        // path (an older UI that only knows the master still gets a
+        // coherent effect). The legacy toast.on_alert row is also
+        // maintained so older UIs continue to read a meaningful value
+        // on their own snapshots.
         if (update.ToastOnAlert is { } toast)
         {
-            settings.SetBool(SettingsRepository.Keys.ToastOnAlert, toast);
+            settings.SetBool(SettingsRepository.Keys.ToastOnAlert,    toast);
+            settings.SetBool(SettingsRepository.Keys.ToastOnCritical, toast);
+            settings.SetBool(SettingsRepository.Keys.ToastOnWarning,  toast);
+            settings.SetBool(SettingsRepository.Keys.ToastOnInfo,     toast);
+        }
+        if (update.ToastOnCritical is { } tc)
+        {
+            settings.SetBool(SettingsRepository.Keys.ToastOnCritical, tc);
+        }
+        if (update.ToastOnWarning is { } tw)
+        {
+            settings.SetBool(SettingsRepository.Keys.ToastOnWarning, tw);
+        }
+        if (update.ToastOnInfo is { } ti)
+        {
+            settings.SetBool(SettingsRepository.Keys.ToastOnInfo, ti);
+        }
+        // Recompute the legacy master row after per-severity edits so
+        // an older UI reading toast.on_alert directly sees a consistent
+        // "any severity on" answer.
+        if (update.ToastOnCritical is not null ||
+            update.ToastOnWarning  is not null ||
+            update.ToastOnInfo     is not null)
+        {
+            var anyOn = settings.GetBool(SettingsRepository.Keys.ToastOnCritical, true)
+                     || settings.GetBool(SettingsRepository.Keys.ToastOnWarning,  false)
+                     || settings.GetBool(SettingsRepository.Keys.ToastOnInfo,     false);
+            settings.SetBool(SettingsRepository.Keys.ToastOnAlert, anyOn);
         }
         if (update.Theme is { } theme)
         {

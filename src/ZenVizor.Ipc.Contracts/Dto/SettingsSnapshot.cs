@@ -14,9 +14,15 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// table row is updated to match before this snapshot is built.
 /// </param>
 /// <param name="ToastOnAlert">
-/// When true, the UI fires a Windows toast for every <c>AlertRaised</c>
-/// push in addition to surfacing it in the Alerts feed. Phase 6.2 wires
-/// the emission inline; Phase 6.3 will refine the click-through.
+/// Master toast preference. On a snapshot from a 1.2.0+ service this
+/// value is <b>computed</b> as
+/// <c>ToastOnCritical || ToastOnWarning || ToastOnInfo</c> — retained
+/// so older UIs (pre-Epic-B) that read only this field still see a
+/// coherent "any-severity-toasts-on" answer. On an update from an
+/// older UI, writing this field mass-sets the three per-severity
+/// keys (see <see cref="SettingsUpdate.ToastOnAlert"/>). Phase 6.2
+/// wired the original single-boolean emission inline; Epic B (1.2.0)
+/// split that into per-severity fields below.
 /// </param>
 /// <param name="Theme">
 /// UI theme override. <see cref="AppTheme.System"/> defers to
@@ -74,6 +80,25 @@ namespace ZenVizor.Ipc.Contracts.Dto;
 /// exposed the previously code-only flag. Effect applies on next nav to
 /// Dashboard, not live to a currently-open Dashboard.
 /// </param>
+/// <param name="ToastOnCritical">
+/// Epic B (1.2.0). When true, Critical alerts fire a Windows toast.
+/// Fresh-install default true. Legacy upgrade honours
+/// <c>toast.on_alert</c>: pre-1.2.0 users with <c>toast.on_alert=1</c>
+/// keep toasts on for every severity, so a passive user who relied on
+/// the master toggle never silently loses notifications after the
+/// upgrade.
+/// </param>
+/// <param name="ToastOnWarning">
+/// Epic B (1.2.0). When true, Warning alerts fire a Windows toast.
+/// Fresh-install default false — killed the day-one FirstRunWanTalker
+/// flood together with <see cref="ToastOnInfo"/>. Same legacy-honour
+/// rule as <see cref="ToastOnCritical"/>.
+/// </param>
+/// <param name="ToastOnInfo">
+/// Epic B (1.2.0). When true, Info alerts fire a Windows toast.
+/// Fresh-install default false. Same legacy-honour rule as
+/// <see cref="ToastOnCritical"/>.
+/// </param>
 public sealed record SettingsSnapshot(
     ServiceStartMode AutostartMode,
     bool ToastOnAlert,
@@ -89,4 +114,7 @@ public sealed record SettingsSnapshot(
     int AlertLargeDownloadMb,
     int AlertOutboundHeavyFloorMb,
     int AlertUnusualDailyVolumeKTimesTen,
-    bool SmoothChartAnimations);
+    bool SmoothChartAnimations,
+    bool ToastOnCritical = true,
+    bool ToastOnWarning = false,
+    bool ToastOnInfo = false);
