@@ -149,6 +149,14 @@ their release: [`tracked-followups.md`](tracked-followups.md). Skim
 this when starting a new release — items here may be cheap to absorb
 into adjacent epic work.
 
+## Explorations
+
+Proactive ideas surfaced outside the epic loop — not on the release
+sequence above, not yet epic-shaped:
+[`explorations.md`](explorations.md). Skim alongside `tracked-followups`
+when planning; items graduate to epics with a letter/slot once validated,
+or close as won't-fit with a note.
+
 ---
 
 ## Pending decisions
