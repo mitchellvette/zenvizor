@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Storage">
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.10" />
   </ItemGroup>
 
   <ItemGroup Label="Storage transitive vulnerability pins">
